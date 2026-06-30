@@ -29,6 +29,7 @@ export default function Dashboard() {
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [copied, setCopied] = useState(false);
+  const [origin, setOrigin] = useState("");
   const [date, setDate] = useState(todayStr());
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -54,6 +55,7 @@ export default function Dashboard() {
         setReady(true);
         const { apiKey: key } = await api.getApiKey();
         setApiKey(key);
+        setOrigin(window.location.origin);
       } catch {
         router.replace("/login");
       }
@@ -98,14 +100,16 @@ export default function Dashboard() {
     router.replace("/login");
   }
 
-  async function copyKey() {
-    await navigator.clipboard.writeText(apiKey);
+  const mcpUrl = apiKey ? `${origin}/api/mcp?key=${apiKey}` : "";
+
+  async function copyUrl() {
+    await navigator.clipboard.writeText(mcpUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
   async function regenerateKey() {
-    if (!confirm("Regenerate API key? The old key will stop working immediately.")) return;
+    if (!confirm("Regenerate key? The old connector URL will stop working immediately.")) return;
     const { apiKey: newKey } = await api.regenerateApiKey();
     setApiKey(newKey);
   }
@@ -268,23 +272,23 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* API key card */}
+      {/* Claude.ai connector card */}
       <section className="mt-6 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <h2 className="text-sm font-semibold text-slate-700">API / MCP key</h2>
+        <h2 className="text-sm font-semibold text-slate-700">Claude.ai connector</h2>
         <p className="mt-1 text-xs text-slate-500">
-          Use this key to connect Claude.ai via MCP or call the API directly.
-          It never expires.
+          Paste this URL into Claude.ai → Settings → Connectors → Add custom connector.
+          The key is embedded — no extra config needed.
         </p>
         <div className="mt-3 flex items-center gap-2">
           <code className="flex-1 truncate rounded-lg bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700 ring-1 ring-slate-200">
-            {apiKey || "Loading…"}
+            {mcpUrl || "Loading…"}
           </code>
           <button
-            onClick={copyKey}
-            disabled={!apiKey}
+            onClick={copyUrl}
+            disabled={!mcpUrl}
             className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
           >
-            {copied ? "Copied!" : "Copy"}
+            {copied ? "Copied!" : "Copy URL"}
           </button>
           <button
             onClick={regenerateKey}
@@ -294,11 +298,6 @@ export default function Dashboard() {
             Regenerate
           </button>
         </div>
-        <p className="mt-2 text-xs text-slate-400">
-          Claude.ai → Settings → Integrations → Add:{" "}
-          <span className="font-mono">https://your-app/api/mcp</span> with header{" "}
-          <span className="font-mono">Authorization: Bearer &lt;key&gt;</span>
-        </p>
       </section>
     </main>
   );
