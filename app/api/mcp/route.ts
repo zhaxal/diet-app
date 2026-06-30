@@ -217,14 +217,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // tools/call requires an API key.
+  // tools/call requires an API key — accepted via ?key= query param or
+  // Authorization: Bearer header (query param is easier with Claude.ai connectors).
   if (method === "tools/call") {
+    const keyFromQuery = req.nextUrl.searchParams.get("key");
     const authHeader = req.headers.get("authorization");
+    const rawKey =
+      keyFromQuery ??
+      (authHeader?.toLowerCase().startsWith("bearer ")
+        ? authHeader.slice(7).trim()
+        : null);
+
     let userId: string | null = null;
-    if (authHeader?.toLowerCase().startsWith("bearer ")) {
-      const key = authHeader.slice(7).trim();
+    if (rawKey) {
       const user = await prisma.user.findUnique({
-        where: { apiKey: key },
+        where: { apiKey: rawKey },
         select: { id: true },
       });
       if (user) userId = user.id;
@@ -238,7 +245,7 @@ export async function POST(req: NextRequest) {
           error: {
             code: -32001,
             message:
-              "Unauthorized — set Authorization: Bearer <key> in the MCP integration header (copy your key from the dashboard)",
+              "Unauthorized — use the connector URL from your dashboard (it includes your key)",
           },
         },
         { headers: CORS },
