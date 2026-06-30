@@ -7,7 +7,17 @@ import {
   api,
   type FoodEntry,
   type Summary,
+  type Goals,
+  type WeightLog,
+  type Favorite,
+  type RecentFood,
+  type Trends,
 } from "@/lib/api-client";
+import GoalsCard from "@/components/GoalsCard";
+import QuickAdd from "@/components/QuickAdd";
+import EntryRow from "@/components/EntryRow";
+import WeightCard from "@/components/WeightCard";
+import TrendsCard from "@/components/TrendsCard";
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 type Meal = (typeof MEALS)[number];
@@ -30,32 +40,46 @@ export default function Dashboard() {
   const [apiKey, setApiKey] = useState("");
   const [copied, setCopied] = useState(false);
   const [origin, setOrigin] = useState("");
+
   const [date, setDate] = useState(todayStr());
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
+
+  const [goals, setGoals] = useState<Goals>({ dailyCalories: null, dailyProtein: null, dailyCarbs: null, dailyFat: null, weightUnit: "kg" });
+  const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]);
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [recent, setRecent] = useState<RecentFood[]>([]);
+  const [trends, setTrends] = useState<Trends | null>(null);
+  const [trendDays, setTrendDays] = useState<7 | 30>(7);
+
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async (d: string) => {
-    const [{ entries }, sum] = await Promise.all([
-      api.listEntries(d),
-      api.summary(d),
-    ]);
+  const loadDay = useCallback(async (d: string) => {
+    const [{ entries }, sum] = await Promise.all([api.listEntries(d), api.summary(d)]);
     setEntries(entries);
     setSummary(sum);
   }, []);
 
-  // Auth gate: confirm the session, then load the day's data.
+  const loadTrends = useCallback(async (days: 7 | 30) => {
+    const t = await api.getTrends(days);
+    setTrends(t);
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
-        const { user } = await api.me();
+        const [{ user }, { goals: g }, { logs }, { favorites: favs, recent: rec }, { apiKey: key }] =
+          await Promise.all([api.me(), api.getGoals(), api.listWeight(), api.listFavorites(), api.getApiKey()]);
         setEmail(user.email);
-        setReady(true);
-        const { apiKey: key } = await api.getApiKey();
+        setGoals(g);
+        setWeightLogs(logs);
+        setFavorites(favs);
+        setRecent(rec);
         setApiKey(key);
         setOrigin(window.location.origin);
+        setReady(true);
       } catch {
         router.replace("/login");
       }
@@ -63,8 +87,11 @@ export default function Dashboard() {
   }, [router]);
 
   useEffect(() => {
-    if (ready) load(date).catch((e) => setError(e.message));
-  }, [ready, date, load]);
+    if (ready) {
+      loadDay(date).catch((e) => setError(e.message));
+      loadTrends(trendDays).catch(() => {});
+    }
+  }, [ready, date, trendDays, loadDay, loadTrends]);
 
   async function addEntry(e: React.FormEvent) {
     e.preventDefault();
@@ -78,11 +105,10 @@ export default function Dashboard() {
         carbs: form.carbs ? Number(form.carbs) : 0,
         fat: form.fat ? Number(form.fat) : 0,
         mealType: form.mealType,
-        // Anchor the entry to noon of the selected day in local time.
         consumedAt: new Date(`${date}T12:00:00`).toISOString(),
       });
       setForm({ ...emptyForm, mealType: form.mealType });
-      await load(date);
+      await loadDay(date);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add entry");
     } finally {
@@ -90,9 +116,15 @@ export default function Dashboard() {
     }
   }
 
-  async function remove(id: string) {
+  async function removeEntry(id: string) {
     await api.deleteEntry(id);
-    await load(date);
+    await loadDay(date);
+  }
+
+  function updateEntry(updated: FoodEntry) {
+    setEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+    // Recalculate summary locally for instant feedback.
+    loadDay(date).catch(() => {});
   }
 
   async function logout() {
@@ -132,19 +164,14 @@ export default function Dashboard() {
           <p className="text-sm text-slate-500">{email}</p>
         </div>
         <div className="flex items-center gap-3 text-sm">
-          <Link href="/api-docs" className="text-emerald-600 hover:underline">
-            API docs
-          </Link>
-          <button
-            onClick={logout}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-100"
-          >
+          <Link href="/api-docs" className="text-emerald-600 hover:underline">API docs</Link>
+          <button onClick={logout} className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-100">
             Log out
           </button>
         </div>
       </header>
 
-      {/* Date picker + daily totals */}
+      {/* Date picker */}
       <section className="mt-6 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <input
@@ -153,25 +180,34 @@ export default function Dashboard() {
             onChange={(e) => setDate(e.target.value)}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
           />
-          <div className="text-sm text-slate-500">
-            {summary?.total.count ?? 0} entries
-          </div>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Calories" value={total?.calories ?? 0} unit="kcal" big />
-          <Stat label="Protein" value={total?.protein ?? 0} unit="g" />
-          <Stat label="Carbs" value={total?.carbs ?? 0} unit="g" />
-          <Stat label="Fat" value={total?.fat ?? 0} unit="g" />
+          <div className="text-sm text-slate-500">{summary?.total.count ?? 0} entries</div>
         </div>
       </section>
 
-      {/* Add entry */}
+      {/* Goals + progress */}
+      <div className="mt-6">
+        <GoalsCard goals={goals} total={total ?? { calories: 0, protein: 0, carbs: 0, fat: 0, count: 0 }} onGoalsChange={setGoals} />
+      </div>
+
+      {/* Quick-add */}
+      {(favorites.length > 0 || recent.length > 0) && (
+        <section className="mt-6 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h2 className="text-sm font-semibold text-slate-700 mb-3">Quick add</h2>
+          <QuickAdd
+            favorites={favorites}
+            recent={recent}
+            selectedMeal={form.mealType}
+            selectedDate={date}
+            onLogged={() => loadDay(date)}
+            onFavoriteDeleted={(id) => setFavorites((f) => f.filter((x) => x.id !== id))}
+          />
+        </section>
+      )}
+
+      {/* Add entry form */}
       <section className="mt-6 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <h2 className="text-sm font-semibold text-slate-700">Add food</h2>
-        <form
-          onSubmit={addEntry}
-          className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-6"
-        >
+        <form onSubmit={addEntry} className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-6">
           <input
             required
             placeholder="Food name"
@@ -179,39 +215,16 @@ export default function Dashboard() {
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             className="col-span-2 rounded-lg border border-slate-300 px-3 py-2 text-sm sm:col-span-2"
           />
-          <NumInput
-            placeholder="Cal"
-            value={form.calories}
-            onChange={(v) => setForm({ ...form, calories: v })}
-            required
-          />
-          <NumInput
-            placeholder="Protein"
-            value={form.protein}
-            onChange={(v) => setForm({ ...form, protein: v })}
-          />
-          <NumInput
-            placeholder="Carbs"
-            value={form.carbs}
-            onChange={(v) => setForm({ ...form, carbs: v })}
-          />
-          <NumInput
-            placeholder="Fat"
-            value={form.fat}
-            onChange={(v) => setForm({ ...form, fat: v })}
-          />
+          <NumInput placeholder="Cal" value={form.calories} onChange={(v) => setForm({ ...form, calories: v })} required />
+          <NumInput placeholder="Protein" value={form.protein} onChange={(v) => setForm({ ...form, protein: v })} />
+          <NumInput placeholder="Carbs" value={form.carbs} onChange={(v) => setForm({ ...form, carbs: v })} />
+          <NumInput placeholder="Fat" value={form.fat} onChange={(v) => setForm({ ...form, fat: v })} />
           <select
             value={form.mealType}
-            onChange={(e) =>
-              setForm({ ...form, mealType: e.target.value as Meal })
-            }
+            onChange={(e) => setForm({ ...form, mealType: e.target.value as Meal })}
             className="col-span-2 rounded-lg border border-slate-300 px-3 py-2 text-sm capitalize sm:col-span-3"
           >
-            {MEALS.map((m) => (
-              <option key={m} value={m} className="capitalize">
-                {m}
-              </option>
-            ))}
+            {MEALS.map((m) => <option key={m} value={m} className="capitalize">{m}</option>)}
           </select>
           <button
             type="submit"
@@ -221,6 +234,27 @@ export default function Dashboard() {
             {saving ? "Adding…" : "Add entry"}
           </button>
         </form>
+        {/* Save to favorites shortcut */}
+        {form.name && form.calories && (
+          <button
+            type="button"
+            onClick={async () => {
+              await api.saveFavorite({
+                name: form.name,
+                calories: Number(form.calories),
+                protein: form.protein ? Number(form.protein) : 0,
+                carbs: form.carbs ? Number(form.carbs) : 0,
+                fat: form.fat ? Number(form.fat) : 0,
+                mealType: form.mealType,
+              });
+              const { favorites: favs } = await api.listFavorites();
+              setFavorites(favs);
+            }}
+            className="mt-2 text-xs text-emerald-600 hover:underline"
+          >
+            ★ Save as favorite
+          </button>
+        )}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </section>
 
@@ -233,33 +267,12 @@ export default function Dashboard() {
           return (
             <div key={meal}>
               <div className="flex items-baseline justify-between">
-                <h3 className="text-sm font-semibold capitalize text-slate-700">
-                  {meal}
-                </h3>
+                <h3 className="text-sm font-semibold capitalize text-slate-700">{meal}</h3>
                 <span className="text-xs text-slate-400">{mealCals} kcal</span>
               </div>
               <ul className="mt-2 divide-y divide-slate-100 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
                 {items.map((entry) => (
-                  <li
-                    key={entry.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {entry.name}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {entry.calories} kcal · P{entry.protein} · C{entry.carbs}{" "}
-                        · F{entry.fat}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => remove(entry.id)}
-                      className="shrink-0 text-xs text-slate-400 hover:text-red-600"
-                    >
-                      Delete
-                    </button>
-                  </li>
+                  <EntryRow key={entry.id} entry={entry} onUpdate={updateEntry} onDelete={removeEntry} />
                 ))}
               </ul>
             </div>
@@ -272,12 +285,23 @@ export default function Dashboard() {
         )}
       </section>
 
+      {/* Weight + Trends */}
+      <div className="mt-6 grid gap-6 sm:grid-cols-2">
+        <WeightCard logs={weightLogs} weightUnit={goals.weightUnit} onLogsChange={setWeightLogs} />
+        {trends && (
+          <TrendsCard
+            trends={trends}
+            weightUnit={goals.weightUnit}
+            onDaysChange={(d) => { setTrendDays(d); loadTrends(d); }}
+          />
+        )}
+      </div>
+
       {/* Claude.ai connector card */}
       <section className="mt-6 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <h2 className="text-sm font-semibold text-slate-700">Claude.ai connector</h2>
         <p className="mt-1 text-xs text-slate-500">
           Paste this URL into Claude.ai → Settings → Connectors → Add custom connector.
-          The key is embedded — no extra config needed.
         </p>
         <div className="mt-3 flex items-center gap-2">
           <code className="flex-1 truncate rounded-lg bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700 ring-1 ring-slate-200">
@@ -303,41 +327,7 @@ export default function Dashboard() {
   );
 }
 
-function Stat({
-  label,
-  value,
-  unit,
-  big,
-}: {
-  label: string;
-  value: number;
-  unit: string;
-  big?: boolean;
-}) {
-  return (
-    <div className="rounded-lg bg-slate-50 px-3 py-2">
-      <div className="text-xs uppercase tracking-wide text-slate-400">
-        {label}
-      </div>
-      <div className={big ? "text-2xl font-semibold" : "text-lg font-semibold"}>
-        {Math.round(value * 10) / 10}
-        <span className="ml-1 text-xs font-normal text-slate-400">{unit}</span>
-      </div>
-    </div>
-  );
-}
-
-function NumInput({
-  value,
-  onChange,
-  placeholder,
-  required,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-  required?: boolean;
-}) {
+function NumInput({ value, onChange, placeholder, required }: { value: string; onChange: (v: string) => void; placeholder: string; required?: boolean }) {
   return (
     <input
       type="number"
