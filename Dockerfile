@@ -61,8 +61,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=deps   --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=deps   --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 # Copy the Prisma CLI so migrate deploy runs without downloading anything.
+# .bin/prisma is a symlink; copy the whole package so wasm files resolve correctly.
 COPY --from=deps   --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
-COPY --from=deps   --chown=nextjs:nodejs /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 
 # Persist the SQLite database in a named volume mounted at /app/data.
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
@@ -75,4 +75,5 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Run migrations then start the server.
-CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node server.js"]
+# Call prisma/build/index.js directly so __dirname resolves the sibling wasm files.
+CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node server.js"]
