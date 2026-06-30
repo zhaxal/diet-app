@@ -16,21 +16,14 @@ const TOOLS = [
         protein: { type: "number", minimum: 0, description: "grams" },
         carbs: { type: "number", minimum: 0, description: "grams" },
         fat: { type: "number", minimum: 0, description: "grams" },
-        mealType: {
-          type: "string",
-          enum: ["breakfast", "lunch", "dinner", "snack"],
-        },
-        consumedAt: {
-          type: "string",
-          format: "date-time",
-          description: "ISO 8601 timestamp — defaults to now",
-        },
+        mealType: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack"] },
+        consumedAt: { type: "string", format: "date-time", description: "ISO 8601 timestamp — defaults to now" },
       },
     },
   },
   {
     name: "get_summary",
-    description: "Get daily nutrition totals (calories + macros) for a date.",
+    description: "Get daily nutrition totals (calories + macros) for a date, including progress toward daily goals if set.",
     inputSchema: {
       type: "object",
       properties: {
@@ -56,6 +49,58 @@ const TOOLS = [
       required: ["id"],
       properties: {
         id: { type: "string", description: "Entry ID returned by log_meal or list_entries" },
+      },
+    },
+  },
+  {
+    name: "set_goals",
+    description: "Set daily calorie and macro targets. Pass null to clear a goal.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dailyCalories: { type: ["integer", "null"], description: "kcal target" },
+        dailyProtein: { type: ["number", "null"], description: "grams" },
+        dailyCarbs: { type: ["number", "null"], description: "grams" },
+        dailyFat: { type: ["number", "null"], description: "grams" },
+        weightUnit: { type: "string", enum: ["kg", "lb"] },
+      },
+    },
+  },
+  {
+    name: "log_weight",
+    description: "Log a body weight measurement.",
+    inputSchema: {
+      type: "object",
+      required: ["weight"],
+      properties: {
+        weight: { type: "number", description: "Weight value (in your weight unit)" },
+        loggedAt: { type: "string", format: "date-time", description: "Defaults to now" },
+      },
+    },
+  },
+  {
+    name: "list_weight",
+    description: "List recent weight log entries (last 30 days).",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "list_favorites",
+    description: "List saved favorites and recently eaten foods. Use these IDs/names when logging recurring meals.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "save_favorite",
+    description: "Save a food as a favorite for quick re-logging.",
+    inputSchema: {
+      type: "object",
+      required: ["name", "calories"],
+      properties: {
+        name: { type: "string" },
+        calories: { type: "integer", minimum: 0 },
+        protein: { type: "number", minimum: 0 },
+        carbs: { type: "number", minimum: 0 },
+        fat: { type: "number", minimum: 0 },
+        mealType: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack"] },
       },
     },
   },
@@ -108,25 +153,26 @@ async function callTool(
     case "get_summary": {
       const date = (args.date as string | undefined) ?? todayDate();
       const { start, end } = dayBounds(date);
-      const entries = await prisma.foodEntry.findMany({
-        where: { userId, consumedAt: { gte: start, lt: end } },
-      });
-      const t = entries.reduce(
-        (a, e) => ({
-          calories: a.calories + e.calories,
-          protein: a.protein + e.protein,
-          carbs: a.carbs + e.carbs,
-          fat: a.fat + e.fat,
-          count: a.count + 1,
+      const [entries, user] = await Promise.all([
+        prisma.foodEntry.findMany({ where: { userId, consumedAt: { gte: start, lt: end } } }),
+        prisma.user.findUnique({
+          where: { id: userId },
+          select: { dailyCalories: true, dailyProtein: true, dailyCarbs: true, dailyFat: true },
         }),
+      ]);
+      const t = entries.reduce(
+        (a, e) => ({ calories: a.calories + e.calories, protein: a.protein + e.protein, carbs: a.carbs + e.carbs, fat: a.fat + e.fat, count: a.count + 1 }),
         { calories: 0, protein: 0, carbs: 0, fat: 0, count: 0 },
       );
+      const r = (n: number) => Math.round(n * 10) / 10;
+      const goalLine = (label: string, val: number, goal: number | null) =>
+        goal ? ` ${label}: ${r(val)} / ${goal} (${Math.round((val / goal) * 100)}%)` : ` ${label}: ${r(val)}`;
       return (
         `Summary for ${date} (${t.count} entr${t.count === 1 ? "y" : "ies"})\n` +
-        `Calories: ${t.calories} kcal\n` +
-        `Protein:  ${Math.round(t.protein * 10) / 10}g\n` +
-        `Carbs:    ${Math.round(t.carbs * 10) / 10}g\n` +
-        `Fat:      ${Math.round(t.fat * 10) / 10}g`
+        goalLine("Calories", t.calories, user?.dailyCalories ?? null) + " kcal\n" +
+        goalLine("Protein", t.protein, user?.dailyProtein ?? null) + "g\n" +
+        goalLine("Carbs", t.carbs, user?.dailyCarbs ?? null) + "g\n" +
+        goalLine("Fat", t.fat, user?.dailyFat ?? null) + "g"
       );
     }
 
@@ -139,21 +185,80 @@ async function callTool(
       });
       if (entries.length === 0) return `No entries for ${date}.`;
       return entries
-        .map(
-          (e) =>
-            `[${e.id}] ${e.mealType} — ${e.name}: ${e.calories} kcal` +
-            ` (P:${e.protein}g C:${e.carbs}g F:${e.fat}g)`,
-        )
+        .map((e) => `[${e.id}] ${e.mealType} — ${e.name}: ${e.calories} kcal (P:${e.protein}g C:${e.carbs}g F:${e.fat}g)`)
         .join("\n");
     }
 
     case "delete_entry": {
-      const entry = await prisma.foodEntry.findFirst({
-        where: { id: args.id as string, userId },
-      });
+      const entry = await prisma.foodEntry.findFirst({ where: { id: args.id as string, userId } });
       if (!entry) throw new Error(`Entry ${args.id} not found`);
       await prisma.foodEntry.delete({ where: { id: args.id as string } });
       return `Deleted "${entry.name}"`;
+    }
+
+    case "set_goals": {
+      await prisma.user.update({ where: { id: userId }, data: args as Record<string, unknown> });
+      const parts = [];
+      if (args.dailyCalories != null) parts.push(`calories: ${args.dailyCalories} kcal`);
+      if (args.dailyProtein != null) parts.push(`protein: ${args.dailyProtein}g`);
+      if (args.dailyCarbs != null) parts.push(`carbs: ${args.dailyCarbs}g`);
+      if (args.dailyFat != null) parts.push(`fat: ${args.dailyFat}g`);
+      if (args.weightUnit) parts.push(`weight unit: ${args.weightUnit}`);
+      return `Goals updated — ${parts.join(", ")}`;
+    }
+
+    case "log_weight": {
+      const log = await prisma.weightLog.create({
+        data: {
+          userId,
+          weight: Number(args.weight),
+          loggedAt: args.loggedAt ? new Date(args.loggedAt as string) : undefined,
+        },
+      });
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } });
+      return `Logged ${log.weight} ${user?.weightUnit ?? "kg"} on ${log.loggedAt.toISOString().slice(0, 10)} (id: ${log.id})`;
+    }
+
+    case "list_weight": {
+      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const [logs, user] = await Promise.all([
+        prisma.weightLog.findMany({ where: { userId, loggedAt: { gte: since } }, orderBy: { loggedAt: "asc" } }),
+        prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } }),
+      ]);
+      if (logs.length === 0) return "No weight logs in the last 30 days.";
+      return logs.map((l) => `[${l.id}] ${l.loggedAt.toISOString().slice(0, 10)}: ${l.weight} ${user?.weightUnit ?? "kg"}`).join("\n");
+    }
+
+    case "list_favorites": {
+      const [favorites, recent] = await Promise.all([
+        prisma.favorite.findMany({ where: { userId }, orderBy: { createdAt: "desc" } }),
+        prisma.foodEntry.findMany({
+          where: { userId, consumedAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+          orderBy: { consumedAt: "desc" },
+          take: 100,
+        }),
+      ]);
+      const seen = new Set<string>();
+      const recentUniq = recent.filter((e) => { const k = e.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 10);
+      const favLines = favorites.map((f) => `★ [fav:${f.id}] ${f.name}: ${f.calories} kcal (P:${f.protein} C:${f.carbs} F:${f.fat})${f.mealType ? ` — ${f.mealType}` : ""}`);
+      const recentLines = recentUniq.map((e) => `  ${e.name}: ${e.calories} kcal (P:${e.protein} C:${e.carbs} F:${e.fat}) — ${e.mealType}`);
+      return (favLines.length ? "Favorites:\n" + favLines.join("\n") + "\n\n" : "") +
+        (recentLines.length ? "Recent:\n" + recentLines.join("\n") : "No recent foods.");
+    }
+
+    case "save_favorite": {
+      const fav = await prisma.favorite.create({
+        data: {
+          userId,
+          name: args.name as string,
+          calories: Number(args.calories),
+          protein: args.protein != null ? Number(args.protein) : 0,
+          carbs: args.carbs != null ? Number(args.carbs) : 0,
+          fat: args.fat != null ? Number(args.fat) : 0,
+          mealType: args.mealType as string | undefined,
+        },
+      });
+      return `Saved "${fav.name}" as a favorite (id: ${fav.id})`;
     }
 
     default:

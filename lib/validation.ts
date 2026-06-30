@@ -44,3 +44,29 @@ export const dateQuerySchema = z
 
 export type CreateEntryInput = z.infer<typeof createEntrySchema>;
 export type UpdateEntryInput = z.infer<typeof updateEntrySchema>;
+
+export const goalsSchema = z.object({
+  dailyCalories: z.number().int().min(0).max(100000).nullable().optional(),
+  dailyProtein: z.number().min(0).max(100000).nullable().optional(),
+  dailyCarbs: z.number().min(0).max(100000).nullable().optional(),
+  dailyFat: z.number().min(0).max(100000).nullable().optional(),
+  weightUnit: z.enum(["kg", "lb"]).optional(),
+});
+
+export const weightSchema = z.object({
+  weight: z.number().positive("Weight must be positive").max(1000),
+  loggedAt: z.string().datetime({ offset: true }).optional(),
+});
+
+export const favoriteSchema = z.object({
+  name: z.string().min(1).max(200),
+  calories: z.number().int().min(0).max(100000),
+  protein: z.number().min(0).max(100000).optional().default(0),
+  carbs: z.number().min(0).max(100000).optional().default(0),
+  fat: z.number().min(0).max(100000).optional().default(0),
+  mealType: z.enum(MEAL_TYPES).optional(),
+});
+
+export type GoalsInput = z.infer<typeof goalsSchema>;
+export type WeightInput = z.infer<typeof weightSchema>;
+export type FavoriteInput = z.infer<typeof favoriteSchema>;

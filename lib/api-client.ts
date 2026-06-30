@@ -27,6 +27,56 @@ export interface Summary {
   byMeal: Record<string, Totals>;
 }
 
+export interface Goals {
+  dailyCalories: number | null;
+  dailyProtein: number | null;
+  dailyCarbs: number | null;
+  dailyFat: number | null;
+  weightUnit: string;
+}
+
+export interface WeightLog {
+  id: string;
+  weight: number;
+  loggedAt: string;
+  createdAt: string;
+}
+
+export interface Favorite {
+  id: string;
+  name: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  mealType?: string;
+  createdAt: string;
+}
+
+export interface RecentFood {
+  name: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  mealType: string;
+}
+
+export interface TrendDay {
+  date: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  count: number;
+}
+
+export interface Trends {
+  days: number;
+  nutrition: TrendDay[];
+  weight: { date: string; value: number }[];
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -61,6 +111,7 @@ export const api = {
   getApiKey: () => request<{ apiKey: string }>("/api/auth/apikey"),
   regenerateApiKey: () =>
     request<{ apiKey: string }>("/api/auth/apikey", { method: "POST" }),
+
   listEntries: (date: string) =>
     request<{ entries: FoodEntry[] }>(`/api/entries?date=${date}`),
   createEntry: (data: Partial<FoodEntry>) =>
@@ -76,4 +127,33 @@ export const api = {
   deleteEntry: (id: string) =>
     request(`/api/entries/${id}`, { method: "DELETE" }),
   summary: (date: string) => request<Summary>(`/api/summary?date=${date}`),
+
+  getGoals: () => request<{ goals: Goals }>("/api/goals"),
+  saveGoals: (data: Partial<Goals>) =>
+    request<{ goals: Goals }>("/api/goals", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  listWeight: () => request<{ logs: WeightLog[] }>("/api/weight"),
+  logWeight: (weight: number, loggedAt?: string) =>
+    request<{ log: WeightLog }>("/api/weight", {
+      method: "POST",
+      body: JSON.stringify({ weight, loggedAt }),
+    }),
+  deleteWeight: (id: string) =>
+    request(`/api/weight/${id}`, { method: "DELETE" }),
+
+  listFavorites: () =>
+    request<{ favorites: Favorite[]; recent: RecentFood[] }>("/api/favorites"),
+  saveFavorite: (data: Omit<Favorite, "id" | "createdAt">) =>
+    request<{ favorite: Favorite }>("/api/favorites", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  deleteFavorite: (id: string) =>
+    request(`/api/favorites/${id}`, { method: "DELETE" }),
+
+  getTrends: (days: 7 | 30) =>
+    request<Trends>(`/api/trends?days=${days}`),
 };

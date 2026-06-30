@@ -8,12 +8,45 @@ datasource db {
 }
 
 model User {
-  id           String      @id @default(cuid())
-  email        String      @unique
-  passwordHash String
-  apiKey       String      @unique @default(cuid())
-  createdAt    DateTime    @default(now())
-  entries      FoodEntry[]
+  id            String      @id @default(cuid())
+  email         String      @unique
+  passwordHash  String
+  apiKey        String      @unique @default(cuid())
+  dailyCalories Int?
+  dailyProtein  Float?
+  dailyCarbs    Float?
+  dailyFat      Float?
+  weightUnit    String      @default("kg")
+  createdAt     DateTime    @default(now())
+  entries       FoodEntry[]
+  weightLogs    WeightLog[]
+  favorites     Favorite[]
+}
+
+model WeightLog {
+  id        String   @id @default(cuid())
+  userId    String
+  weight    Float
+  loggedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loggedAt])
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  calories  Int
+  protein   Float    @default(0)
+  carbs     Float    @default(0)
+  fat       Float    @default(0)
+  mealType  String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model FoodEntry {
