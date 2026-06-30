@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+.env.local
+.next
+node_modules
+.prisma-engines
+*.db
+*.db-journal
+README.md
+Dockerfile
+.dockerignore
+docker-compose.yml
