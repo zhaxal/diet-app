@@ -27,6 +27,8 @@ export default function Dashboard() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [email, setEmail] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [copied, setCopied] = useState(false);
   const [date, setDate] = useState(todayStr());
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -50,6 +52,8 @@ export default function Dashboard() {
         const { user } = await api.me();
         setEmail(user.email);
         setReady(true);
+        const { apiKey: key } = await api.getApiKey();
+        setApiKey(key);
       } catch {
         router.replace("/login");
       }
@@ -92,6 +96,18 @@ export default function Dashboard() {
   async function logout() {
     await api.logout();
     router.replace("/login");
+  }
+
+  async function copyKey() {
+    await navigator.clipboard.writeText(apiKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function regenerateKey() {
+    if (!confirm("Regenerate API key? The old key will stop working immediately.")) return;
+    const { apiKey: newKey } = await api.regenerateApiKey();
+    setApiKey(newKey);
   }
 
   if (!ready) {
@@ -250,6 +266,39 @@ export default function Dashboard() {
             No entries for this day yet. Add your first meal above.
           </p>
         )}
+      </section>
+
+      {/* API key card */}
+      <section className="mt-6 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <h2 className="text-sm font-semibold text-slate-700">API / MCP key</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Use this key to connect Claude.ai via MCP or call the API directly.
+          It never expires.
+        </p>
+        <div className="mt-3 flex items-center gap-2">
+          <code className="flex-1 truncate rounded-lg bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700 ring-1 ring-slate-200">
+            {apiKey || "Loading…"}
+          </code>
+          <button
+            onClick={copyKey}
+            disabled={!apiKey}
+            className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+          <button
+            onClick={regenerateKey}
+            disabled={!apiKey}
+            className="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Regenerate
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-slate-400">
+          Claude.ai → Settings → Integrations → Add:{" "}
+          <span className="font-mono">https://your-app/api/mcp</span> with header{" "}
+          <span className="font-mono">Authorization: Bearer &lt;key&gt;</span>
+        </p>
       </section>
     </main>
   );

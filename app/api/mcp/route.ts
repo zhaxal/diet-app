@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { dayBounds } from "@/lib/http";
 
@@ -162,6 +161,16 @@ async function callTool(
   }
 }
 
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS });
+}
+
 export async function POST(req: NextRequest) {
   let body: {
     jsonrpc: string;
@@ -179,67 +188,106 @@ export async function POST(req: NextRequest) {
 
   // Notifications are fire-and-forget — no response body required.
   if (method.startsWith("notifications/")) {
-    return new NextResponse(null, { status: 204 });
+    return new NextResponse(null, { status: 204, headers: CORS });
   }
 
-  // initialize — no auth required.
+  // initialize and tools/list need no auth — Claude.ai discovers tools before
+  // the user has a chance to configure the Authorization header.
   if (method === "initialize") {
-    return rpcOk(id, {
-      protocolVersion: "2024-11-05",
-      capabilities: { tools: {} },
-      serverInfo: { name: "diet-tracker", version: "1.0.0" },
-    });
-  }
-
-  // Every other method requires a valid JWT.
-  const authHeader = req.headers.get("authorization");
-  let userId: string | null = null;
-  if (authHeader?.toLowerCase().startsWith("bearer ")) {
-    const payload = verifyToken(authHeader.slice(7).trim());
-    if (payload) userId = payload.sub;
-  }
-
-  if (!userId) {
-    return rpcError(
-      id,
-      -32001,
-      "Unauthorized — add your diet-app JWT as Authorization: Bearer <token>",
+    const clientVersion =
+      (params?.protocolVersion as string | undefined) ?? "2024-11-05";
+    return NextResponse.json(
+      {
+        jsonrpc: "2.0",
+        id: id ?? null,
+        result: {
+          protocolVersion: clientVersion,
+          capabilities: { tools: {} },
+          serverInfo: { name: "diet-tracker", version: "1.0.0" },
+        },
+      },
+      { headers: CORS },
     );
   }
 
   if (method === "tools/list") {
-    return rpcOk(id, { tools: TOOLS });
+    return NextResponse.json(
+      { jsonrpc: "2.0", id: id ?? null, result: { tools: TOOLS } },
+      { headers: CORS },
+    );
   }
 
+  // tools/call requires an API key.
   if (method === "tools/call") {
+    const authHeader = req.headers.get("authorization");
+    let userId: string | null = null;
+    if (authHeader?.toLowerCase().startsWith("bearer ")) {
+      const key = authHeader.slice(7).trim();
+      const user = await prisma.user.findUnique({
+        where: { apiKey: key },
+        select: { id: true },
+      });
+      if (user) userId = user.id;
+    }
+
+    if (!userId) {
+      return NextResponse.json(
+        {
+          jsonrpc: "2.0",
+          id: id ?? null,
+          error: {
+            code: -32001,
+            message:
+              "Unauthorized — set Authorization: Bearer <key> in the MCP integration header (copy your key from the dashboard)",
+          },
+        },
+        { headers: CORS },
+      );
+    }
+
     const { name, arguments: args = {} } = (params ?? {}) as {
       name: string;
       arguments?: Record<string, unknown>;
     };
     try {
       const text = await callTool(name, args, userId);
-      return rpcOk(id, { content: [{ type: "text", text }] });
+      return NextResponse.json(
+        { jsonrpc: "2.0", id: id ?? null, result: { content: [{ type: "text", text }] } },
+        { headers: CORS },
+      );
     } catch (e) {
-      return rpcOk(id, {
-        content: [
-          {
-            type: "text",
-            text: e instanceof Error ? e.message : "Tool execution failed",
+      return NextResponse.json(
+        {
+          jsonrpc: "2.0",
+          id: id ?? null,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: e instanceof Error ? e.message : "Tool execution failed",
+              },
+            ],
+            isError: true,
           },
-        ],
-        isError: true,
-      });
+        },
+        { headers: CORS },
+      );
     }
   }
 
-  return rpcError(id, -32601, `Method not found: ${method}`);
+  return NextResponse.json(
+    {
+      jsonrpc: "2.0",
+      id: id ?? null,
+      error: { code: -32601, message: `Method not found: ${method}` },
+    },
+    { headers: CORS },
+  );
 }
 
-// Simple health-check for clients that GET the endpoint before connecting.
 export async function GET() {
-  return NextResponse.json({
-    name: "diet-tracker",
-    version: "1.0.0",
-    protocol: "MCP 2024-11-05",
-  });
+  return NextResponse.json(
+    { name: "diet-tracker", version: "1.0.0", protocol: "MCP 2024-11-05" },
+    { headers: CORS },
+  );
 }
