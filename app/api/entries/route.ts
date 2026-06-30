@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { createEntrySchema, dateQuerySchema } from "@/lib/validation";
-import { jsonError, zodError, unauthorized, dayBounds } from "@/lib/http";
+import { jsonError, zodError, unauthorized } from "@/lib/http";
+import { dayBoundsInTz } from "@/lib/time";
 
 // GET /api/entries?date=YYYY-MM-DD — list the current user's entries,
 // optionally filtered to a single calendar day. Newest first.
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
   if (dateParam) {
     const parsed = dateQuerySchema.safeParse(dateParam);
     if (!parsed.success) return zodError(parsed.error);
-    const { start, end } = dayBounds(parsed.data);
+    const { start, end } = dayBoundsInTz(parsed.data, user.timezone);
     where = { ...where, consumedAt: { gte: start, lt: end } };
   }
 

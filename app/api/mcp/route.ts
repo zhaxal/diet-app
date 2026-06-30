@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { dayBounds } from "@/lib/http";
+import { dayBoundsInTz, todayInTz, isValidTimeZone } from "@/lib/time";
 
 const TOOLS = [
   {
@@ -63,6 +63,7 @@ const TOOLS = [
         dailyCarbs: { type: ["number", "null"], description: "grams" },
         dailyFat: { type: ["number", "null"], description: "grams" },
         weightUnit: { type: "string", enum: ["kg", "lb"] },
+        timezone: { type: "string", description: "IANA timezone, e.g. 'Asia/Almaty'" },
       },
     },
   },
@@ -118,14 +119,11 @@ function rpcError(id: unknown, code: number, message: string) {
   });
 }
 
-function todayDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 async function callTool(
   name: string,
   args: Record<string, unknown>,
   userId: string,
+  tz: string,
 ): Promise<string> {
   switch (name) {
     case "log_meal": {
@@ -151,8 +149,8 @@ async function callTool(
     }
 
     case "get_summary": {
-      const date = (args.date as string | undefined) ?? todayDate();
-      const { start, end } = dayBounds(date);
+      const date = (args.date as string | undefined) ?? todayInTz(tz);
+      const { start, end } = dayBoundsInTz(date, tz);
       const [entries, user] = await Promise.all([
         prisma.foodEntry.findMany({ where: { userId, consumedAt: { gte: start, lt: end } } }),
         prisma.user.findUnique({
@@ -177,8 +175,8 @@ async function callTool(
     }
 
     case "list_entries": {
-      const date = (args.date as string | undefined) ?? todayDate();
-      const { start, end } = dayBounds(date);
+      const date = (args.date as string | undefined) ?? todayInTz(tz);
+      const { start, end } = dayBoundsInTz(date, tz);
       const entries = await prisma.foodEntry.findMany({
         where: { userId, consumedAt: { gte: start, lt: end } },
         orderBy: { consumedAt: "asc" },
@@ -197,6 +195,9 @@ async function callTool(
     }
 
     case "set_goals": {
+      if (args.timezone != null && !isValidTimeZone(args.timezone as string)) {
+        throw new Error(`Invalid timezone: ${args.timezone}`);
+      }
       await prisma.user.update({ where: { id: userId }, data: args as Record<string, unknown> });
       const parts = [];
       if (args.dailyCalories != null) parts.push(`calories: ${args.dailyCalories} kcal`);
@@ -204,6 +205,7 @@ async function callTool(
       if (args.dailyCarbs != null) parts.push(`carbs: ${args.dailyCarbs}g`);
       if (args.dailyFat != null) parts.push(`fat: ${args.dailyFat}g`);
       if (args.weightUnit) parts.push(`weight unit: ${args.weightUnit}`);
+      if (args.timezone) parts.push(`timezone: ${args.timezone}`);
       return `Goals updated — ${parts.join(", ")}`;
     }
 
@@ -334,12 +336,16 @@ export async function POST(req: NextRequest) {
         : null);
 
     let userId: string | null = null;
+    let userTz = "UTC";
     if (rawKey) {
       const user = await prisma.user.findUnique({
         where: { apiKey: rawKey },
-        select: { id: true },
+        select: { id: true, timezone: true },
       });
-      if (user) userId = user.id;
+      if (user) {
+        userId = user.id;
+        userTz = user.timezone;
+      }
     }
 
     if (!userId) {
@@ -362,7 +368,7 @@ export async function POST(req: NextRequest) {
       arguments?: Record<string, unknown>;
     };
     try {
-      const text = await callTool(name, args, userId);
+      const text = await callTool(name, args, userId, userTz);
       return NextResponse.json(
         { jsonrpc: "2.0", id: id ?? null, result: { content: [{ type: "text", text }] } },
         { headers: CORS },

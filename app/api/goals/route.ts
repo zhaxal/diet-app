@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
       dailyCarbs: true,
       dailyFat: true,
       weightUnit: true,
+      timezone: true,
     },
   });
 
@@ -45,6 +46,7 @@ export async function PUT(req: NextRequest) {
       dailyCarbs: true,
       dailyFat: true,
       weightUnit: true,
+      timezone: true,
     },
   });
 

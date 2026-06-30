@@ -34,11 +34,11 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
-        <h1 className="text-2xl font-semibold">
+      <div className="surface w-full max-w-sm p-8">
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
           {isLogin ? "Welcome back" : "Create your account"}
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           {isLogin
             ? "Log in to track your meals."
             : "Start tracking calories and macros."}
@@ -46,7 +46,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
               Email
             </label>
             <input
@@ -54,12 +54,12 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 dark:border-white/10"
               placeholder="you@example.com"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
               Password
             </label>
             <input
@@ -68,7 +68,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
               minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 dark:border-white/10"
               placeholder="At least 8 characters"
             />
           </div>

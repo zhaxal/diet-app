@@ -17,6 +17,7 @@ model User {
   dailyCarbs    Float?
   dailyFat      Float?
   weightUnit    String      @default("kg")
+  timezone      String      @default("UTC")
   createdAt     DateTime    @default(now())
   entries       FoodEntry[]
   weightLogs    WeightLog[]
