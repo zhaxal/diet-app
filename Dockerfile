@@ -57,12 +57,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 # Copy Prisma schema + migrations so we can run migrate deploy on startup.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-# Copy the generated client (includes query engine binary).
-COPY --from=deps   --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=deps   --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-# Copy the Prisma CLI so migrate deploy runs without downloading anything.
-# .bin/prisma is a symlink; copy the whole package so wasm files resolve correctly.
-COPY --from=deps   --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+# Copy full node_modules from deps so Prisma CLI and all transitive deps are present.
+COPY --from=deps   --chown=nextjs:nodejs /app/node_modules ./node_modules
 
 # Persist the SQLite database in a named volume mounted at /app/data.
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
