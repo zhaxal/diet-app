@@ -58,6 +58,9 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   logout: () => request("/api/auth/logout", { method: "POST" }),
+  getApiKey: () => request<{ apiKey: string }>("/api/auth/apikey"),
+  regenerateApiKey: () =>
+    request<{ apiKey: string }>("/api/auth/apikey", { method: "POST" }),
   listEntries: (date: string) =>
     request<{ entries: FoodEntry[] }>(`/api/entries?date=${date}`),
   createEntry: (data: Partial<FoodEntry>) =>

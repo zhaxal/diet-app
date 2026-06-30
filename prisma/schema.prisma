@@ -11,6 +11,7 @@ model User {
   id           String      @id @default(cuid())
   email        String      @unique
   passwordHash String
+  apiKey       String      @unique @default(cuid())
   createdAt    DateTime    @default(now())
   entries      FoodEntry[]
 }
