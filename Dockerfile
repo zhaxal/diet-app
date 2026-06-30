@@ -51,7 +51,7 @@ RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 # Copy standalone output and static assets produced by Next.js.
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public 2>/dev/null || true
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 # Copy Prisma schema + migrations so we can run migrate deploy on startup.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
