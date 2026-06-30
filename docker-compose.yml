@@ -4,13 +4,17 @@ services:
     expose:
       - "3000"
     environment:
-      # Set a strong secret in production (or use a .env file).
-      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
-      DATABASE_URL: file:/app/data/diet.db
+      JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: ${DATABASE_URL:-file:/app/data/diet.db}
     volumes:
-      # Persist the SQLite database across container restarts.
       - diet_data:/app/data
+    networks:
+      - coolify
     restart: unless-stopped
 
 volumes:
   diet_data:
+
+networks:
+  coolify:
+    external: true
