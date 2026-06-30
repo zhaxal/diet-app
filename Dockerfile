@@ -44,6 +44,8 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 # Override via -e DATABASE_URL=... or docker-compose env; defaults to /app/data.
 ENV DATABASE_URL="file:/app/data/diet.db"
+# Give npm/npx a writable home — the system user has no real home dir.
+ENV HOME=/tmp
 
 # Run as a non-root user.
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
@@ -58,6 +60,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 # Copy the generated client (includes query engine binary).
 COPY --from=deps   --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=deps   --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+# Copy the Prisma CLI so migrate deploy runs without downloading anything.
+COPY --from=deps   --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+COPY --from=deps   --chown=nextjs:nodejs /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 
 # Persist the SQLite database in a named volume mounted at /app/data.
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
@@ -70,4 +75,4 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Run migrations then start the server.
-CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node server.js"]
