@@ -1,8 +1,8 @@
 services:
   app:
     build: .
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       # Set a strong secret in production (or use a .env file).
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
