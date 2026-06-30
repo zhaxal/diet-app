@@ -17,6 +17,7 @@ export const AUTH_COOKIE = "diet_token";
 export interface AuthUser {
   id: string;
   email: string;
+  timezone: string;
 }
 
 interface TokenPayload {
@@ -35,7 +36,7 @@ export async function verifyPassword(
   return bcrypt.compare(password, hash);
 }
 
-export function signToken(user: AuthUser): string {
+export function signToken(user: { id: string; email: string }): string {
   const payload: TokenPayload = { sub: user.id, email: user.email };
   return jwt.sign(payload, JWT_SECRET as string, { expiresIn: TOKEN_TTL });
 }
@@ -75,7 +76,7 @@ export async function getUserFromRequest(
   // Confirm the user still exists (e.g. not deleted after the token was issued).
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    select: { id: true, email: true },
+    select: { id: true, email: true, timezone: true },
   });
 
   return user;

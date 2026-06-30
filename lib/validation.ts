@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidTimeZone } from "./time";
 
 export const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
 export type MealType = (typeof MEAL_TYPES)[number];
@@ -51,6 +52,10 @@ export const goalsSchema = z.object({
   dailyCarbs: z.number().min(0).max(100000).nullable().optional(),
   dailyFat: z.number().min(0).max(100000).nullable().optional(),
   weightUnit: z.enum(["kg", "lb"]).optional(),
+  timezone: z
+    .string()
+    .refine(isValidTimeZone, "Invalid IANA timezone")
+    .optional(),
 });
 
 export const weightSchema = z.object({

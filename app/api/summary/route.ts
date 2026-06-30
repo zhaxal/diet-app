@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { dateQuerySchema, MEAL_TYPES } from "@/lib/validation";
-import { zodError, unauthorized, dayBounds } from "@/lib/http";
+import { zodError, unauthorized } from "@/lib/http";
+import { dayBoundsInTz, todayInTz } from "@/lib/time";
 
 interface Totals {
   calories: number;
@@ -27,13 +28,12 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorized();
 
   const dateParam =
-    req.nextUrl.searchParams.get("date") ??
-    new Date().toISOString().slice(0, 10);
+    req.nextUrl.searchParams.get("date") ?? todayInTz(user.timezone);
 
   const parsed = dateQuerySchema.safeParse(dateParam);
   if (!parsed.success) return zodError(parsed.error);
 
-  const { start, end } = dayBounds(parsed.data);
+  const { start, end } = dayBoundsInTz(parsed.data, user.timezone);
   const entries = await prisma.foodEntry.findMany({
     where: { userId: user.id, consumedAt: { gte: start, lt: end } },
   });

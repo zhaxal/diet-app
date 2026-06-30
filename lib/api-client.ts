@@ -33,6 +33,7 @@ export interface Goals {
   dailyCarbs: number | null;
   dailyFat: number | null;
   weightUnit: string;
+  timezone: string;
 }
 
 export interface WeightLog {

@@ -22,7 +22,13 @@ import TrendsCard from "@/components/TrendsCard";
 const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 type Meal = (typeof MEALS)[number];
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// Local calendar date (YYYY-MM-DD) in the browser's timezone — not UTC.
+const todayStr = () => {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+};
 
 const emptyForm = {
   name: "",
@@ -45,7 +51,7 @@ export default function Dashboard() {
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
 
-  const [goals, setGoals] = useState<Goals>({ dailyCalories: null, dailyProtein: null, dailyCarbs: null, dailyFat: null, weightUnit: "kg" });
+  const [goals, setGoals] = useState<Goals>({ dailyCalories: null, dailyProtein: null, dailyCarbs: null, dailyFat: null, weightUnit: "kg", timezone: "UTC" });
   const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [recent, setRecent] = useState<RecentFood[]>([]);
@@ -80,6 +86,16 @@ export default function Dashboard() {
         setApiKey(key);
         setOrigin(window.location.origin);
         setReady(true);
+
+        // Keep the saved timezone in sync with the browser so day boundaries
+        // (web + Claude/MCP) match the user's local day.
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (browserTz && browserTz !== g.timezone) {
+          api
+            .saveGoals({ timezone: browserTz })
+            .then(({ goals: updated }) => setGoals(updated))
+            .catch(() => {});
+        }
       } catch {
         router.replace("/login");
       }
