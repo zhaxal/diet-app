@@ -16,12 +16,30 @@ model User {
   dailyProtein  Float?
   dailyCarbs    Float?
   dailyFat      Float?
+  dailyFiber    Float?
+  dailySugar    Float?
+  dailySodium   Float?
   weightUnit    String      @default("kg")
   timezone      String      @default("UTC")
+  sex           String?
+  birthYear     Int?
+  heightCm      Float?
   createdAt     DateTime    @default(now())
   entries       FoodEntry[]
   weightLogs    WeightLog[]
   favorites     Favorite[]
+  templates     MealTemplate[]
+}
+
+model MealTemplate {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  items     String // JSON array of entry items
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model WeightLog {
@@ -43,6 +61,9 @@ model Favorite {
   protein   Float    @default(0)
   carbs     Float    @default(0)
   fat       Float    @default(0)
+  fiber     Float    @default(0)
+  sugar     Float    @default(0)
+  sodium    Float    @default(0)
   mealType  String?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -58,6 +79,9 @@ model FoodEntry {
   protein    Float    @default(0) // grams
   carbs      Float    @default(0) // grams
   fat        Float    @default(0) // grams
+  fiber      Float    @default(0) // grams
+  sugar      Float    @default(0) // grams
+  sodium     Float    @default(0) // mg
   mealType   String // breakfast | lunch | dinner | snack
   consumedAt DateTime @default(now())
   createdAt  DateTime @default(now())

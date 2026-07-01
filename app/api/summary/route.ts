@@ -10,6 +10,9 @@ interface Totals {
   protein: number;
   carbs: number;
   fat: number;
+  fiber: number;
+  sugar: number;
+  sodium: number;
   count: number;
 }
 
@@ -18,6 +21,9 @@ const emptyTotals = (): Totals => ({
   protein: 0,
   carbs: 0,
   fat: 0,
+  fiber: 0,
+  sugar: 0,
+  sodium: 0,
   count: 0,
 });
 
@@ -50,6 +56,9 @@ export async function GET(req: NextRequest) {
       t.protein += e.protein;
       t.carbs += e.carbs;
       t.fat += e.fat;
+      t.fiber += e.fiber;
+      t.sugar += e.sugar;
+      t.sodium += e.sodium;
       t.count += 1;
     }
   }

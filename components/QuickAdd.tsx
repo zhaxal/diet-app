@@ -17,7 +17,7 @@ export default function QuickAdd({ favorites, recent, selectedMeal, selectedDate
   const toast = useToast();
   const [logging, setLogging] = useState<string | null>(null);
 
-  async function logFood(food: { name: string; calories: number; protein: number; carbs: number; fat: number; mealType?: string }) {
+  async function logFood(food: Favorite | RecentFood) {
     setLogging(food.name);
     try {
       await api.createEntry({
@@ -26,6 +26,9 @@ export default function QuickAdd({ favorites, recent, selectedMeal, selectedDate
         protein: food.protein,
         carbs: food.carbs,
         fat: food.fat,
+        fiber: food.fiber,
+        sugar: food.sugar,
+        sodium: food.sodium,
         mealType: (food.mealType ?? selectedMeal) as "breakfast" | "lunch" | "dinner" | "snack",
         consumedAt: new Date(`${selectedDate}T12:00:00`).toISOString(),
       });

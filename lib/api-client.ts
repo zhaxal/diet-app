@@ -1,6 +1,8 @@
 // Thin fetch wrapper for the browser UI. Relies on the httpOnly auth cookie
 // (sent automatically for same-origin requests), so no token handling here.
 
+export type Meal = "breakfast" | "lunch" | "dinner" | "snack";
+
 export interface FoodEntry {
   id: string;
   name: string;
@@ -8,7 +10,10 @@ export interface FoodEntry {
   protein: number;
   carbs: number;
   fat: number;
-  mealType: "breakfast" | "lunch" | "dinner" | "snack";
+  fiber: number;
+  sugar: number;
+  sodium: number;
+  mealType: Meal;
   consumedAt: string;
   createdAt: string;
 }
@@ -18,6 +23,9 @@ export interface Totals {
   protein: number;
   carbs: number;
   fat: number;
+  fiber: number;
+  sugar: number;
+  sodium: number;
   count: number;
 }
 
@@ -32,8 +40,14 @@ export interface Goals {
   dailyProtein: number | null;
   dailyCarbs: number | null;
   dailyFat: number | null;
+  dailyFiber: number | null;
+  dailySugar: number | null;
+  dailySodium: number | null;
   weightUnit: string;
   timezone: string;
+  sex: "male" | "female" | null;
+  birthYear: number | null;
+  heightCm: number | null;
 }
 
 export interface WeightLog {
@@ -43,24 +57,42 @@ export interface WeightLog {
   createdAt: string;
 }
 
-export interface Favorite {
-  id: string;
-  name: string;
+export interface FoodMacros {
   calories: number;
   protein: number;
   carbs: number;
   fat: number;
+  fiber: number;
+  sugar: number;
+  sodium: number;
+}
+
+export interface Favorite extends FoodMacros {
+  id: string;
+  name: string;
   mealType?: string;
   createdAt: string;
 }
 
-export interface RecentFood {
+export interface RecentFood extends FoodMacros {
   name: string;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
   mealType: string;
+}
+
+export interface FoodSearchResult extends FoodMacros {
+  name: string;
+}
+
+export interface TemplateItem extends FoodMacros {
+  name: string;
+  mealType: Meal;
+}
+
+export interface MealTemplate {
+  id: string;
+  name: string;
+  createdAt: string;
+  items: TemplateItem[];
 }
 
 export interface TrendDay {
@@ -157,4 +189,28 @@ export const api = {
 
   getTrends: (days: 7 | 30) =>
     request<Trends>(`/api/trends?days=${days}`),
+
+  copyDay: (from: string, to: string) =>
+    request<{ copied: number }>("/api/entries/copy", {
+      method: "POST",
+      body: JSON.stringify({ from, to }),
+    }),
+
+  listTemplates: () =>
+    request<{ templates: MealTemplate[] }>("/api/templates"),
+  saveTemplate: (name: string, items: TemplateItem[]) =>
+    request<{ template: MealTemplate }>("/api/templates", {
+      method: "POST",
+      body: JSON.stringify({ name, items }),
+    }),
+  applyTemplate: (id: string, date: string) =>
+    request<{ added: number }>(`/api/templates/${id}/apply`, {
+      method: "POST",
+      body: JSON.stringify({ date }),
+    }),
+  deleteTemplate: (id: string) =>
+    request(`/api/templates/${id}`, { method: "DELETE" }),
+
+  searchFoods: (q: string) =>
+    request<{ results: FoodSearchResult[] }>(`/api/foods/search?q=${encodeURIComponent(q)}`),
 };

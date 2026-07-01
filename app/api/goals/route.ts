@@ -15,8 +15,14 @@ export async function GET(req: NextRequest) {
       dailyProtein: true,
       dailyCarbs: true,
       dailyFat: true,
+      dailyFiber: true,
+      dailySugar: true,
+      dailySodium: true,
       weightUnit: true,
       timezone: true,
+      sex: true,
+      birthYear: true,
+      heightCm: true,
     },
   });
 
@@ -45,8 +51,14 @@ export async function PUT(req: NextRequest) {
       dailyProtein: true,
       dailyCarbs: true,
       dailyFat: true,
+      dailyFiber: true,
+      dailySugar: true,
+      dailySodium: true,
       weightUnit: true,
       timezone: true,
+      sex: true,
+      birthYear: true,
+      heightCm: true,
     },
   });
 

@@ -16,6 +16,9 @@ const TOOLS = [
         protein: { type: "number", minimum: 0, description: "grams" },
         carbs: { type: "number", minimum: 0, description: "grams" },
         fat: { type: "number", minimum: 0, description: "grams" },
+        fiber: { type: "number", minimum: 0, description: "grams" },
+        sugar: { type: "number", minimum: 0, description: "grams" },
+        sodium: { type: "number", minimum: 0, description: "milligrams" },
         mealType: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack"] },
         consumedAt: { type: "string", format: "date-time", description: "ISO 8601 timestamp — defaults to now" },
       },
@@ -62,6 +65,9 @@ const TOOLS = [
         dailyProtein: { type: ["number", "null"], description: "grams" },
         dailyCarbs: { type: ["number", "null"], description: "grams" },
         dailyFat: { type: ["number", "null"], description: "grams" },
+        dailyFiber: { type: ["number", "null"], description: "grams" },
+        dailySugar: { type: ["number", "null"], description: "grams" },
+        dailySodium: { type: ["number", "null"], description: "milligrams" },
         weightUnit: { type: "string", enum: ["kg", "lb"] },
         timezone: { type: "string", description: "IANA timezone, e.g. 'Asia/Almaty'" },
       },
@@ -101,6 +107,9 @@ const TOOLS = [
         protein: { type: "number", minimum: 0 },
         carbs: { type: "number", minimum: 0 },
         fat: { type: "number", minimum: 0 },
+        fiber: { type: "number", minimum: 0 },
+        sugar: { type: "number", minimum: 0 },
+        sodium: { type: "number", minimum: 0, description: "milligrams" },
         mealType: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack"] },
       },
     },
@@ -135,6 +144,9 @@ async function callTool(
           protein: args.protein != null ? Number(args.protein) : 0,
           carbs: args.carbs != null ? Number(args.carbs) : 0,
           fat: args.fat != null ? Number(args.fat) : 0,
+          fiber: args.fiber != null ? Number(args.fiber) : 0,
+          sugar: args.sugar != null ? Number(args.sugar) : 0,
+          sodium: args.sodium != null ? Number(args.sodium) : 0,
           mealType: args.mealType as string,
           consumedAt: args.consumedAt
             ? new Date(args.consumedAt as string)
@@ -155,22 +167,32 @@ async function callTool(
         prisma.foodEntry.findMany({ where: { userId, consumedAt: { gte: start, lt: end } } }),
         prisma.user.findUnique({
           where: { id: userId },
-          select: { dailyCalories: true, dailyProtein: true, dailyCarbs: true, dailyFat: true },
+          select: {
+            dailyCalories: true, dailyProtein: true, dailyCarbs: true, dailyFat: true,
+            dailyFiber: true, dailySugar: true, dailySodium: true,
+          },
         }),
       ]);
       const t = entries.reduce(
-        (a, e) => ({ calories: a.calories + e.calories, protein: a.protein + e.protein, carbs: a.carbs + e.carbs, fat: a.fat + e.fat, count: a.count + 1 }),
-        { calories: 0, protein: 0, carbs: 0, fat: 0, count: 0 },
+        (a, e) => ({
+          calories: a.calories + e.calories, protein: a.protein + e.protein,
+          carbs: a.carbs + e.carbs, fat: a.fat + e.fat, fiber: a.fiber + e.fiber,
+          sugar: a.sugar + e.sugar, sodium: a.sodium + e.sodium, count: a.count + 1,
+        }),
+        { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0, count: 0 },
       );
       const r = (n: number) => Math.round(n * 10) / 10;
-      const goalLine = (label: string, val: number, goal: number | null) =>
-        goal ? ` ${label}: ${r(val)} / ${goal} (${Math.round((val / goal) * 100)}%)` : ` ${label}: ${r(val)}`;
+      const line = (label: string, val: number, goal: number | null, unit: string) =>
+        (goal ? ` ${label}: ${r(val)} / ${goal} (${Math.round((val / goal) * 100)}%)` : ` ${label}: ${r(val)}`) + unit;
       return (
         `Summary for ${date} (${t.count} entr${t.count === 1 ? "y" : "ies"})\n` +
-        goalLine("Calories", t.calories, user?.dailyCalories ?? null) + " kcal\n" +
-        goalLine("Protein", t.protein, user?.dailyProtein ?? null) + "g\n" +
-        goalLine("Carbs", t.carbs, user?.dailyCarbs ?? null) + "g\n" +
-        goalLine("Fat", t.fat, user?.dailyFat ?? null) + "g"
+        line("Calories", t.calories, user?.dailyCalories ?? null, " kcal") + "\n" +
+        line("Protein", t.protein, user?.dailyProtein ?? null, "g") + "\n" +
+        line("Carbs", t.carbs, user?.dailyCarbs ?? null, "g") + "\n" +
+        line("Fat", t.fat, user?.dailyFat ?? null, "g") + "\n" +
+        line("Fiber", t.fiber, user?.dailyFiber ?? null, "g") + "\n" +
+        line("Sugar", t.sugar, user?.dailySugar ?? null, "g") + "\n" +
+        line("Sodium", t.sodium, user?.dailySodium ?? null, "mg")
       );
     }
 
@@ -257,6 +279,9 @@ async function callTool(
           protein: args.protein != null ? Number(args.protein) : 0,
           carbs: args.carbs != null ? Number(args.carbs) : 0,
           fat: args.fat != null ? Number(args.fat) : 0,
+          fiber: args.fiber != null ? Number(args.fiber) : 0,
+          sugar: args.sugar != null ? Number(args.sugar) : 0,
+          sodium: args.sodium != null ? Number(args.sodium) : 0,
           mealType: args.mealType as string | undefined,
         },
       });
