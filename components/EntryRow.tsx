@@ -21,6 +21,9 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
     protein: entry.protein.toString(),
     carbs: entry.carbs.toString(),
     fat: entry.fat.toString(),
+    fiber: entry.fiber.toString(),
+    sugar: entry.sugar.toString(),
+    sodium: entry.sodium.toString(),
     mealType: entry.mealType,
   });
   const [saving, setSaving] = useState(false);
@@ -34,6 +37,9 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
         protein: Number(form.protein),
         carbs: Number(form.carbs),
         fat: Number(form.fat),
+        fiber: Number(form.fiber),
+        sugar: Number(form.sugar),
+        sodium: Number(form.sodium),
         mealType: form.mealType as FoodEntry["mealType"],
       });
       onUpdate(updated);
@@ -68,6 +74,11 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
           ))}
         </div>
         <div className="flex gap-2">
+          {(["fiber", "sugar", "sodium"] as const).map((k) => (
+            <input key={k} type="number" min={0} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} placeholder={k} className={`w-0 flex-1 tnum text-xs ${inputCls}`} />
+          ))}
+        </div>
+        <div className="flex gap-2">
           <button onClick={save} disabled={saving} className="flex-1 rounded-lg bg-emerald-600 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
             {saving ? "Saving…" : "Save"}
           </button>
@@ -85,6 +96,13 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
         <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{entry.name}</p>
         <p className="text-xs text-slate-500 dark:text-slate-400 tnum">
           {entry.calories} kcal · P{entry.protein} · C{entry.carbs} · F{entry.fat}
+          {(entry.fiber > 0 || entry.sugar > 0 || entry.sodium > 0) && (
+            <span className="text-slate-400 dark:text-slate-500">
+              {entry.fiber > 0 ? ` · fiber ${entry.fiber}` : ""}
+              {entry.sugar > 0 ? ` · sugar ${entry.sugar}` : ""}
+              {entry.sodium > 0 ? ` · Na ${entry.sodium}mg` : ""}
+            </span>
+          )}
         </p>
       </div>
       <div className="flex shrink-0 gap-3">

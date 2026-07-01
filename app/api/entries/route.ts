@@ -46,18 +46,12 @@ export async function POST(req: NextRequest) {
   const parsed = createEntrySchema.safeParse(body);
   if (!parsed.success) return zodError(parsed.error);
 
-  const { name, calories, protein, carbs, fat, mealType, consumedAt } =
-    parsed.data;
+  const { consumedAt, ...rest } = parsed.data;
 
   const entry = await prisma.foodEntry.create({
     data: {
       userId: user.id,
-      name,
-      calories,
-      protein,
-      carbs,
-      fat,
-      mealType,
+      ...rest,
       consumedAt: consumedAt ? new Date(consumedAt) : undefined,
     },
   });

@@ -16,6 +16,9 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
     dailyProtein: goals.dailyProtein?.toString() ?? "",
     dailyCarbs: goals.dailyCarbs?.toString() ?? "",
     dailyFat: goals.dailyFat?.toString() ?? "",
+    dailyFiber: goals.dailyFiber?.toString() ?? "",
+    dailySugar: goals.dailySugar?.toString() ?? "",
+    dailySodium: goals.dailySodium?.toString() ?? "",
     weightUnit: goals.weightUnit,
   });
   const [saving, setSaving] = useState(false);
@@ -28,6 +31,9 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
         dailyProtein: form.dailyProtein ? Number(form.dailyProtein) : null,
         dailyCarbs: form.dailyCarbs ? Number(form.dailyCarbs) : null,
         dailyFat: form.dailyFat ? Number(form.dailyFat) : null,
+        dailyFiber: form.dailyFiber ? Number(form.dailyFiber) : null,
+        dailySugar: form.dailySugar ? Number(form.dailySugar) : null,
+        dailySodium: form.dailySodium ? Number(form.dailySodium) : null,
         weightUnit: form.weightUnit as "kg" | "lb",
       });
       onGoalsChange(updated);
@@ -49,6 +55,9 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
             ["Protein", "dailyProtein", "g"],
             ["Carbs", "dailyCarbs", "g"],
             ["Fat", "dailyFat", "g"],
+            ["Fiber", "dailyFiber", "g"],
+            ["Sugar", "dailySugar", "g"],
+            ["Sodium", "dailySodium", "mg"],
           ] as [string, keyof typeof form, string][]
         ).map(([label, key, unit]) => (
           <label key={key} className="block">
