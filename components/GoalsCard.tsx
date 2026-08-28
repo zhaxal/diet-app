@@ -46,49 +46,49 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
   }
 
   return (
-    <section className="surface p-5">
-      <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Daily goals</h2>
-      <div className="grid grid-cols-2 gap-2.5">
+    <section className="panel p-3">
+      <h2 className="mb-2 text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+        Daily goals
+      </h2>
+      <div className="grid grid-cols-4 gap-1.5">
         {(
           [
-            ["Calories", "dailyCalories", "kcal"],
-            ["Protein", "dailyProtein", "g"],
-            ["Carbs", "dailyCarbs", "g"],
-            ["Fat", "dailyFat", "g"],
-            ["Fiber", "dailyFiber", "g"],
-            ["Sugar", "dailySugar", "g"],
-            ["Sodium", "dailySodium", "mg"],
-          ] as [string, keyof typeof form, string][]
-        ).map(([label, key, unit]) => (
+            ["kcal", "dailyCalories"],
+            ["protein", "dailyProtein"],
+            ["carbs", "dailyCarbs"],
+            ["fat", "dailyFat"],
+            ["fiber", "dailyFiber"],
+            ["sugar", "dailySugar"],
+            ["Na mg", "dailySodium"],
+          ] as [string, keyof typeof form][]
+        ).map(([label, key]) => (
           <label key={key} className="block">
-            <span className="text-xs text-slate-500 dark:text-slate-400">{label} ({unit})</span>
+            <span className="text-2xs uppercase tracking-wider text-ink-faint">
+              {label}
+            </span>
             <input
               type="number"
               min={0}
               value={form[key]}
               onChange={(e) => setForm({ ...form, [key]: e.target.value })}
               placeholder="—"
-              className="mt-0.5 w-full rounded-xl border border-slate-300 bg-transparent px-3 py-2 text-sm tnum outline-none focus:border-emerald-500 dark:border-white/10"
+              className="field num mt-0.5 w-full text-right"
             />
           </label>
         ))}
+        <label className="block">
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">unit</span>
+          <select
+            value={form.weightUnit}
+            onChange={(e) => setForm({ ...form, weightUnit: e.target.value })}
+            className="field mt-0.5 w-full [&>option]:text-black"
+          >
+            <option value="kg">kg</option>
+            <option value="lb">lb</option>
+          </select>
+        </label>
       </div>
-      <label className="mt-2.5 block">
-        <span className="text-xs text-slate-500 dark:text-slate-400">Weight unit</span>
-        <select
-          value={form.weightUnit}
-          onChange={(e) => setForm({ ...form, weightUnit: e.target.value })}
-          className="mt-0.5 w-full rounded-xl border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-emerald-500 dark:border-white/10 [&>option]:text-slate-900"
-        >
-          <option value="kg">kg</option>
-          <option value="lb">lb</option>
-        </select>
-      </label>
-      <button
-        onClick={save}
-        disabled={saving}
-        className="mt-4 w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-60"
-      >
+      <button onClick={save} disabled={saving} className="btn btn-primary mt-2.5 w-full">
         {saving ? "Saving…" : "Save goals"}
       </button>
     </section>

@@ -71,42 +71,41 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
     }
   }
 
-  const inputCls =
-    "w-full rounded-xl border border-slate-300 bg-transparent px-3 py-2 text-sm tnum outline-none focus:border-emerald-500 dark:border-white/10 [&>option]:text-slate-900";
+  const inputCls = "field num mt-0.5 w-full [&>option]:text-black";
 
   return (
-    <section className="surface p-5">
-      <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">TDEE calculator</h2>
-      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Estimate maintenance calories and suggested goals (Mifflin–St Jeor).</p>
+    <section className="panel p-3">
+      <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">TDEE calculator</h2>
+      <p className="mt-1 text-2xs text-ink-faint">Mifflin–St Jeor maintenance estimate.</p>
 
-      <div className="mt-3 grid grid-cols-2 gap-2.5">
+      <div className="mt-2 grid grid-cols-3 gap-1.5">
         <label className="block">
-          <span className="text-xs text-slate-500 dark:text-slate-400">Sex</span>
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">Sex</span>
           <select value={sex} onChange={(e) => setSex(e.target.value as "male" | "female")} className={inputCls}>
             <option value="male">Male</option>
             <option value="female">Female</option>
           </select>
         </label>
         <label className="block">
-          <span className="text-xs text-slate-500 dark:text-slate-400">Age</span>
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">Age</span>
           <input type="number" min={1} value={age} onChange={(e) => setAge(e.target.value)} className={inputCls} />
         </label>
         <label className="block">
-          <span className="text-xs text-slate-500 dark:text-slate-400">Height ({lb ? "in" : "cm"})</span>
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">Height ({lb ? "in" : "cm"})</span>
           <input type="number" min={1} value={height} onChange={(e) => setHeight(e.target.value)} className={inputCls} />
         </label>
         <label className="block">
-          <span className="text-xs text-slate-500 dark:text-slate-400">Weight ({goals.weightUnit})</span>
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">Weight ({goals.weightUnit})</span>
           <input type="number" min={1} value={weightInput} onChange={(e) => setWeightInput(e.target.value)} className={inputCls} />
         </label>
         <label className="block">
-          <span className="text-xs text-slate-500 dark:text-slate-400">Activity</span>
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">Activity</span>
           <select value={factor} onChange={(e) => setFactor(Number(e.target.value))} className={inputCls}>
             {ACTIVITY.map((a) => <option key={a.factor} value={a.factor}>{a.label}</option>)}
           </select>
         </label>
         <label className="block">
-          <span className="text-xs text-slate-500 dark:text-slate-400">Goal</span>
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">Goal</span>
           <select value={goalDir} onChange={(e) => setGoalDir(e.target.value as "lose" | "maintain" | "gain")} className={inputCls}>
             <option value="lose">Lose (−500)</option>
             <option value="maintain">Maintain</option>
@@ -116,15 +115,15 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
       </div>
 
       {valid ? (
-        <div className="mt-4 rounded-xl bg-slate-50 p-4 text-center dark:bg-white/5">
-          <div className="text-3xl font-bold tnum text-slate-900 dark:text-white">{target}<span className="ml-1 text-sm font-normal text-slate-400">kcal/day</span></div>
-          <div className="mt-1 text-xs tnum text-slate-500 dark:text-slate-400">P {protein}g · C {carbs}g · F {fat}g</div>
-          <button onClick={apply} disabled={saving} className="mt-3 w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-60">
+        <div className="mt-2.5 rounded border p-3 text-center" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+          <div className="num text-3xl font-bold text-ink">{target}<span className="ml-1 text-2xs uppercase tracking-wider text-ink-faint">kcal/day</span></div>
+          <div className="num mt-1 text-2xs text-ink-dim">P {protein}g · C {carbs}g · F {fat}g</div>
+          <button onClick={apply} disabled={saving} className="btn btn-primary mt-2.5 w-full">
             {saving ? "Applying…" : "Apply as goals"}
           </button>
         </div>
       ) : (
-        <p className="mt-4 text-center text-xs text-slate-400">Fill in age, height, and weight to calculate.</p>
+        <p className="mt-2.5 text-center text-2xs text-ink-faint">Fill in age, height, and weight to calculate.</p>
       )}
     </section>
   );

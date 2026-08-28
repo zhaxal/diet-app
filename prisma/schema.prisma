@@ -29,6 +29,31 @@ model User {
   weightLogs    WeightLog[]
   favorites     Favorite[]
   templates     MealTemplate[]
+  products      Product[]
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  brand        String?
+  barcode      String?
+  basis        String   @default("100g") // "100g" | "100ml"
+  calories     Float // per 100 g/ml
+  protein      Float    @default(0)
+  carbs        Float    @default(0)
+  fat          Float    @default(0)
+  fiber        Float    @default(0)
+  sugar        Float    @default(0)
+  sodium       Float    @default(0) // mg
+  servingGrams Float? // one serving = N grams, when the label states it
+  source       String   @default("manual") // manual | mcp | openfoodfacts
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, barcode])
+  @@index([userId, name])
 }
 
 model MealTemplate {
@@ -83,6 +108,8 @@ model FoodEntry {
   sugar      Float    @default(0) // grams
   sodium     Float    @default(0) // mg
   mealType   String // breakfast | lunch | dinner | snack
+  productId  String? // provenance: logged from a saved Product
+  quantityGrams Float? // grams consumed, when logged from a Product
   consumedAt DateTime @default(now())
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)

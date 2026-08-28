@@ -31,13 +31,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium shadow-lg ring-1 backdrop-blur transition-all
+            className={`pointer-events-auto flex items-center gap-2 rounded px-4 py-2.5 text-sm font-medium shadow-lg ring-1 backdrop-blur transition-all
               ${
                 t.kind === "success"
-                  ? "bg-emerald-600/95 text-white ring-emerald-400/30"
+                  ? "bg-accent text-white ring-transparent"
                   : t.kind === "error"
-                    ? "bg-rose-600/95 text-white ring-rose-400/30"
-                    : "bg-slate-800/95 text-white ring-white/10"
+                    ? "bg-over text-white ring-transparent"
+                    : "bg-ink text-panel ring-transparent"
               }`}
             style={{ animation: "toastIn 0.25s ease" }}
           >

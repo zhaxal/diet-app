@@ -14,6 +14,8 @@ export interface FoodEntry {
   sugar: number;
   sodium: number;
   mealType: Meal;
+  productId?: string | null;
+  quantityGrams?: number | null;
   consumedAt: string;
   createdAt: string;
 }
@@ -82,6 +84,24 @@ export interface RecentFood extends FoodMacros {
 export interface FoodSearchResult extends FoodMacros {
   name: string;
 }
+
+// Reference nutrition data, stored per 100 g/ml.
+export interface Product extends FoodMacros {
+  id: string;
+  name: string;
+  brand: string | null;
+  barcode: string | null;
+  basis: "100g" | "100ml";
+  servingGrams: number | null;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ProductInput = Omit<
+  Product,
+  "id" | "source" | "createdAt" | "updatedAt"
+> & { brand?: string | null; barcode?: string | null; servingGrams?: number | null };
 
 export interface TemplateItem extends FoodMacros {
   name: string;
@@ -213,4 +233,44 @@ export const api = {
 
   searchFoods: (q: string) =>
     request<{ results: FoodSearchResult[] }>(`/api/foods/search?q=${encodeURIComponent(q)}`),
+
+  listProducts: (q?: string) =>
+    request<{ products: Product[] }>(
+      `/api/products${q ? `?q=${encodeURIComponent(q)}` : ""}`,
+    ),
+  saveProduct: (data: Partial<ProductInput>) =>
+    request<{ product: Product }>("/api/products", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateProduct: (id: string, data: Partial<ProductInput>) =>
+    request<{ product: Product }>(`/api/products/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteProduct: (id: string) =>
+    request(`/api/products/${id}`, { method: "DELETE" }),
+
+  // Log a saved product by weight — macros scale from the per-100 basis.
+  logProduct: (p: Product, grams: number, mealType: Meal, date: string) => {
+    const f = grams / 100;
+    const r1 = (n: number) => Math.round(n * f * 10) / 10;
+    return request<{ entry: FoodEntry }>("/api/entries", {
+      method: "POST",
+      body: JSON.stringify({
+        name: p.brand ? `${p.name} (${p.brand})` : p.name,
+        calories: Math.round(p.calories * f),
+        protein: r1(p.protein),
+        carbs: r1(p.carbs),
+        fat: r1(p.fat),
+        fiber: r1(p.fiber),
+        sugar: r1(p.sugar),
+        sodium: Math.round(p.sodium * f),
+        mealType,
+        productId: p.id,
+        quantityGrams: grams,
+        consumedAt: new Date(`${date}T12:00:00`).toISOString(),
+      }),
+    });
+  },
 };

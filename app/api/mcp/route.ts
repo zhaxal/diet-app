@@ -1,26 +1,189 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { dayBoundsInTz, todayInTz, isValidTimeZone } from "@/lib/time";
+import {
+  dayBoundsInTz,
+  todayInTz,
+  isValidTimeZone,
+  localDateInTz,
+  zonedWallToUtc,
+} from "@/lib/time";
+
+const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
+
+// Values arrive from a model reading a photographed nutrition label, so they
+// may be strings ("250") rather than numbers. Coerce, then reject anything
+// that still is not finite — never let NaN reach Prisma.
+const num = (max = 1000000) =>
+  z.coerce.number().finite("must be a finite number").min(0).max(max);
+const optNum = (max = 1000000) => num(max).optional().default(0);
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+// A bare "YYYY-MM-DD" parses as midnight UTC, which lands on the wrong local
+// day for most timezones. Anchor date-only values at local noon instead; full
+// ISO timestamps already carry an offset and are passed through.
+function resolveConsumedAt(value: string | undefined, tz: string): Date {
+  if (!value) return new Date();
+  if (DATE_ONLY.test(value)) return zonedWallToUtc(value, "12:00:00.000", tz);
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) throw new Error(`Invalid consumedAt: ${value}`);
+  return d;
+}
+
+// ── Tool argument schemas ─────────────────────────────────────────────────
+
+const logMealSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    calories: num(100000).optional(),
+    protein: optNum(),
+    carbs: optNum(),
+    fat: optNum(),
+    fiber: optNum(),
+    sugar: optNum(),
+    sodium: optNum(),
+    mealType: z.enum(MEALS),
+    productId: z.string().min(1).optional(),
+    grams: num(100000).optional(),
+    consumedAt: z.string().min(1).optional(),
+  })
+  .refine((a) => a.productId != null || (a.name != null && a.calories != null), {
+    message:
+      "Provide either productId (+ grams) or both name and calories",
+  });
+
+const productArgsSchema = z.object({
+  name: z.string().min(1).max(200),
+  brand: z.string().max(200).nullish(),
+  barcode: z.string().max(64).nullish(),
+  basis: z.enum(["100g", "100ml"]).optional().default("100g"),
+  calories: num(100000),
+  protein: optNum(),
+  carbs: optNum(),
+  fat: optNum(),
+  fiber: optNum(),
+  sugar: optNum(),
+  sodium: optNum(),
+  servingGrams: num(100000).optional(),
+});
+
+const dateArgSchema = z.object({ date: z.string().regex(DATE_ONLY).optional() });
+const idArgSchema = z.object({ id: z.string().min(1) });
+const searchArgSchema = z.object({ query: z.string().max(200).optional() });
+
+// set_goals writes straight to the User row, so the accepted keys are an
+// explicit allow-list — never the raw argument object.
+const goalsArgsSchema = z.object({
+  dailyCalories: num(100000).nullish(),
+  dailyProtein: num().nullish(),
+  dailyCarbs: num().nullish(),
+  dailyFat: num().nullish(),
+  dailyFiber: num().nullish(),
+  dailySugar: num().nullish(),
+  dailySodium: num().nullish(),
+  weightUnit: z.enum(["kg", "lb"]).optional(),
+  timezone: z.string().optional(),
+  sex: z.enum(["male", "female"]).nullish(),
+  birthYear: z.coerce.number().int().min(1900).max(2100).nullish(),
+  heightCm: num(300).nullish(),
+});
+
+const weightArgsSchema = z.object({
+  weight: z.coerce.number().finite("must be a finite number").positive("Weight must be positive").max(1000),
+  loggedAt: z.string().min(1).optional(),
+});
+
+const favoriteArgsSchema = z.object({
+  name: z.string().min(1).max(200),
+  calories: num(100000),
+  protein: optNum(),
+  carbs: optNum(),
+  fat: optNum(),
+  fiber: optNum(),
+  sugar: optNum(),
+  sodium: optNum(),
+  mealType: z.enum(MEALS).optional(),
+});
+
+const ARG_SCHEMAS: Record<string, z.ZodTypeAny> = {
+  log_meal: logMealSchema,
+  get_summary: dateArgSchema,
+  list_entries: dateArgSchema,
+  delete_entry: idArgSchema,
+  set_goals: goalsArgsSchema,
+  log_weight: weightArgsSchema,
+  list_weight: z.object({}).passthrough(),
+  list_favorites: z.object({}).passthrough(),
+  save_favorite: favoriteArgsSchema,
+  save_product: productArgsSchema,
+  search_products: searchArgSchema,
+  delete_product: idArgSchema,
+};
+
+const nutrientProps = {
+  protein: { type: "number", minimum: 0, description: "grams" },
+  carbs: { type: "number", minimum: 0, description: "grams" },
+  fat: { type: "number", minimum: 0, description: "grams" },
+  fiber: { type: "number", minimum: 0, description: "grams" },
+  sugar: { type: "number", minimum: 0, description: "grams" },
+  sodium: { type: "number", minimum: 0, description: "milligrams" },
+};
 
 const TOOLS = [
   {
-    name: "log_meal",
+    name: "save_product",
     description:
-      "Log a food entry to the diet tracker. Estimate calories and macros from the food name if the user doesn't provide them.",
+      "Save a product's nutrition label to the user's permanent catalog, with values per 100g/100ml. ALWAYS call this when you read a nutrition or macro table from a photo — it means the user never has to photograph that product again. Re-saving the same barcode (or same name+brand) updates the existing entry instead of duplicating it. After saving, use log_meal with the returned productId and the grams eaten.",
     inputSchema: {
       type: "object",
-      required: ["name", "calories", "mealType"],
+      required: ["name", "calories"],
       properties: {
-        name: { type: "string", description: "Food name, e.g. 'Oatmeal with berries'" },
-        calories: { type: "integer", minimum: 0, description: "kcal" },
-        protein: { type: "number", minimum: 0, description: "grams" },
-        carbs: { type: "number", minimum: 0, description: "grams" },
-        fat: { type: "number", minimum: 0, description: "grams" },
-        fiber: { type: "number", minimum: 0, description: "grams" },
-        sugar: { type: "number", minimum: 0, description: "grams" },
-        sodium: { type: "number", minimum: 0, description: "milligrams" },
+        name: { type: "string", description: "Product name, e.g. 'Greek yoghurt 2%'" },
+        brand: { type: "string", description: "Brand or manufacturer, if shown" },
+        barcode: { type: "string", description: "EAN/UPC digits, if visible" },
+        basis: { type: "string", enum: ["100g", "100ml"], description: "Whether the label values are per 100g or per 100ml. Default 100g." },
+        calories: { type: "number", minimum: 0, description: "kcal per 100g/100ml" },
+        ...nutrientProps,
+        servingGrams: { type: "number", minimum: 0, description: "Grams in one serving, if the label states it" },
+      },
+    },
+  },
+  {
+    name: "search_products",
+    description:
+      "Search the user's saved product catalog by name or brand. Call this BEFORE asking the user to photograph a label — the product may already be saved. Returns productIds for use with log_meal.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Name or brand substring. Omit to list everything." },
+      },
+    },
+  },
+  {
+    name: "delete_product",
+    description: "Remove a product from the saved catalog by its ID.",
+    inputSchema: {
+      type: "object",
+      required: ["id"],
+      properties: { id: { type: "string", description: "Product ID from search_products" } },
+    },
+  },
+  {
+    name: "log_meal",
+    description:
+      "Log a food entry. Preferred: pass productId (from save_product/search_products) plus grams — the macros are then computed from the stored label, so you do not need to do any arithmetic. Otherwise pass name and calories directly, estimating macros from the food name.",
+    inputSchema: {
+      type: "object",
+      required: ["mealType"],
+      properties: {
+        productId: { type: "string", description: "Saved product to log from. With this, macros are computed server-side." },
+        grams: { type: "number", minimum: 0, description: "Grams eaten. Used with productId. Defaults to one serving, or 100g." },
+        name: { type: "string", description: "Food name, when not logging from a product" },
+        calories: { type: "integer", minimum: 0, description: "kcal, when not logging from a product" },
+        ...nutrientProps,
         mealType: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack"] },
-        consumedAt: { type: "string", format: "date-time", description: "ISO 8601 timestamp — defaults to now" },
+        consumedAt: { type: "string", description: "ISO 8601 timestamp, or YYYY-MM-DD for a whole day. Defaults to now." },
       },
     },
   },
@@ -29,9 +192,7 @@ const TOOLS = [
     description: "Get daily nutrition totals (calories + macros) for a date, including progress toward daily goals if set.",
     inputSchema: {
       type: "object",
-      properties: {
-        date: { type: "string", description: "YYYY-MM-DD — defaults to today" },
-      },
+      properties: { date: { type: "string", description: "YYYY-MM-DD — defaults to today" } },
     },
   },
   {
@@ -39,9 +200,7 @@ const TOOLS = [
     description: "List all food entries logged for a date.",
     inputSchema: {
       type: "object",
-      properties: {
-        date: { type: "string", description: "YYYY-MM-DD — defaults to today" },
-      },
+      properties: { date: { type: "string", description: "YYYY-MM-DD — defaults to today" } },
     },
   },
   {
@@ -50,9 +209,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       required: ["id"],
-      properties: {
-        id: { type: "string", description: "Entry ID returned by log_meal or list_entries" },
-      },
+      properties: { id: { type: "string", description: "Entry ID returned by log_meal or list_entries" } },
     },
   },
   {
@@ -81,7 +238,7 @@ const TOOLS = [
       required: ["weight"],
       properties: {
         weight: { type: "number", description: "Weight value (in your weight unit)" },
-        loggedAt: { type: "string", format: "date-time", description: "Defaults to now" },
+        loggedAt: { type: "string", description: "ISO 8601 timestamp or YYYY-MM-DD — defaults to now" },
       },
     },
   },
@@ -92,33 +249,24 @@ const TOOLS = [
   },
   {
     name: "list_favorites",
-    description: "List saved favorites and recently eaten foods. Use these IDs/names when logging recurring meals.",
+    description: "List saved favorites and recently eaten foods. Use these when logging recurring meals.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "save_favorite",
-    description: "Save a food as a favorite for quick re-logging.",
+    description: "Save a ready-to-log food (absolute values for one portion) as a favorite. For a packaged product's label, use save_product instead.",
     inputSchema: {
       type: "object",
       required: ["name", "calories"],
       properties: {
         name: { type: "string" },
         calories: { type: "integer", minimum: 0 },
-        protein: { type: "number", minimum: 0 },
-        carbs: { type: "number", minimum: 0 },
-        fat: { type: "number", minimum: 0 },
-        fiber: { type: "number", minimum: 0 },
-        sugar: { type: "number", minimum: 0 },
-        sodium: { type: "number", minimum: 0, description: "milligrams" },
+        ...nutrientProps,
         mealType: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack"] },
       },
     },
   },
 ];
-
-function rpcOk(id: unknown, result: unknown) {
-  return NextResponse.json({ jsonrpc: "2.0", id: id ?? null, result });
-}
 
 function rpcError(id: unknown, code: number, message: string) {
   return NextResponse.json({
@@ -128,40 +276,157 @@ function rpcError(id: unknown, code: number, message: string) {
   });
 }
 
+const MACRO_KEYS = ["protein", "carbs", "fat", "fiber", "sugar", "sodium"] as const;
+
 async function callTool(
   name: string,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   userId: string,
   tz: string,
 ): Promise<string> {
+  const schema = ARG_SCHEMAS[name];
+  if (!schema) throw new Error(`Unknown tool: ${name}`);
+
+  const parsed = schema.safeParse(rawArgs);
+  if (!parsed.success) {
+    // Name the offending fields so the model can correct itself rather than
+    // silently giving up (or asking for another photo).
+    const detail = parsed.error.issues
+      .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+      .join("; ");
+    throw new Error(`Invalid arguments for ${name} — ${detail}`);
+  }
+
   switch (name) {
-    case "log_meal": {
-      const entry = await prisma.foodEntry.create({
-        data: {
-          userId,
-          name: args.name as string,
-          calories: Number(args.calories),
-          protein: args.protein != null ? Number(args.protein) : 0,
-          carbs: args.carbs != null ? Number(args.carbs) : 0,
-          fat: args.fat != null ? Number(args.fat) : 0,
-          fiber: args.fiber != null ? Number(args.fiber) : 0,
-          sugar: args.sugar != null ? Number(args.sugar) : 0,
-          sodium: args.sodium != null ? Number(args.sodium) : 0,
-          mealType: args.mealType as string,
-          consumedAt: args.consumedAt
-            ? new Date(args.consumedAt as string)
-            : new Date(),
-        },
-      });
+    case "save_product": {
+      const a = parsed.data as z.infer<typeof productArgsSchema>;
+      const data = {
+        name: a.name,
+        brand: a.brand ?? null,
+        barcode: a.barcode ?? null,
+        basis: a.basis,
+        calories: a.calories,
+        protein: a.protein,
+        carbs: a.carbs,
+        fat: a.fat,
+        fiber: a.fiber,
+        sugar: a.sugar,
+        sodium: a.sodium,
+        servingGrams: a.servingGrams ?? null,
+        source: "mcp",
+      };
+
+      // Re-reading the same label should update, not duplicate.
+      const existing = a.barcode
+        ? await prisma.product.findFirst({ where: { userId, barcode: a.barcode } })
+        : await prisma.product.findFirst({
+            where: { userId, name: a.name, brand: a.brand ?? null },
+          });
+
+      const p = existing
+        ? await prisma.product.update({ where: { id: existing.id }, data })
+        : await prisma.product.create({ data: { ...data, userId } });
+
       return (
-        `Logged "${entry.name}" — ${entry.calories} kcal` +
+        `${existing ? "Updated" : "Saved"} product "${p.name}"${p.brand ? ` (${p.brand})` : ""} — ` +
+        `per ${p.basis}: ${p.calories} kcal · P ${p.protein}g · C ${p.carbs}g · F ${p.fat}g` +
+        `${p.servingGrams ? ` · serving ${p.servingGrams}g` : ""}\n` +
+        `productId: ${p.id} — log it with log_meal { productId, grams, mealType }.`
+      );
+    }
+
+    case "search_products": {
+      const { query } = parsed.data as z.infer<typeof searchArgSchema>;
+      const products = await prisma.product.findMany({
+        where: {
+          userId,
+          ...(query
+            ? {
+                OR: [
+                  { name: { contains: query } },
+                  { brand: { contains: query } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 50,
+      });
+      if (products.length === 0) {
+        return query
+          ? `No saved products match "${query}". Ask for a photo of the label, then call save_product.`
+          : "No products saved yet. Photograph a nutrition label and call save_product.";
+      }
+      return products
+        .map(
+          (p) =>
+            `[${p.id}] ${p.name}${p.brand ? ` — ${p.brand}` : ""} · per ${p.basis}: ` +
+            `${p.calories} kcal, P${p.protein} C${p.carbs} F${p.fat}` +
+            `${p.servingGrams ? ` · serving ${p.servingGrams}g` : ""}`,
+        )
+        .join("\n");
+    }
+
+    case "delete_product": {
+      const { id } = parsed.data as z.infer<typeof idArgSchema>;
+      const p = await prisma.product.findFirst({ where: { id, userId } });
+      if (!p) throw new Error(`Product ${id} not found`);
+      await prisma.product.delete({ where: { id } });
+      return `Deleted product "${p.name}"`;
+    }
+
+    case "log_meal": {
+      const a = parsed.data as z.infer<typeof logMealSchema>;
+      const consumedAt = resolveConsumedAt(a.consumedAt, tz);
+
+      let entryData: Record<string, unknown>;
+      let provenance = "";
+
+      if (a.productId) {
+        const p = await prisma.product.findFirst({
+          where: { id: a.productId, userId },
+        });
+        if (!p) throw new Error(`Product ${a.productId} not found`);
+
+        // Default to one serving when the label defines it, else 100g.
+        const grams = a.grams ?? p.servingGrams ?? 100;
+        const f = grams / 100;
+        entryData = {
+          name: p.brand ? `${p.name} (${p.brand})` : p.name,
+          calories: Math.round(p.calories * f),
+          protein: Math.round(p.protein * f * 10) / 10,
+          carbs: Math.round(p.carbs * f * 10) / 10,
+          fat: Math.round(p.fat * f * 10) / 10,
+          fiber: Math.round(p.fiber * f * 10) / 10,
+          sugar: Math.round(p.sugar * f * 10) / 10,
+          sodium: Math.round(p.sodium * f),
+          productId: p.id,
+          quantityGrams: grams,
+        };
+        provenance = ` — ${grams}${p.basis === "100ml" ? "ml" : "g"} of saved product`;
+      } else {
+        entryData = {
+          name: a.name!,
+          calories: Math.round(a.calories!),
+          ...Object.fromEntries(MACRO_KEYS.map((k) => [k, a[k]])),
+        };
+      }
+
+      const entry = await prisma.foodEntry.create({
+        data: { userId, ...entryData, mealType: a.mealType, consumedAt } as never,
+      });
+
+      // Report the local date so a wrong-day write is visible immediately.
+      return (
+        `Logged "${entry.name}"${provenance} — ${entry.calories} kcal` +
         ` · P ${entry.protein}g · C ${entry.carbs}g · F ${entry.fat}g` +
-        ` (${entry.mealType}, id: ${entry.id})`
+        ` (${entry.mealType} on ${localDateInTz(entry.consumedAt, tz)}, id: ${entry.id})`
       );
     }
 
     case "get_summary": {
-      const date = (args.date as string | undefined) ?? todayInTz(tz);
+      const { date: d } = parsed.data as z.infer<typeof dateArgSchema>;
+      const date = d ?? todayInTz(tz);
       const { start, end } = dayBoundsInTz(date, tz);
       const [entries, user] = await Promise.all([
         prisma.foodEntry.findMany({ where: { userId, consumedAt: { gte: start, lt: end } } }),
@@ -174,10 +439,10 @@ async function callTool(
         }),
       ]);
       const t = entries.reduce(
-        (a, e) => ({
-          calories: a.calories + e.calories, protein: a.protein + e.protein,
-          carbs: a.carbs + e.carbs, fat: a.fat + e.fat, fiber: a.fiber + e.fiber,
-          sugar: a.sugar + e.sugar, sodium: a.sodium + e.sodium, count: a.count + 1,
+        (acc, e) => ({
+          calories: acc.calories + e.calories, protein: acc.protein + e.protein,
+          carbs: acc.carbs + e.carbs, fat: acc.fat + e.fat, fiber: acc.fiber + e.fiber,
+          sugar: acc.sugar + e.sugar, sodium: acc.sodium + e.sodium, count: acc.count + 1,
         }),
         { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0, count: 0 },
       );
@@ -197,7 +462,8 @@ async function callTool(
     }
 
     case "list_entries": {
-      const date = (args.date as string | undefined) ?? todayInTz(tz);
+      const { date: d } = parsed.data as z.infer<typeof dateArgSchema>;
+      const date = d ?? todayInTz(tz);
       const { start, end } = dayBoundsInTz(date, tz);
       const entries = await prisma.foodEntry.findMany({
         where: { userId, consumedAt: { gte: start, lt: end } },
@@ -210,37 +476,34 @@ async function callTool(
     }
 
     case "delete_entry": {
-      const entry = await prisma.foodEntry.findFirst({ where: { id: args.id as string, userId } });
-      if (!entry) throw new Error(`Entry ${args.id} not found`);
-      await prisma.foodEntry.delete({ where: { id: args.id as string } });
+      const { id } = parsed.data as z.infer<typeof idArgSchema>;
+      const entry = await prisma.foodEntry.findFirst({ where: { id, userId } });
+      if (!entry) throw new Error(`Entry ${id} not found`);
+      await prisma.foodEntry.delete({ where: { id } });
       return `Deleted "${entry.name}"`;
     }
 
     case "set_goals": {
-      if (args.timezone != null && !isValidTimeZone(args.timezone as string)) {
-        throw new Error(`Invalid timezone: ${args.timezone}`);
+      const a = parsed.data as z.infer<typeof goalsArgsSchema>;
+      if (a.timezone != null && !isValidTimeZone(a.timezone)) {
+        throw new Error(`Invalid timezone: ${a.timezone}`);
       }
-      await prisma.user.update({ where: { id: userId }, data: args as Record<string, unknown> });
-      const parts = [];
-      if (args.dailyCalories != null) parts.push(`calories: ${args.dailyCalories} kcal`);
-      if (args.dailyProtein != null) parts.push(`protein: ${args.dailyProtein}g`);
-      if (args.dailyCarbs != null) parts.push(`carbs: ${args.dailyCarbs}g`);
-      if (args.dailyFat != null) parts.push(`fat: ${args.dailyFat}g`);
-      if (args.weightUnit) parts.push(`weight unit: ${args.weightUnit}`);
-      if (args.timezone) parts.push(`timezone: ${args.timezone}`);
-      return `Goals updated — ${parts.join(", ")}`;
+      // Only keys the caller actually supplied, and only allow-listed ones.
+      const data = Object.fromEntries(
+        Object.entries(a).filter(([, v]) => v !== undefined),
+      );
+      if (Object.keys(data).length === 0) throw new Error("No goal fields provided");
+      await prisma.user.update({ where: { id: userId }, data });
+      return `Goals updated — ${Object.entries(data).map(([k, v]) => `${k}: ${v}`).join(", ")}`;
     }
 
     case "log_weight": {
+      const a = parsed.data as z.infer<typeof weightArgsSchema>;
       const log = await prisma.weightLog.create({
-        data: {
-          userId,
-          weight: Number(args.weight),
-          loggedAt: args.loggedAt ? new Date(args.loggedAt as string) : undefined,
-        },
+        data: { userId, weight: a.weight, loggedAt: resolveConsumedAt(a.loggedAt, tz) },
       });
       const user = await prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } });
-      return `Logged ${log.weight} ${user?.weightUnit ?? "kg"} on ${log.loggedAt.toISOString().slice(0, 10)} (id: ${log.id})`;
+      return `Logged ${log.weight} ${user?.weightUnit ?? "kg"} on ${localDateInTz(log.loggedAt, tz)} (id: ${log.id})`;
     }
 
     case "list_weight": {
@@ -250,7 +513,7 @@ async function callTool(
         prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } }),
       ]);
       if (logs.length === 0) return "No weight logs in the last 30 days.";
-      return logs.map((l) => `[${l.id}] ${l.loggedAt.toISOString().slice(0, 10)}: ${l.weight} ${user?.weightUnit ?? "kg"}`).join("\n");
+      return logs.map((l) => `[${l.id}] ${localDateInTz(l.loggedAt, tz)}: ${l.weight} ${user?.weightUnit ?? "kg"}`).join("\n");
     }
 
     case "list_favorites": {
@@ -271,20 +534,8 @@ async function callTool(
     }
 
     case "save_favorite": {
-      const fav = await prisma.favorite.create({
-        data: {
-          userId,
-          name: args.name as string,
-          calories: Number(args.calories),
-          protein: args.protein != null ? Number(args.protein) : 0,
-          carbs: args.carbs != null ? Number(args.carbs) : 0,
-          fat: args.fat != null ? Number(args.fat) : 0,
-          fiber: args.fiber != null ? Number(args.fiber) : 0,
-          sugar: args.sugar != null ? Number(args.sugar) : 0,
-          sodium: args.sodium != null ? Number(args.sodium) : 0,
-          mealType: args.mealType as string | undefined,
-        },
-      });
+      const a = parsed.data as z.infer<typeof favoriteArgsSchema>;
+      const fav = await prisma.favorite.create({ data: { userId, ...a } });
       return `Saved "${fav.name}" as a favorite (id: ${fav.id})`;
     }
 
