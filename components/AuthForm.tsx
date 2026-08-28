@@ -34,11 +34,11 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="surface w-full max-w-sm p-8">
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
+      <div className="panel w-full max-w-sm p-8">
+        <h1 className="text-2xl font-semibold text-ink">
           {isLogin ? "Welcome back" : "Create your account"}
         </h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-1 text-sm text-ink-dim">
           {isLogin
             ? "Log in to track your meals."
             : "Start tracking calories and macros."}
@@ -46,7 +46,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+            <label className="block text-sm font-medium text-ink">
               Email
             </label>
             <input
@@ -54,12 +54,12 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 dark:border-white/10"
+              className="mt-1 w-full rounded-lg border border-line bg-transparent px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent"
               placeholder="you@example.com"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+            <label className="block text-sm font-medium text-ink">
               Password
             </label>
             <input
@@ -68,7 +68,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
               minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 dark:border-white/10"
+              className="mt-1 w-full rounded-lg border border-line bg-transparent px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent"
               placeholder="At least 8 characters"
             />
           </div>
@@ -82,7 +82,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-60"
+            className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition disabled:opacity-60"
           >
             {loading
               ? "Please wait…"
@@ -92,18 +92,18 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-slate-500">
+        <p className="mt-6 text-center text-sm text-ink-dim">
           {isLogin ? (
             <>
               No account?{" "}
-              <Link href="/register" className="text-emerald-600 hover:underline">
+              <Link href="/register" className="text-accent hover:underline">
                 Sign up
               </Link>
             </>
           ) : (
             <>
               Already have an account?{" "}
-              <Link href="/login" className="text-emerald-600 hover:underline">
+              <Link href="/login" className="text-accent hover:underline">
                 Log in
               </Link>
             </>

@@ -21,8 +21,8 @@ export default function BottomNav({ active, onChange }: { active: Tab; onChange:
   const tabs: Tab[] = ["today", "trends", "weight", "settings"];
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/70 bg-white/80 backdrop-blur-lg dark:border-white/10 dark:bg-[#131c2e]/80"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      className="fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur-lg"
+      style={{ borderColor: "var(--line)", background: "color-mix(in srgb, var(--panel) 88%, transparent)", paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="mx-auto flex max-w-2xl items-stretch justify-around">
         {tabs.map((t) => {
@@ -32,7 +32,7 @@ export default function BottomNav({ active, onChange }: { active: Tab; onChange:
               key={t}
               onClick={() => onChange(t)}
               className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
-                isActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"
+                isActive ? "text-accent" : "text-ink-faint"
               }`}
             >
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive ? 2.4 : 1.8} strokeLinecap="round" strokeLinejoin="round">

@@ -22,15 +22,15 @@ export default function ThemeToggle() {
   }
 
   return (
-    <div className="inline-flex rounded-full bg-slate-100 p-0.5 dark:bg-white/10">
+    <div className="inline-flex rounded-full bg-panel-2 p-0.5">
       {(["light", "dark"] as Theme[]).map((t) => (
         <button
           key={t}
           onClick={() => apply(t)}
           className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
             theme === t
-              ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
-              : "text-slate-500 dark:text-slate-400"
+              ? "bg-ink text-panel"
+              : "text-ink-dim"
           }`}
         >
           {t === "light" ? "☀️" : "🌙"}

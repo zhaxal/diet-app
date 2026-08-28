@@ -22,6 +22,9 @@ const entryBase = {
   sugar: nutrient(),
   sodium: nutrient(), // mg
   mealType: z.enum(MEAL_TYPES),
+  // Provenance when the entry came from a saved Product.
+  productId: z.string().min(1).nullable().optional(),
+  quantityGrams: z.number().positive().max(100000).nullable().optional(),
   // ISO 8601 timestamp; defaults to "now" server-side when omitted.
   consumedAt: z.string().datetime({ offset: true }).optional(),
 };
@@ -124,3 +127,31 @@ export type WeightInput = z.infer<typeof weightSchema>;
 export type FavoriteInput = z.infer<typeof favoriteSchema>;
 export type TemplateInput = z.infer<typeof templateSchema>;
 export type TemplateItem = z.infer<typeof templateItemSchema>;
+
+// ── Products ──────────────────────────────────────────────────────────────
+// Reference nutrition data, stored per 100 g/ml. `coerce` is deliberate: the
+// MCP path receives numbers read off a photographed label, where a model may
+// send "250" or even "250 kcal" rather than 250.
+const per100 = () => z.coerce.number().min(0).max(1000000).optional().default(0);
+
+export const productSchema = z.object({
+  name: z.string().min(1, "Product name is required").max(200),
+  brand: z.string().max(200).nullable().optional(),
+  barcode: z.string().max(64).nullable().optional(),
+  basis: z.enum(["100g", "100ml"]).optional().default("100g"),
+  calories: z.coerce.number().min(0).max(100000),
+  protein: per100(),
+  carbs: per100(),
+  fat: per100(),
+  fiber: per100(),
+  sugar: per100(),
+  sodium: per100(), // mg
+  servingGrams: z.coerce.number().positive().max(100000).nullable().optional(),
+});
+
+export const updateProductSchema = productSchema.partial().refine(
+  (d) => Object.keys(d).length > 0,
+  { message: "At least one field must be provided" },
+);
+
+export type ProductInput = z.infer<typeof productSchema>;

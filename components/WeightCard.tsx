@@ -44,19 +44,19 @@ export default function WeightCard({ logs, weightUnit, onLogsChange }: Props) {
   const delta = latest && first ? latest.weight - first.weight : 0;
 
   return (
-    <section className="surface p-5">
+    <section className="panel p-5">
       <div className="flex items-end justify-between mb-4">
         <div>
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Weight</h2>
+          <h2 className="text-sm font-semibold text-ink">Weight</h2>
           {latest && (
-            <p className="mt-1 text-3xl font-bold tnum text-slate-900 dark:text-white">
+            <p className="mt-1 text-3xl font-bold num text-ink">
               {latest.weight}
-              <span className="ml-1 text-sm font-normal text-slate-400">{weightUnit}</span>
+              <span className="ml-1 text-sm font-normal text-ink-faint">{weightUnit}</span>
             </p>
           )}
         </div>
         {logs.length >= 2 && (
-          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold tnum ${delta <= 0 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400" : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"}`}>
+          <span className={`rounded px-2 py-0.5 text-2xs font-semibold num ${delta <= 0 ? "text-ok" : "text-warn"}`}>
             {delta > 0 ? "+" : ""}{Math.round(delta * 10) / 10} {weightUnit}
           </span>
         )}
@@ -77,9 +77,9 @@ export default function WeightCard({ logs, weightUnit, onLogsChange }: Props) {
           value={weight}
           onChange={(e) => setWeight(e.target.value)}
           placeholder={`Today's weight (${weightUnit})`}
-          className="flex-1 rounded-xl border border-slate-300 bg-transparent px-3 py-2.5 text-sm tnum outline-none focus:border-emerald-500 dark:border-white/10"
+          className="flex-1 rounded border border-line bg-transparent px-3 py-2.5 text-sm num outline-none focus:border-accent"
         />
-        <button type="submit" disabled={saving || !weight} className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-60">
+        <button type="submit" disabled={saving || !weight} className="rounded bg-accent px-5 py-2.5 text-sm font-semibold text-white active:scale-[0.98] disabled:opacity-60">
           {saving ? "…" : "Log"}
         </button>
       </form>
@@ -87,10 +87,10 @@ export default function WeightCard({ logs, weightUnit, onLogsChange }: Props) {
       {logs.length > 0 && (
         <ul className="mt-4 space-y-1.5 max-h-40 overflow-y-auto">
           {[...logs].reverse().map((l) => (
-            <li key={l.id} className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+            <li key={l.id} className="flex items-center justify-between text-xs text-ink-dim">
               <span>{new Date(l.loggedAt).toLocaleDateString()}</span>
-              <span className="font-medium tnum text-slate-800 dark:text-slate-200">{l.weight} {weightUnit}</span>
-              <button onClick={() => deleteLog(l.id)} className="text-slate-300 hover:text-rose-400 dark:text-slate-600">×</button>
+              <span className="font-medium num text-ink">{l.weight} {weightUnit}</span>
+              <button onClick={() => deleteLog(l.id)} className="text-ink-faint hover:text-over">×</button>
             </li>
           ))}
         </ul>

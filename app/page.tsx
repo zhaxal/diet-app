@@ -7,6 +7,7 @@ import {
   api,
   type FoodEntry,
   type Summary,
+  type Totals,
   type Goals,
   type WeightLog,
   type Favorite,
@@ -16,7 +17,7 @@ import {
   type FoodMacros,
 } from "@/lib/api-client";
 import { ToastProvider, useToast } from "@/components/Toast";
-import { Ring } from "@/components/Ring";
+import { Meter } from "@/components/Meter";
 import BottomNav, { type Tab } from "@/components/BottomNav";
 import ThemeToggle from "@/components/ThemeToggle";
 import GoalsCard from "@/components/GoalsCard";
@@ -27,6 +28,7 @@ import TrendsCard from "@/components/TrendsCard";
 import FoodSearch from "@/components/FoodSearch";
 import TemplatesCard from "@/components/TemplatesCard";
 import TdeeCard from "@/components/TdeeCard";
+import ProductsCard from "@/components/ProductsCard";
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 type Meal = (typeof MEALS)[number];
@@ -55,11 +57,19 @@ function prettyDate(date: string) {
 
 const emptyForm = { name: "", calories: "", protein: "", carbs: "", fat: "", fiber: "", sugar: "", sodium: "", mealType: "breakfast" as Meal };
 
-const MACROS: { key: "protein" | "carbs" | "fat"; label: string; color: string; goalKey: keyof Goals }[] = [
-  { key: "protein", label: "Protein", color: "#6366f1", goalKey: "dailyProtein" },
-  { key: "carbs", label: "Carbs", color: "#f59e0b", goalKey: "dailyCarbs" },
-  { key: "fat", label: "Fat", color: "#f43f5e", goalKey: "dailyFat" },
+const MACROS: { key: keyof Omit<Totals, "count">; label: string; goalKey: keyof Goals; unit: string }[] = [
+  { key: "protein", label: "Protein", goalKey: "dailyProtein", unit: "g" },
+  { key: "carbs", label: "Carbs", goalKey: "dailyCarbs", unit: "g" },
+  { key: "fat", label: "Fat", goalKey: "dailyFat", unit: "g" },
+  { key: "fiber", label: "Fiber", goalKey: "dailyFiber", unit: "g" },
+  { key: "sugar", label: "Sugar", goalKey: "dailySugar", unit: "g" },
+  { key: "sodium", label: "Sodium", goalKey: "dailySodium", unit: "mg" },
 ];
+
+// The seven days ending on `end`, for the header strip.
+function weekEnding(end: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => shiftDate(end, i - 6));
+}
 
 export default function Page() {
   return (
@@ -217,81 +227,130 @@ function Dashboard() {
   }
 
   if (!ready) {
-    return <main className="flex min-h-screen items-center justify-center text-slate-400">Loading…</main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center">
+        <span className="num text-xs uppercase tracking-widest text-ink-faint">
+          Loading
+        </span>
+      </main>
+    );
   }
 
-  const total = summary?.total ?? { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0, count: 0 };
+  const total: Totals =
+    summary?.total ?? { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0, count: 0 };
   const calGoal = goals.dailyCalories;
-  const calRemaining = calGoal ? Math.max(calGoal - total.calories, 0) : 0;
-  const calOver = calGoal ? total.calories > calGoal : false;
+  const calPct = calGoal ? Math.min(100, (total.calories / calGoal) * 100) : 0;
+  const calLeft = calGoal ? calGoal - total.calories : 0;
+  const calOver = calLeft < 0;
 
   return (
-    <div className="mx-auto min-h-screen max-w-2xl px-4 pb-28 pt-6">
+    <div className="mx-auto max-w-2xl px-3 pb-24 pt-3">
       {/* ── Today ─────────────────────────────────────── */}
       {tab === "today" && (
         <>
-          <div className="flex items-center justify-between">
-            <button onClick={() => setDate(shiftDate(date, -1))} className="rounded-full p-2 text-slate-400 hover:bg-slate-200/50 dark:hover:bg-white/10" aria-label="Previous day">
-              <Chevron dir="left" />
-            </button>
-            <div className="text-center">
-              <h1 className="text-lg font-bold text-slate-900 dark:text-white">{prettyDate(date)}</h1>
+          {/* Week strip */}
+          <nav className="panel flex overflow-hidden">
+            {weekEnding(todayStr()).map((d) => {
+              const active = d === date;
+              const dt = new Date(`${d}T00:00:00`);
+              return (
+                <button
+                  key={d}
+                  onClick={() => setDate(d)}
+                  className="flex-1 border-r py-1.5 text-center last:border-r-0 transition-colors"
+                  style={{
+                    borderColor: "var(--line)",
+                    background: active ? "var(--ink)" : "transparent",
+                    color: active ? "var(--panel)" : "var(--ink-dim)",
+                  }}
+                >
+                  <div className="text-2xs uppercase tracking-wider opacity-70">
+                    {dt.toLocaleDateString(undefined, { weekday: "narrow" })}
+                  </div>
+                  <div className="num text-sm font-semibold">{d.slice(8)}</div>
+                </button>
+              );
+            })}
+          </nav>
+
+          {date !== todayStr() && (
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="num text-2xs uppercase tracking-wider text-ink-faint">
+                {prettyDate(date)}
+              </span>
               <input
                 type="date"
                 value={date}
+                max={todayStr()}
                 onChange={(e) => setDate(e.target.value)}
-                className="mt-0.5 bg-transparent text-center text-[11px] text-slate-400 outline-none"
+                className="field num py-0.5 text-2xs"
               />
             </div>
-            <button onClick={() => setDate(shiftDate(date, 1))} disabled={date >= todayStr()} className="rounded-full p-2 text-slate-400 hover:bg-slate-200/50 disabled:opacity-30 dark:hover:bg-white/10" aria-label="Next day">
-              <Chevron dir="right" />
-            </button>
-          </div>
+          )}
 
-          {/* Hero rings */}
-          <section className="surface mt-5 flex flex-col items-center p-6">
-            <Ring value={total.calories} goal={calGoal} size={184} stroke={16}>
-              <span className="text-4xl font-bold tnum text-slate-900 dark:text-white">
-                {calGoal ? calRemaining : Math.round(total.calories)}
+          {/* Calorie readout */}
+          <section className="panel gridlines mt-2 p-3">
+            <div className="flex items-baseline justify-between">
+              <span className="text-2xs uppercase tracking-wider text-ink-faint">
+                Calories
               </span>
-              <span className="text-xs text-slate-400">
-                {calGoal ? (calOver ? "kcal over" : "kcal left") : "kcal"}
+              <span className="num text-2xs text-ink-faint">
+                {total.count} {total.count === 1 ? "entry" : "entries"}
               </span>
-              {calGoal && <span className="mt-0.5 text-[11px] tnum text-slate-400">{Math.round(total.calories)} / {calGoal}</span>}
-            </Ring>
-
-            <div className="mt-6 grid w-full grid-cols-3 gap-2">
-              {MACROS.map((m) => {
-                const val = total[m.key];
-                const goal = goals[m.goalKey] as number | null;
-                return (
-                  <div key={m.key} className="flex flex-col items-center">
-                    <Ring value={val} goal={goal} size={76} stroke={8} color={m.color}>
-                      <span className="text-sm font-bold tnum text-slate-800 dark:text-slate-100">{Math.round(val)}</span>
-                      <span className="text-[9px] text-slate-400">{goal ? `/${goal}` : "g"}</span>
-                    </Ring>
-                    <span className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{m.label}</span>
-                  </div>
-                );
-              })}
             </div>
 
-            {(total.fiber > 0 || total.sugar > 0 || total.sodium > 0) && (
-              <div className="mt-4 grid w-full grid-cols-3 gap-2 border-t border-slate-100 pt-3 text-center dark:border-white/5">
-                {([["Fiber", total.fiber, goals.dailyFiber, "g"], ["Sugar", total.sugar, goals.dailySugar, "g"], ["Sodium", total.sodium, goals.dailySodium, "mg"]] as const).map(([label, val, goal, unit]) => (
-                  <div key={label}>
-                    <div className="text-sm font-semibold tnum text-slate-800 dark:text-slate-100">
-                      {Math.round(val)}{goal ? <span className="text-xs font-normal text-slate-400">/{goal}</span> : ""}<span className="ml-0.5 text-[10px] text-slate-400">{unit}</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400">{label}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="num text-4xl font-bold leading-none text-ink">
+                {Math.round(total.calories).toLocaleString()}
+              </span>
+              {calGoal && (
+                <span className="num text-sm text-ink-faint">
+                  / {calGoal.toLocaleString()}
+                </span>
+              )}
+              {calGoal && (
+                <span
+                  className="num ml-auto text-right text-sm font-semibold"
+                  style={{ color: calOver ? "var(--over)" : "var(--ok)" }}
+                >
+                  {Math.abs(calLeft).toLocaleString()}
+                  <span className="ml-1 text-2xs uppercase tracking-wider opacity-80">
+                    {calOver ? "over" : "left"}
+                  </span>
+                </span>
+              )}
+            </div>
+
+            <div
+              className="mt-2 w-full overflow-hidden rounded-sm"
+              style={{ height: 8, background: "var(--line-soft)" }}
+            >
+              <div
+                className="h-full transition-[width] duration-500 ease-out"
+                style={{
+                  width: `${calGoal ? calPct : 0}%`,
+                  background: calOver ? "var(--over)" : "var(--accent)",
+                }}
+              />
+            </div>
           </section>
 
+          {/* Macro meters */}
+          <section className="panel mt-2 grid grid-cols-3 gap-x-4 gap-y-3 p-3">
+            {MACROS.map((m) => (
+              <Meter
+                key={m.key}
+                label={m.label}
+                value={total[m.key]}
+                goal={goals[m.goalKey] as number | null}
+                unit={m.unit}
+              />
+            ))}
+          </section>
+
+          {/* Quick add */}
           {(favorites.length > 0 || recent.length > 0) && (
-            <section className="surface mt-4 p-4">
+            <section className="panel mt-2 p-3">
               <QuickAdd
                 favorites={favorites}
                 recent={recent}
@@ -303,39 +362,59 @@ function Dashboard() {
             </section>
           )}
 
-          {/* Add food (collapsible) */}
-          <section className="surface mt-4 p-4">
-            <button onClick={() => setShowAdd((s) => !s)} className="flex w-full items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200">
-              Add food
-              <span className={`text-slate-400 transition-transform ${showAdd ? "rotate-45" : ""}`}>＋</span>
-            </button>
-            {showAdd && (
-              <div className="mt-3 space-y-3">
-                <FoodSearch onPick={fillFromSearch} />
-                <form onSubmit={addEntry} className="grid grid-cols-2 gap-2.5 sm:grid-cols-6">
-                  <input required placeholder="Food name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="col-span-2 rounded-xl border border-slate-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-emerald-500 dark:border-white/10 sm:col-span-2" />
-                  <NumInput placeholder="Cal" value={form.calories} onChange={(v) => setForm({ ...form, calories: v })} required />
-                  <NumInput placeholder="Protein" value={form.protein} onChange={(v) => setForm({ ...form, protein: v })} />
-                  <NumInput placeholder="Carbs" value={form.carbs} onChange={(v) => setForm({ ...form, carbs: v })} />
-                  <NumInput placeholder="Fat" value={form.fat} onChange={(v) => setForm({ ...form, fat: v })} />
-                  {showMore && (
-                    <>
-                      <NumInput placeholder="Fiber" value={form.fiber} onChange={(v) => setForm({ ...form, fiber: v })} />
-                      <NumInput placeholder="Sugar" value={form.sugar} onChange={(v) => setForm({ ...form, sugar: v })} />
-                      <NumInput placeholder="Sodium mg" value={form.sodium} onChange={(v) => setForm({ ...form, sodium: v })} />
-                    </>
-                  )}
-                  <select value={form.mealType} onChange={(e) => setForm({ ...form, mealType: e.target.value as Meal })} className="col-span-2 rounded-xl border border-slate-300 bg-transparent px-3 py-2 text-sm capitalize outline-none focus:border-emerald-500 dark:border-white/10 sm:col-span-3 [&>option]:text-slate-900">
-                    {MEALS.map((m) => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                  <button type="submit" disabled={saving} className="col-span-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-60 sm:col-span-3">
-                    {saving ? "Adding…" : "Add entry"}
+          {/* Saved products */}
+          <Panel title="Products" hint="Saved labels" defaultOpen={false}>
+            <ProductsCard
+              date={date}
+              defaultMeal={form.mealType}
+              onLogged={() => loadDay(date)}
+            />
+          </Panel>
+
+          {/* Add food */}
+          <Panel
+            title="Add food"
+            open={showAdd}
+            onToggle={() => setShowAdd((s) => !s)}
+          >
+            <div className="space-y-2">
+              <FoodSearch onPick={fillFromSearch} />
+              <form onSubmit={addEntry} className="grid grid-cols-4 gap-1.5">
+                <input
+                  required
+                  placeholder="Food name"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="field col-span-4"
+                />
+                <NumInput placeholder="kcal" value={form.calories} onChange={(v) => setForm({ ...form, calories: v })} required />
+                <NumInput placeholder="P" value={form.protein} onChange={(v) => setForm({ ...form, protein: v })} />
+                <NumInput placeholder="C" value={form.carbs} onChange={(v) => setForm({ ...form, carbs: v })} />
+                <NumInput placeholder="F" value={form.fat} onChange={(v) => setForm({ ...form, fat: v })} />
+                {showMore && (
+                  <>
+                    <NumInput placeholder="fiber" value={form.fiber} onChange={(v) => setForm({ ...form, fiber: v })} />
+                    <NumInput placeholder="sugar" value={form.sugar} onChange={(v) => setForm({ ...form, sugar: v })} />
+                    <NumInput placeholder="Na mg" value={form.sodium} onChange={(v) => setForm({ ...form, sodium: v })} />
+                    <div />
+                  </>
+                )}
+                <select
+                  value={form.mealType}
+                  onChange={(e) => setForm({ ...form, mealType: e.target.value as Meal })}
+                  className="field col-span-2 capitalize [&>option]:text-black"
+                >
+                  {MEALS.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+                <button type="submit" disabled={saving} className="btn btn-primary col-span-2">
+                  {saving ? "Adding…" : "Add"}
+                </button>
+                <div className="col-span-4 flex items-center gap-3 pt-0.5">
+                  <button type="button" onClick={() => setShowMore((s) => !s)} className="text-2xs text-ink-faint hover:text-ink">
+                    {showMore ? "− fewer" : "+ fiber / sugar / sodium"}
                   </button>
-                  <div className="col-span-2 flex items-center gap-4 sm:col-span-6">
-                    <button type="button" onClick={() => setShowMore((s) => !s)} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                      {showMore ? "− Fewer fields" : "+ Fiber / sugar / sodium"}
-                    </button>
-                    {form.name && form.calories && (
+                  {form.name && form.calories && (
+                    <>
                       <button
                         type="button"
                         onClick={async () => {
@@ -344,18 +423,38 @@ function Dashboard() {
                           setFavorites(favs);
                           toast("Saved to favorites");
                         }}
-                        className="text-xs text-emerald-600 hover:underline dark:text-emerald-400"
+                        className="text-2xs text-accent hover:underline"
                       >
-                        ★ Save as favorite
+                        ★ favorite
                       </button>
-                    )}
-                  </div>
-                </form>
-              </div>
-            )}
-          </section>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await api.saveProduct({
+                            name: form.name,
+                            calories: Number(form.calories) || 0,
+                            protein: Number(form.protein) || 0,
+                            carbs: Number(form.carbs) || 0,
+                            fat: Number(form.fat) || 0,
+                            fiber: Number(form.fiber) || 0,
+                            sugar: Number(form.sugar) || 0,
+                            sodium: Number(form.sodium) || 0,
+                            basis: "100g",
+                          });
+                          toast("Saved to products (per 100g)");
+                        }}
+                        className="text-2xs text-accent hover:underline"
+                      >
+                        ⬚ product
+                      </button>
+                    </>
+                  )}
+                </div>
+              </form>
+            </div>
+          </Panel>
 
-          <div className="mt-4">
+          <Panel title="Copy &amp; templates" defaultOpen={false} bare>
             <TemplatesCard
               date={date}
               entries={entries}
@@ -363,30 +462,39 @@ function Dashboard() {
               onTemplatesChange={setTemplates}
               onApplied={() => loadDay(date)}
             />
-          </div>
+          </Panel>
 
-          {/* Entries by meal */}
-          <section className="mt-4 space-y-4">
-            {MEALS.map((meal) => {
-              const items = entries.filter((e) => e.mealType === meal);
-              if (items.length === 0) return null;
-              const mealCals = summary?.byMeal[meal]?.calories ?? 0;
-              return (
-                <div key={meal}>
-                  <div className="mb-1.5 flex items-baseline justify-between px-1">
-                    <h3 className="text-sm font-semibold capitalize text-slate-700 dark:text-slate-300">{meal}</h3>
-                    <span className="text-xs tnum text-slate-400">{mealCals} kcal</span>
+          {/* Entries, grouped by meal */}
+          <section className="mt-2">
+            {entries.length === 0 ? (
+              <p className="panel px-3 py-8 text-center text-xs text-ink-faint">
+                Nothing logged. Use a favorite, a saved product, or Add food.
+              </p>
+            ) : (
+              MEALS.map((meal) => {
+                const items = entries.filter((e) => e.mealType === meal);
+                if (items.length === 0) return null;
+                return (
+                  <div key={meal} className="panel mb-2 overflow-hidden">
+                    <div
+                      className="flex items-baseline justify-between border-b px-3 py-1.5"
+                      style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
+                    >
+                      <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+                        {meal}
+                      </h3>
+                      <span className="num text-2xs text-ink-faint">
+                        {Math.round(summary?.byMeal[meal]?.calories ?? 0)} kcal
+                      </span>
+                    </div>
+                    <ul className="divide-y" style={{ borderColor: "var(--line-soft)" }}>
+                      {items.map((entry) => (
+                        <EntryRow key={entry.id} entry={entry} onUpdate={updateEntry} onDelete={removeEntry} />
+                      ))}
+                    </ul>
                   </div>
-                  <ul className="surface divide-y divide-slate-100 overflow-hidden dark:divide-white/5">
-                    {items.map((entry) => (
-                      <EntryRow key={entry.id} entry={entry} onUpdate={updateEntry} onDelete={removeEntry} />
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-            {entries.length === 0 && (
-              <p className="surface px-4 py-10 text-center text-sm text-slate-400">No entries yet. Tap a favorite or “Add food”.</p>
+                );
+              })
             )}
           </section>
         </>
@@ -395,7 +503,7 @@ function Dashboard() {
       {/* ── Trends ────────────────────────────────────── */}
       {tab === "trends" && (
         <>
-          <h1 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">Trends</h1>
+          <Header>Trends</Header>
           {trends && <TrendsCard trends={trends} onDaysChange={(d) => setTrendDays(d)} />}
         </>
       )}
@@ -403,7 +511,7 @@ function Dashboard() {
       {/* ── Weight ────────────────────────────────────── */}
       {tab === "weight" && (
         <>
-          <h1 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">Weight</h1>
+          <Header>Weight</Header>
           <WeightCard logs={weightLogs} weightUnit={goals.weightUnit} onLogsChange={setWeightLogs} />
         </>
       )}
@@ -411,17 +519,16 @@ function Dashboard() {
       {/* ── Settings ──────────────────────────────────── */}
       {tab === "settings" && (
         <>
-          <h1 className="mb-1 text-2xl font-bold text-slate-900 dark:text-white">Settings</h1>
-          <p className="mb-4 text-sm text-slate-400">{email}</p>
+          <Header sub={email}>Settings</Header>
 
-          <div className="mb-4 flex items-center justify-between surface p-4">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Appearance</span>
+          <div className="panel mb-2 flex items-center justify-between px-3 py-2">
+            <span className="text-2xs uppercase tracking-wider text-ink-dim">Appearance</span>
             <ThemeToggle />
           </div>
 
           <GoalsCard goals={goals} onGoalsChange={setGoals} />
 
-          <div className="mt-4">
+          <div className="mt-2">
             <TdeeCard
               goals={goals}
               latestWeight={weightLogs.length ? weightLogs[weightLogs.length - 1].weight : null}
@@ -429,31 +536,44 @@ function Dashboard() {
             />
           </div>
 
-          <section className="surface mt-4 p-5">
-            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Export data</h2>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Download all your entries, weight logs, favorites, and goals.</p>
-            <div className="mt-3 flex gap-2">
-              <a href="/api/export?format=json" download className="flex-1 rounded-xl bg-slate-800 py-2 text-center text-xs font-semibold text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900">Export JSON</a>
-              <a href="/api/export?format=csv" download className="flex-1 rounded-xl border border-slate-300 py-2 text-center text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5">Export CSV (entries)</a>
+          <Panel title="Saved products" defaultOpen={false}>
+            <ProductsCard date={date} defaultMeal="snack" manageOnly />
+          </Panel>
+
+          <section className="panel mt-2 p-3">
+            <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">Export</h2>
+            <div className="mt-2 flex gap-1.5">
+              <a href="/api/export?format=json" download className="btn btn-ghost flex-1 text-center">JSON</a>
+              <a href="/api/export?format=csv" download className="btn btn-ghost flex-1 text-center">CSV</a>
             </div>
           </section>
 
-          <section className="surface mt-4 p-5">
-            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Claude.ai connector</h2>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Paste into Claude.ai → Settings → Connectors → Add custom connector.</p>
-            <div className="mt-3 flex items-center gap-2">
-              <code className="flex-1 truncate rounded-xl bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700 dark:bg-white/5 dark:text-slate-300">{mcpUrl || "…"}</code>
-              <button onClick={copyUrl} disabled={!mcpUrl} className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{copied ? "Copied!" : "Copy"}</button>
+          <section className="panel mt-2 p-3">
+            <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">Claude connector</h2>
+            <p className="mt-1 text-2xs text-ink-faint">
+              Claude.ai → Settings → Connectors → Add custom connector. Photograph a
+              nutrition label and Claude saves it as a product you can re-log without
+              another photo.
+            </p>
+            <div className="mt-2 flex items-center gap-1.5">
+              <code className="num flex-1 truncate rounded px-2 py-1.5 text-2xs text-ink-dim" style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}>
+                {mcpUrl || "…"}
+              </code>
+              <button onClick={copyUrl} disabled={!mcpUrl} className="btn btn-primary shrink-0">
+                {copied ? "✓" : "Copy"}
+              </button>
             </div>
-            <div className="mt-3 flex items-center justify-between text-xs">
-              <span className="text-slate-400">Timezone: <span className="text-slate-500 dark:text-slate-300">{goals.timezone}</span></span>
-              <button onClick={regenerateKey} className="text-slate-400 hover:text-rose-500">Regenerate key</button>
+            <div className="mt-2 flex items-center justify-between text-2xs">
+              <span className="text-ink-faint">
+                Timezone <span className="num text-ink-dim">{goals.timezone}</span>
+              </span>
+              <button onClick={regenerateKey} className="text-ink-faint hover:text-over">Regenerate key</button>
             </div>
           </section>
 
-          <div className="mt-4 flex items-center justify-between">
-            <Link href="/api-docs" className="text-sm text-emerald-600 hover:underline dark:text-emerald-400">API docs ↗</Link>
-            <button onClick={logout} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5">Log out</button>
+          <div className="mt-3 flex items-center justify-between">
+            <Link href="/api-docs" className="text-2xs text-accent hover:underline">API docs ↗</Link>
+            <button onClick={logout} className="btn btn-ghost">Log out</button>
           </div>
         </>
       )}
@@ -463,11 +583,51 @@ function Dashboard() {
   );
 }
 
-function Chevron({ dir }: { dir: "left" | "right" }) {
+function Header({ children, sub }: { children: React.ReactNode; sub?: string }) {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d={dir === "left" ? "M15 18l-6-6 6-6" : "M9 18l6-6-6-6"} />
-    </svg>
+    <div className="mb-2 flex items-baseline justify-between">
+      <h1 className="text-sm font-semibold uppercase tracking-widest text-ink">{children}</h1>
+      {sub && <span className="num text-2xs text-ink-faint">{sub}</span>}
+    </div>
+  );
+}
+
+// Collapsible bordered section. Controlled when `open`/`onToggle` are supplied.
+function Panel({
+  title, hint, children, open, onToggle, defaultOpen = false, bare = false,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+  open?: boolean;
+  onToggle?: () => void;
+  defaultOpen?: boolean;
+  bare?: boolean;
+}) {
+  const [selfOpen, setSelfOpen] = useState(defaultOpen);
+  const isOpen = open ?? selfOpen;
+  const toggle = onToggle ?? (() => setSelfOpen((s) => !s));
+
+  return (
+    <section className="panel mt-2">
+      <button
+        onClick={toggle}
+        className="flex w-full items-center justify-between px-3 py-2"
+      >
+        <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+          {title}
+        </span>
+        <span className="flex items-center gap-2">
+          {hint && <span className="text-2xs text-ink-faint">{hint}</span>}
+          <span className="num text-xs text-ink-faint">{isOpen ? "−" : "+"}</span>
+        </span>
+      </button>
+      {isOpen && (
+        <div className={bare ? "" : "border-t px-3 py-2.5"} style={bare ? undefined : { borderColor: "var(--line)" }}>
+          {children}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -481,7 +641,7 @@ function NumInput({ value, onChange, placeholder, required }: { value: string; o
       placeholder={placeholder}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-xl border border-slate-300 bg-transparent px-3 py-2 text-sm tnum outline-none focus:border-emerald-500 dark:border-white/10"
+      className="field num text-right"
     />
   );
 }

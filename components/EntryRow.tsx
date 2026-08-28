@@ -15,6 +15,7 @@ interface Props {
 export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: entry.name,
     calories: entry.calories.toString(),
@@ -26,7 +27,6 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
     sodium: entry.sodium.toString(),
     mealType: entry.mealType,
   });
-  const [saving, setSaving] = useState(false);
 
   async function save() {
     setSaving(true);
@@ -52,37 +52,50 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
     }
   }
 
-  const inputCls =
-    "rounded-lg border border-slate-300 bg-transparent px-2 py-1 text-sm outline-none focus:border-emerald-500 dark:border-white/10";
-
   if (editing) {
     return (
-      <li className="px-4 py-3 space-y-2">
-        <div className="flex gap-2">
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={`flex-1 ${inputCls}`} placeholder="Food name" />
+      <li className="px-3 py-2" style={{ background: "var(--panel-2)" }}>
+        <div className="grid grid-cols-4 gap-1.5">
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            className="field col-span-4"
+          />
+          {(["calories", "protein", "carbs", "fat"] as const).map((k) => (
+            <input
+              key={k}
+              type="number"
+              min={0}
+              step="any"
+              value={form[k]}
+              onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+              placeholder={k === "calories" ? "kcal" : k[0].toUpperCase()}
+              className="field num text-right"
+            />
+          ))}
+          {(["fiber", "sugar", "sodium"] as const).map((k) => (
+            <input
+              key={k}
+              type="number"
+              min={0}
+              step="any"
+              value={form[k]}
+              onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+              placeholder={k === "sodium" ? "Na" : k}
+              className="field num text-right"
+            />
+          ))}
           <select
             value={form.mealType}
-            onChange={(e) => setForm({ ...form, mealType: e.target.value as (typeof MEALS)[number] })}
-            className={`capitalize ${inputCls} [&>option]:text-slate-900`}
+            onChange={(e) => setForm({ ...form, mealType: e.target.value as FoodEntry["mealType"] })}
+            className="field capitalize [&>option]:text-black"
           >
             {MEALS.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
-        </div>
-        <div className="flex gap-2">
-          {(["calories", "protein", "carbs", "fat"] as const).map((k) => (
-            <input key={k} type="number" min={0} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} placeholder={k} className={`w-0 flex-1 tnum text-xs ${inputCls}`} />
-          ))}
-        </div>
-        <div className="flex gap-2">
-          {(["fiber", "sugar", "sodium"] as const).map((k) => (
-            <input key={k} type="number" min={0} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} placeholder={k} className={`w-0 flex-1 tnum text-xs ${inputCls}`} />
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <button onClick={save} disabled={saving} className="flex-1 rounded-lg bg-emerald-600 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
-            {saving ? "Saving…" : "Save"}
+          <button onClick={save} disabled={saving} className="btn btn-primary col-span-2">
+            {saving ? "…" : "Save"}
           </button>
-          <button onClick={() => setEditing(false)} className="flex-1 rounded-lg border border-slate-300 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5">
+          <button onClick={() => setEditing(false)} className="btn btn-ghost col-span-2">
             Cancel
           </button>
         </div>
@@ -91,24 +104,33 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
   }
 
   return (
-    <li className="flex items-center justify-between gap-3 px-4 py-3">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{entry.name}</p>
-        <p className="text-xs text-slate-500 dark:text-slate-400 tnum">
-          {entry.calories} kcal · P{entry.protein} · C{entry.carbs} · F{entry.fat}
-          {(entry.fiber > 0 || entry.sugar > 0 || entry.sodium > 0) && (
-            <span className="text-slate-400 dark:text-slate-500">
-              {entry.fiber > 0 ? ` · fiber ${entry.fiber}` : ""}
-              {entry.sugar > 0 ? ` · sugar ${entry.sugar}` : ""}
-              {entry.sodium > 0 ? ` · Na ${entry.sodium}mg` : ""}
-            </span>
-          )}
-        </p>
-      </div>
-      <div className="flex shrink-0 gap-3">
-        <button onClick={() => setEditing(true)} className="text-xs text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400">Edit</button>
-        <button onClick={() => onDelete(entry.id)} className="text-xs text-slate-400 hover:text-rose-500">Delete</button>
-      </div>
+    <li className="group flex items-baseline gap-2 px-3 py-1.5">
+      <button
+        onClick={() => setEditing(true)}
+        className="min-w-0 flex-1 truncate text-left text-sm text-ink hover:text-accent"
+        title="Edit"
+      >
+        {entry.name}
+        {entry.quantityGrams != null && (
+          <span className="num ml-1 text-2xs text-ink-faint">
+            {entry.quantityGrams}g
+          </span>
+        )}
+      </button>
+
+      <span className="num shrink-0 text-2xs text-ink-faint">
+        {entry.protein}/{entry.carbs}/{entry.fat}
+      </span>
+      <span className="num w-14 shrink-0 text-right text-sm font-semibold text-ink">
+        {entry.calories}
+      </span>
+      <button
+        onClick={() => onDelete(entry.id)}
+        className="shrink-0 text-2xs text-ink-faint opacity-0 transition-opacity hover:text-over group-hover:opacity-100 focus:opacity-100"
+        aria-label={`Delete ${entry.name}`}
+      >
+        ✕
+      </button>
     </li>
   );
 }

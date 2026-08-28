@@ -53,18 +53,18 @@ export default function QuickAdd({ favorites, recent, selectedMeal, selectedDate
     <div className="space-y-3">
       {favorites.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Favorites</p>
+          <p className="text-xs font-medium text-ink-dim mb-1.5">Favorites</p>
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
             {favorites.map((f) => (
-              <div key={f.id} className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 pl-3 pr-1.5 py-1.5 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:ring-emerald-400/20">
+              <div key={f.id} className="flex shrink-0 items-center gap-1 rounded border border-line bg-panel-2 pl-2.5 pr-1 py-1">
                 <button
                   onClick={() => logFood(f)}
                   disabled={logging === f.name}
-                  className="text-xs font-medium text-emerald-800 hover:text-emerald-600 disabled:opacity-50 dark:text-emerald-300 tnum"
+                  className="text-xs font-medium text-accent hover:opacity-80 disabled:opacity-50 num"
                 >
-                  ★ {f.name} <span className="text-emerald-500 dark:text-emerald-400">{f.calories}</span>
+                  ★ {f.name} <span className="text-accent">{f.calories}</span>
                 </button>
-                <button onClick={() => deleteFav(f.id, f.name)} className="ml-0.5 text-slate-300 hover:text-rose-400 text-sm leading-none dark:text-slate-500" title="Remove favorite">×</button>
+                <button onClick={() => deleteFav(f.id, f.name)} className="ml-0.5 text-ink-faint hover:text-over text-sm leading-none" title="Remove favorite">×</button>
               </div>
             ))}
           </div>
@@ -73,16 +73,16 @@ export default function QuickAdd({ favorites, recent, selectedMeal, selectedDate
 
       {recent.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Recent</p>
+          <p className="text-xs font-medium text-ink-dim mb-1.5">Recent</p>
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
             {recent.map((r) => (
               <button
                 key={r.name}
                 onClick={() => logFood(r)}
                 disabled={logging === r.name}
-                className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-700 ring-1 ring-slate-200 hover:bg-slate-200 disabled:opacity-50 dark:bg-white/5 dark:text-slate-300 dark:ring-white/10 dark:hover:bg-white/10 tnum"
+                className="shrink-0 rounded border border-line bg-panel-2 px-2.5 py-1 text-xs text-ink hover:border-ink-faint disabled:opacity-50 num"
               >
-                {r.name} <span className="text-slate-400">{r.calories}</span>
+                {r.name} <span className="text-ink-faint">{r.calories}</span>
               </button>
             ))}
           </div>
