@@ -37,18 +37,28 @@ export function Meter({
           <span className="text-ink-faint">{unit}</span>
         </span>
       </div>
-      <div
-        className="mt-1 w-full overflow-hidden rounded-sm"
-        style={{ height: lg ? 6 : 4, background: "var(--line-soft)" }}
-      >
+      {/* No goal means no rail. An empty track reads as "you have eaten nothing"
+          rather than "no target set" — a hairline says unset without lying. */}
+      {goal ? (
         <div
-          className="h-full transition-[width] duration-500 ease-out"
-          style={{
-            width: `${goal ? pct : 0}%`,
-            background: over ? "var(--over)" : "var(--accent)",
-          }}
+          className="mt-1 w-full overflow-hidden rounded-sm"
+          style={{ height: lg ? 6 : 4, background: "var(--line-soft)" }}
+        >
+          <div
+            className="h-full transition-[width] duration-500 ease-out"
+            style={{
+              width: `${pct}%`,
+              background: over ? "var(--over)" : "var(--accent)",
+            }}
+          />
+        </div>
+      ) : (
+        <div
+          className="mt-1 w-full"
+          style={{ height: 1, background: "var(--line)" }}
+          aria-hidden="true"
         />
-      </div>
+      )}
     </div>
   );
 }

@@ -1,44 +1,57 @@
 "use client";
 
+import { CalendarDays, ChartColumn, Scale, Settings2, type LucideIcon } from "lucide-react";
+
 export type Tab = "today" | "trends" | "weight" | "settings";
 
-const ICONS: Record<Tab, ReactNodePath> = {
-  today: "M3 12l9-9 9 9M5 10v10h14V10",
-  trends: "M3 17l6-6 4 4 8-8M21 7v6M21 7h-6",
-  weight: "M12 3a4 4 0 014 4H8a4 4 0 014-4zM4 21l2-12h12l2 12z",
-  settings: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 13a7.5 7.5 0 000-2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 00-1.7-1l-.4-2.6H10l-.4 2.6a7.5 7.5 0 00-1.7 1l-2.4-1-2 3.4L3.6 11a7.5 7.5 0 000 2l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 001.7 1l.4 2.6h3.8l.4-2.6a7.5 7.5 0 001.7-1l2.4 1 2-3.4z",
-};
-type ReactNodePath = string;
-
-const LABELS: Record<Tab, string> = {
-  today: "Today",
-  trends: "Trends",
-  weight: "Weight",
-  settings: "Settings",
-};
+/*
+ * Lucide, bundled through npm rather than fetched from a CDN — the self-hosting
+ * constraint is about outbound dependencies at runtime, and these ship inside
+ * the container like any other module. It replaces four hand-written paths that
+ * came from three different grids: a 20-vertex gear that went muddy at 22px, a
+ * stroked-but-closed weight silhouette that read as filled, and a house, which
+ * means "home" and not "today".
+ *
+ * The four chosen glyphs are optically distinct at 22px — frame, bars, balance,
+ * sliders — so the bar is scannable by silhouette before the labels are read.
+ */
+const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
+  // A day is the unit of this product, and the week strip above is a calendar.
+  { id: "today", label: "Today", Icon: CalendarDays },
+  // Bars, because the tab's own chart is a bar chart.
+  { id: "trends", label: "Trends", Icon: ChartColumn },
+  { id: "weight", label: "Weight", Icon: Scale },
+  // Sliders rather than a gear: fewer vertices at this size, and it echoes the
+  // meter tracks that make up most of the settings it opens.
+  { id: "settings", label: "Settings", Icon: Settings2 },
+];
 
 export default function BottomNav({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
-  const tabs: Tab[] = ["today", "trends", "weight", "settings"];
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur-lg"
-      style={{ borderColor: "var(--line)", background: "color-mix(in srgb, var(--panel) 88%, transparent)", paddingBottom: "env(safe-area-inset-bottom)" }}
+      style={{
+        borderColor: "var(--line)",
+        background: "color-mix(in srgb, var(--panel) 88%, transparent)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
     >
       <div className="mx-auto flex max-w-2xl items-stretch justify-around">
-        {tabs.map((t) => {
-          const isActive = active === t;
+        {TABS.map(({ id, label, Icon }) => {
+          const isActive = active === id;
           return (
             <button
-              key={t}
-              onClick={() => onChange(t)}
-              className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
+              key={id}
+              onClick={() => onChange(id)}
+              aria-current={isActive ? "page" : undefined}
+              className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-2xs font-medium tracking-wider transition-colors ${
                 isActive ? "text-accent" : "text-ink-faint"
               }`}
             >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive ? 2.4 : 1.8} strokeLinecap="round" strokeLinejoin="round">
-                <path d={ICONS[t]} />
-              </svg>
-              {LABELS[t]}
+              {/* Colour and stroke weight carry the state; the system has no
+                  indicator bar, pill or underline. */}
+              <Icon size={22} strokeWidth={isActive ? 2.25 : 1.75} aria-hidden="true" />
+              {label}
             </button>
           );
         })}

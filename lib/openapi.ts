@@ -1,4 +1,5 @@
 import { MEAL_TYPES } from "./validation";
+import { QUANTITY_UNITS, WEIGHT_UNITS } from "./units";
 
 /**
  * Hand-maintained OpenAPI 3.1 description of the Diet Tracker API.
@@ -16,7 +17,33 @@ export function buildOpenApiDocument(baseUrl?: string) {
     protein: { type: "number", minimum: 0, description: "grams", example: 12 },
     carbs: { type: "number", minimum: 0, description: "grams", example: 54 },
     fat: { type: "number", minimum: 0, description: "grams", example: 6 },
+    fiber: { type: "number", minimum: 0, description: "grams", example: 8 },
+    sugar: { type: "number", minimum: 0, description: "grams", example: 11 },
+    sodium: { type: "number", minimum: 0, description: "milligrams", example: 240 },
     mealType: { type: "string", enum: [...MEAL_TYPES], example: "breakfast" },
+    // Provenance. A quantity is a number and a unit — never a bare number whose
+    // unit is implied by a field name.
+    productId: {
+      type: ["string", "null"],
+      description: "The saved product this was logged from, if any.",
+    },
+    quantity: {
+      type: ["number", "null"],
+      description: "Amount consumed, measured in `quantityUnit`.",
+      example: 200,
+    },
+    quantityUnit: {
+      type: ["string", "null"],
+      enum: [...QUANTITY_UNITS, null],
+      description:
+        "Unit of `quantity`. Must match how the product is measured: g/oz against a 100g product, ml/floz against a 100ml one, or `serving` when the product declares one.",
+    },
+    source: {
+      type: "string",
+      enum: ["ui", "mcp", "import"],
+      readOnly: true,
+      description: "Which front door wrote the row: the web UI, the assistant, or an import.",
+    },
     consumedAt: { type: "string", format: "date-time" },
     createdAt: { type: "string", format: "date-time", readOnly: true },
   };
@@ -39,6 +66,88 @@ export function buildOpenApiDocument(baseUrl?: string) {
       carbs: { type: "number" },
       fat: { type: "number" },
       count: { type: "integer" },
+    },
+  };
+
+  const mealTotals = {
+    type: "object",
+    description: "Range totals for one meal slot.",
+    properties: {
+      calories: { type: "number" },
+      count: { type: "integer" },
+    },
+  };
+
+  const weightLog = {
+    type: "object",
+    description:
+      "A body-weight reading. Stored canonically in kilograms with the unit it " +
+      "was entered in recorded beside it, so changing the account's display " +
+      "unit re-renders history rather than reinterpreting it.",
+    properties: {
+      id: { type: "string", readOnly: true },
+      weight: {
+        type: "number",
+        description: "The reading in the account's display unit.",
+        example: 80.5,
+      },
+      weightKg: { type: "number", readOnly: true, description: "The canonical value." },
+      enteredUnit: {
+        type: "string",
+        enum: [...WEIGHT_UNITS],
+        readOnly: true,
+        description: "The unit this reading was originally entered in.",
+      },
+      loggedAt: { type: "string", format: "date-time" },
+    },
+  };
+
+  const trends = {
+    type: "object",
+    description:
+      "Per-day nutrition totals over a trailing window, plus the range's " +
+      "weight readings and its calorie distribution across meal slots. " +
+      "Every figure is an aggregation of entries reachable through /entries; " +
+      "this endpoint exists so a caller does not have to page the range itself.",
+    properties: {
+      days: { type: "integer", enum: [7, 30] },
+      nutrition: {
+        type: "array",
+        description:
+          "One element per local calendar day in the window, oldest first. " +
+          "Days with no entries are present with zeroes and `count: 0` — a " +
+          "zero here means unlogged, not a day of no food.",
+        items: {
+          type: "object",
+          properties: {
+            date: { type: "string", example: "2026-08-29" },
+            calories: { type: "number" },
+            protein: { type: "number", description: "grams" },
+            carbs: { type: "number", description: "grams" },
+            fat: { type: "number", description: "grams" },
+            fiber: { type: "number", description: "grams" },
+            sugar: { type: "number", description: "grams" },
+            sodium: { type: "number", description: "milligrams" },
+            count: { type: "integer", description: "entries logged that day" },
+          },
+        },
+      },
+      weight: {
+        type: "array",
+        description: "The last reading on each day that has one.",
+        items: {
+          type: "object",
+          properties: {
+            date: { type: "string", example: "2026-08-29" },
+            value: { type: "number" },
+          },
+        },
+      },
+      meals: {
+        type: "object",
+        description: "Range totals per meal slot, not averages.",
+        properties: Object.fromEntries(MEAL_TYPES.map((m) => [m, mealTotals])),
+      },
     },
   };
 
@@ -124,6 +233,8 @@ export function buildOpenApiDocument(baseUrl?: string) {
             },
           },
         },
+        Trends: trends,
+        WeightLog: weightLog,
         Error: {
           type: "object",
           properties: { error: { type: "string" } },
@@ -280,6 +391,78 @@ export function buildOpenApiDocument(baseUrl?: string) {
           responses: {
             "200": { description: "Deleted" },
             "404": jsonResponse("Not found", {
+              $ref: "#/components/schemas/Error",
+            }),
+          },
+        },
+      },
+      "/weight": {
+        get: {
+          tags: ["Weight"],
+          summary: "List body-weight readings",
+          description: "Defaults to the last 30 days. `unit` names the account's display unit.",
+          responses: {
+            "200": jsonResponse("Weight readings", {
+              type: "object",
+              properties: {
+                unit: { type: "string", enum: [...WEIGHT_UNITS] },
+                logs: { type: "array", items: { $ref: "#/components/schemas/WeightLog" } },
+              },
+            }),
+            "401": jsonResponse("Unauthorized", { $ref: "#/components/schemas/Error" }),
+          },
+        },
+        post: {
+          tags: ["Weight"],
+          summary: "Log a body-weight reading",
+          requestBody: jsonBody({
+            type: "object",
+            required: ["weight"],
+            properties: {
+              weight: { type: "number", exclusiveMinimum: 0, maximum: 1000, example: 80.5 },
+              unit: {
+                type: "string",
+                enum: [...WEIGHT_UNITS],
+                description:
+                  "The unit `weight` is given in. Defaults to the account's setting. The value is converted to kilograms for storage either way.",
+              },
+              loggedAt: { type: "string", format: "date-time" },
+            },
+          }),
+          responses: {
+            "201": jsonResponse("Created", {
+              type: "object",
+              properties: {
+                unit: { type: "string", enum: [...WEIGHT_UNITS] },
+                log: { $ref: "#/components/schemas/WeightLog" },
+              },
+            }),
+            "401": jsonResponse("Unauthorized", { $ref: "#/components/schemas/Error" }),
+          },
+        },
+      },
+      "/trends": {
+        get: {
+          tags: ["Summary"],
+          summary: "Per-day totals over a trailing window",
+          description:
+            "The range view behind the Trends tab. Documented because the " +
+            "assistant reads the same day the UI does, and nothing the screen " +
+            "can see should be reachable only through the browser.",
+          parameters: [
+            {
+              name: "days",
+              in: "query",
+              required: false,
+              schema: { type: "integer", enum: [7, 30], default: 30 },
+              description: "Window length. Anything other than 7 is treated as 30.",
+            },
+          ],
+          responses: {
+            "200": jsonResponse("Trends over the window", {
+              $ref: "#/components/schemas/Trends",
+            }),
+            "401": jsonResponse("Unauthorized", {
               $ref: "#/components/schemas/Error",
             }),
           },

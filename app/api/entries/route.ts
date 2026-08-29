@@ -4,6 +4,7 @@ import { getUserFromRequest } from "@/lib/auth";
 import { createEntrySchema, dateQuerySchema } from "@/lib/validation";
 import { jsonError, zodError, unauthorized } from "@/lib/http";
 import { dayBoundsInTz } from "@/lib/time";
+import { normaliseQuantity } from "@/lib/units";
 
 // GET /api/entries?date=YYYY-MM-DD — list the current user's entries,
 // optionally filtered to a single calendar day. Newest first.
@@ -46,12 +47,16 @@ export async function POST(req: NextRequest) {
   const parsed = createEntrySchema.safeParse(body);
   if (!parsed.success) return zodError(parsed.error);
 
-  const { consumedAt, ...rest } = parsed.data;
+  const { consumedAt, quantity, quantityUnit, quantityGrams, ...rest } = parsed.data;
 
   const entry = await prisma.foodEntry.create({
     data: {
       userId: user.id,
       ...rest,
+      // Collapses the deprecated `quantityGrams` into the quantity + unit pair.
+      ...normaliseQuantity({ quantity, quantityUnit, quantityGrams }),
+      // This route is the REST/browser door. The MCP handler stamps its own.
+      source: "ui",
       consumedAt: consumedAt ? new Date(consumedAt) : undefined,
     },
   });

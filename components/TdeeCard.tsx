@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, type Goals } from "@/lib/api-client";
+import Select from "./Select";
 import { useToast } from "./Toast";
 
 interface Props {
@@ -71,7 +72,11 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
     }
   }
 
-  const inputCls = "field num mt-0.5 w-full [&>option]:text-black";
+  // `.num` is for measured quantities. "Male", "Sedentary" and "Maintain" are
+  // prose, and setting prose in monospace is the one thing the type system's
+  // measurement rule forbids.
+  const inputCls = "field num mt-0.5 w-full";
+  const selectWrap = "mt-0.5";
 
   return (
     <section className="panel p-3">
@@ -81,10 +86,10 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
       <div className="mt-2 grid grid-cols-3 gap-1.5">
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Sex</span>
-          <select value={sex} onChange={(e) => setSex(e.target.value as "male" | "female")} className={inputCls}>
+          <Select value={sex} onChange={(e) => setSex(e.target.value as "male" | "female")} wrapClassName={selectWrap}>
             <option value="male">Male</option>
             <option value="female">Female</option>
-          </select>
+          </Select>
         </label>
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Age</span>
@@ -100,17 +105,17 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
         </label>
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Activity</span>
-          <select value={factor} onChange={(e) => setFactor(Number(e.target.value))} className={inputCls}>
+          <Select value={factor} onChange={(e) => setFactor(Number(e.target.value))} wrapClassName={selectWrap}>
             {ACTIVITY.map((a) => <option key={a.factor} value={a.factor}>{a.label}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Goal</span>
-          <select value={goalDir} onChange={(e) => setGoalDir(e.target.value as "lose" | "maintain" | "gain")} className={inputCls}>
+          <Select value={goalDir} onChange={(e) => setGoalDir(e.target.value as "lose" | "maintain" | "gain")} wrapClassName={selectWrap}>
             <option value="lose">Lose (−500)</option>
             <option value="maintain">Maintain</option>
             <option value="gain">Gain (+300)</option>
-          </select>
+          </Select>
         </label>
       </div>
 

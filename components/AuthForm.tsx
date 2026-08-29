@@ -33,48 +33,66 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="panel w-full max-w-sm p-8">
-        <h1 className="text-2xl font-semibold text-ink">
+    <main className="flex min-h-screen items-center justify-center p-3">
+      <div className="panel w-full max-w-sm p-3">
+        <h1 className="text-sm font-semibold uppercase tracking-widest text-ink">
           {isLogin ? "Welcome back" : "Create your account"}
         </h1>
-        <p className="mt-1 text-sm text-ink-dim">
+        <p className="mt-1 text-xs text-ink-dim">
           {isLogin
             ? "Log in to track your meals."
             : "Start tracking calories and macros."}
         </p>
 
-        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+        <form onSubmit={onSubmit} className="mt-4 space-y-2">
           <div>
-            <label className="block text-sm font-medium text-ink">
+            <label
+              htmlFor="email"
+              className="block text-2xs font-semibold uppercase tracking-wider text-ink-dim"
+            >
               Email
             </label>
             <input
+              id="email"
               type="email"
+              autoComplete="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-line bg-transparent px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+              className="field mt-1 w-full"
               placeholder="you@example.com"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-ink">
+            <label
+              htmlFor="password"
+              className="block text-2xs font-semibold uppercase tracking-wider text-ink-dim"
+            >
               Password
             </label>
             <input
+              id="password"
               type="password"
+              autoComplete={isLogin ? "current-password" : "new-password"}
               required
               minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-line bg-transparent px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+              className="field mt-1 w-full"
               placeholder="At least 8 characters"
             />
           </div>
 
           {error && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p
+              role="alert"
+              className="rounded px-2 py-1.5 text-xs"
+              style={{
+                background: "var(--panel-2)",
+                border: "1px solid var(--over)",
+                color: "var(--over)",
+              }}
+            >
               {error}
             </p>
           )}
@@ -82,7 +100,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition disabled:opacity-60"
+            className="btn btn-primary w-full"
           >
             {loading
               ? "Please wait…"
@@ -92,7 +110,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-ink-dim">
+        <p className="mt-4 text-center text-xs text-ink-dim">
           {isLogin ? (
             <>
               No account?{" "}

@@ -8,6 +8,23 @@ import {
   localDateInTz,
   zonedWallToUtc,
 } from "@/lib/time";
+import {
+  baseUnitFor,
+  fromKg,
+  isWeightUnit,
+  normaliseServing,
+  toBase,
+  unitLabel,
+  formatQuantity,
+  toKg,
+  QUANTITY_UNITS,
+  SERVING_UNITS,
+  WEIGHT_UNITS,
+  type Basis,
+  type QuantityUnit,
+  type ServingUnit,
+  type WeightUnit,
+} from "@/lib/units";
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 
@@ -45,6 +62,9 @@ const logMealSchema = z
     sodium: optNum(),
     mealType: z.enum(MEALS),
     productId: z.string().min(1).optional(),
+    quantity: num(100000).optional(),
+    unit: z.enum(QUANTITY_UNITS).optional(),
+    /** @deprecated Still accepted; means quantity in the product's base unit. */
     grams: num(100000).optional(),
     consumedAt: z.string().min(1).optional(),
   })
@@ -65,6 +85,9 @@ const productArgsSchema = z.object({
   fiber: optNum(),
   sugar: optNum(),
   sodium: optNum(),
+  servingSize: num(100000).optional(),
+  servingUnit: z.enum(SERVING_UNITS).optional(),
+  /** @deprecated Still accepted; read as the product's own base unit. */
   servingGrams: num(100000).optional(),
 });
 
@@ -91,6 +114,9 @@ const goalsArgsSchema = z.object({
 
 const weightArgsSchema = z.object({
   weight: z.coerce.number().finite("must be a finite number").positive("Weight must be positive").max(1000),
+  // Explicit beats implicit: the tool used to say "in your weight unit" and
+  // store a bare number, so nothing recorded which unit that had been.
+  unit: z.enum(WEIGHT_UNITS).optional(),
   loggedAt: z.string().min(1).optional(),
 });
 
@@ -145,7 +171,12 @@ const TOOLS = [
         basis: { type: "string", enum: ["100g", "100ml"], description: "Whether the label values are per 100g or per 100ml. Default 100g." },
         calories: { type: "number", minimum: 0, description: "kcal per 100g/100ml" },
         ...nutrientProps,
-        servingGrams: { type: "number", minimum: 0, description: "Grams in one serving, if the label states it" },
+        servingSize: { type: "number", minimum: 0, description: "One serving = N of servingUnit, if the label states it" },
+        servingUnit: {
+          type: "string",
+          enum: [...SERVING_UNITS],
+          description: "Unit the serving is stated in. Defaults to the product's own base unit (g for 100g, ml for 100ml).",
+        },
       },
     },
   },
@@ -172,13 +203,19 @@ const TOOLS = [
   {
     name: "log_meal",
     description:
-      "Log a food entry. Preferred: pass productId (from save_product/search_products) plus grams — the macros are then computed from the stored label, so you do not need to do any arithmetic. Otherwise pass name and calories directly, estimating macros from the food name.",
+      "Log a food entry. Preferred: pass productId (from save_product/search_products) plus quantity and unit — the macros are then computed from the stored label, so you do not need to do any arithmetic. Otherwise pass name and calories directly, estimating macros from the food name.",
     inputSchema: {
       type: "object",
       required: ["mealType"],
       properties: {
         productId: { type: "string", description: "Saved product to log from. With this, macros are computed server-side." },
-        grams: { type: "number", minimum: 0, description: "Grams eaten. Used with productId. Defaults to one serving, or 100g." },
+        quantity: { type: "number", minimum: 0, description: "Amount eaten, in `unit`. Used with productId. Defaults to one serving, else 100 of the product's base unit." },
+        unit: {
+          type: "string",
+          enum: [...QUANTITY_UNITS],
+          description:
+            "Unit of `quantity`. Must match how the product is measured: g/oz for a 100g product, ml/floz for a 100ml one, or 'serving' when the product declares one. Mismatches are rejected rather than guessed at.",
+        },
         name: { type: "string", description: "Food name, when not logging from a product" },
         calories: { type: "integer", minimum: 0, description: "kcal, when not logging from a product" },
         ...nutrientProps,
@@ -237,7 +274,12 @@ const TOOLS = [
       type: "object",
       required: ["weight"],
       properties: {
-        weight: { type: "number", description: "Weight value (in your weight unit)" },
+        weight: { type: "number", description: "The measurement, in `unit`" },
+        unit: {
+          type: "string",
+          enum: [...WEIGHT_UNITS],
+          description: "kg or lb. Defaults to the account's setting. Stored canonically either way.",
+        },
         loggedAt: { type: "string", description: "ISO 8601 timestamp or YYYY-MM-DD — defaults to now" },
       },
     },
@@ -312,7 +354,10 @@ async function callTool(
         fiber: a.fiber,
         sugar: a.sugar,
         sodium: a.sodium,
-        servingGrams: a.servingGrams ?? null,
+        ...normaliseServing(
+          { servingSize: a.servingSize, servingUnit: a.servingUnit, servingGrams: a.servingGrams },
+          a.basis as Basis,
+        ),
         source: "mcp",
       };
 
@@ -330,8 +375,8 @@ async function callTool(
       return (
         `${existing ? "Updated" : "Saved"} product "${p.name}"${p.brand ? ` (${p.brand})` : ""} — ` +
         `per ${p.basis}: ${p.calories} kcal · P ${p.protein}g · C ${p.carbs}g · F ${p.fat}g` +
-        `${p.servingGrams ? ` · serving ${p.servingGrams}g` : ""}\n` +
-        `productId: ${p.id} — log it with log_meal { productId, grams, mealType }.`
+        `${p.servingSize ? ` · serving ${p.servingSize}${unitLabel(p.servingUnit as ServingUnit)}` : ""}\n` +
+        `productId: ${p.id} — log it with log_meal { productId, quantity, unit, mealType }.`
       );
     }
 
@@ -362,7 +407,7 @@ async function callTool(
           (p) =>
             `[${p.id}] ${p.name}${p.brand ? ` — ${p.brand}` : ""} · per ${p.basis}: ` +
             `${p.calories} kcal, P${p.protein} C${p.carbs} F${p.fat}` +
-            `${p.servingGrams ? ` · serving ${p.servingGrams}g` : ""}`,
+            `${p.servingSize ? ` · serving ${p.servingSize}${unitLabel(p.servingUnit as ServingUnit)}` : ""}`,
         )
         .join("\n");
     }
@@ -388,9 +433,33 @@ async function callTool(
         });
         if (!p) throw new Error(`Product ${a.productId} not found`);
 
-        // Default to one serving when the label defines it, else 100g.
-        const grams = a.grams ?? p.servingGrams ?? 100;
-        const f = grams / 100;
+        // What the caller asked for, resolved into the product's own base unit
+        // (grams for a 100g product, millilitres for a 100ml one). Defaults to
+        // one serving when the label defines it, else 100 of the base unit.
+        const basis = p.basis as Basis;
+        const serving =
+          p.servingSize != null ? { size: p.servingSize, unit: p.servingUnit as ServingUnit } : null;
+        // An explicit unit wins. Failing that, a bare `quantity` — and the
+        // deprecated `grams`, which always meant the base unit — are read in the
+        // base unit. Only when no amount is given at all does a declared serving
+        // become the default, because that is the sane "one of these" reading.
+        const askedUnit: QuantityUnit =
+          a.unit ??
+          (a.quantity != null || a.grams != null
+            ? baseUnitFor(basis)
+            : serving
+              ? "serving"
+              : baseUnitFor(basis));
+        const asked = a.quantity ?? a.grams ?? (askedUnit === "serving" ? 1 : 100);
+
+        const base = toBase(asked, askedUnit, basis, serving);
+        if (base === null) {
+          throw new Error(
+            `Cannot log ${formatQuantity(asked, askedUnit)} of "${p.name}", which is measured per ${p.basis}. ` +
+              `Use ${baseUnitFor(basis)}${serving ? " or serving" : ""}.`,
+          );
+        }
+        const f = base / 100;
         entryData = {
           name: p.brand ? `${p.name} (${p.brand})` : p.name,
           calories: Math.round(p.calories * f),
@@ -401,9 +470,13 @@ async function callTool(
           sugar: Math.round(p.sugar * f * 10) / 10,
           sodium: Math.round(p.sodium * f),
           productId: p.id,
-          quantityGrams: grams,
+          quantity: asked,
+          quantityUnit: askedUnit,
         };
-        provenance = ` — ${grams}${p.basis === "100ml" ? "ml" : "g"} of saved product`;
+        provenance =
+          ` — ${formatQuantity(asked, askedUnit)}` +
+          (askedUnit === "serving" ? ` (${base}${baseUnitFor(basis)})` : "") +
+          " of saved product";
       } else {
         entryData = {
           name: a.name!,
@@ -413,7 +486,8 @@ async function callTool(
       }
 
       const entry = await prisma.foodEntry.create({
-        data: { userId, ...entryData, mealType: a.mealType, consumedAt } as never,
+        // Stamped so the screen can show which front door wrote the row.
+        data: { userId, ...entryData, source: "mcp", mealType: a.mealType, consumedAt } as never,
       });
 
       // Report the local date so a wrong-day write is visible immediately.
@@ -499,11 +573,22 @@ async function callTool(
 
     case "log_weight": {
       const a = parsed.data as z.infer<typeof weightArgsSchema>;
+      const owner = await prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } });
+      const display: WeightUnit = isWeightUnit(owner?.weightUnit) ? (owner!.weightUnit as WeightUnit) : "kg";
+      const entered: WeightUnit = a.unit ?? display;
+
       const log = await prisma.weightLog.create({
-        data: { userId, weight: a.weight, loggedAt: resolveConsumedAt(a.loggedAt, tz) },
+        data: {
+          userId,
+          weight: toKg(a.weight, entered),
+          unit: entered,
+          loggedAt: resolveConsumedAt(a.loggedAt, tz),
+        },
       });
-      const user = await prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } });
-      return `Logged ${log.weight} ${user?.weightUnit ?? "kg"} on ${localDateInTz(log.loggedAt, tz)} (id: ${log.id})`;
+      return (
+        `Logged ${a.weight} ${entered} on ${localDateInTz(log.loggedAt, tz)} (id: ${log.id})` +
+        (entered === display ? "" : ` — shown as ${fromKg(log.weight, display)} ${display} in the app`)
+      );
     }
 
     case "list_weight": {
@@ -513,7 +598,12 @@ async function callTool(
         prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } }),
       ]);
       if (logs.length === 0) return "No weight logs in the last 30 days.";
-      return logs.map((l) => `[${l.id}] ${localDateInTz(l.loggedAt, tz)}: ${l.weight} ${user?.weightUnit ?? "kg"}`).join("\n");
+      // Rendered in the account's unit from the canonical column, so this is
+      // the same measurement the screen shows.
+      const shown: WeightUnit = isWeightUnit(user?.weightUnit) ? (user!.weightUnit as WeightUnit) : "kg";
+      return logs
+        .map((l) => `[${l.id}] ${localDateInTz(l.loggedAt, tz)}: ${fromKg(l.weight, shown)} ${shown}`)
+        .join("\n");
     }
 
     case "list_favorites": {

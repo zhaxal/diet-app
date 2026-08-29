@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { copyDaySchema } from "@/lib/validation";
 import { jsonError, zodError, unauthorized } from "@/lib/http";
-import { dayBoundsInTz, zonedWallToUtc } from "@/lib/time";
+import { dayBoundsInTz, localTimeInTz, zonedWallToUtc } from "@/lib/time";
 
 // POST /api/entries/copy { from, to } — duplicate all of `from`'s entries to `to`.
 export async function POST(req: NextRequest) {
@@ -21,6 +21,13 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return zodError(parsed.error);
 
   const { from, to } = parsed.data;
+
+  // Copying a day onto itself doubles it, irreversibly. The UI now prevents it,
+  // but the API must not depend on the UI for that.
+  if (from === to) {
+    return jsonError("Cannot copy a day onto itself", 400);
+  }
+
   const { start, end } = dayBoundsInTz(from, user.timezone);
   const source = await prisma.foodEntry.findMany({
     where: { userId: user.id, consumedAt: { gte: start, lt: end } },
@@ -30,8 +37,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ copied: 0 });
   }
 
-  // Anchor every copy at local noon of the target day.
-  const consumedAt = zonedWallToUtc(to, "12:00:00.000", user.timezone);
+  // Keep each entry's time of day rather than collapsing the whole day onto
+  // noon. A copied day that says breakfast happened at 08:12 and dinner at 19:40
+  // still interleaves correctly with anything the assistant logs alongside it.
+  const timeOfDay = (e: { consumedAt: Date }) =>
+    zonedWallToUtc(to, localTimeInTz(e.consumedAt, user.timezone), user.timezone);
 
   await prisma.foodEntry.createMany({
     data: source.map((e) => ({
@@ -45,7 +55,16 @@ export async function POST(req: NextRequest) {
       sugar: e.sugar,
       sodium: e.sodium,
       mealType: e.mealType,
-      consumedAt,
+      // Provenance travels with the copy. Dropping it turned "200g of the
+      // yoghurt I saved" into an anonymous row of numbers, which is precisely
+      // the re-reading the product catalog exists to avoid.
+      productId: e.productId,
+      quantity: e.quantity,
+      quantityUnit: e.quantityUnit,
+      // A copy is written by whoever asked for the copy, not by the front door
+      // that logged the original.
+      source: e.source,
+      consumedAt: timeOfDay(e),
     })),
   });
 

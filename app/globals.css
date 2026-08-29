@@ -14,7 +14,9 @@
   --line-soft: #e7eaef;
   --ink: #11151b;
   --ink-dim: #58616f;
-  --ink-faint: #8891a0;
+  /* The annotation layer carries labels, units and placeholders at 11px, so it
+     must clear 4.5:1 on panel, panel-2 and bg. #8891a0 measured 3.18/2.97/2.74. */
+  --ink-faint: #636c7a;
   --accent: #b45309;
   --ok: #15803d;
   --warn: #b45309;
@@ -31,7 +33,8 @@
   --line-soft: #1a2029;
   --ink: #e7ebf1;
   --ink-dim: #8a94a4;
-  --ink-faint: #5b6473;
+  /* Same rule in dark: #5b6473 measured 3.07/2.90/3.28. */
+  --ink-faint: #7d8797;
   --accent: #f59e0b;
   --ok: #4ade80;
   --warn: #fbbf24;
@@ -73,6 +76,20 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* A glyph control grows its own box rather than projecting an invisible one.
+   An earlier `.hit` helper cast a fixed 44x44 pseudo-element from the glyph's
+   centre; inside a 24px chip that overhung the control beside it, so a tap
+   meant for "log this favorite" could land on "delete it". Real padding on a
+   real flex box cannot overlap a sibling. */
+.glyph-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 8px;
+  margin: -8px -4px;
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -93,6 +110,87 @@ body {
 }
 .field::placeholder {
   color: var(--ink-faint);
+}
+.field:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Native control chrome ─────────────────────────────────────────────────
+   A number spinner, an OS select arrow and a calendar button are drawn by the
+   browser in its own language: three different metaphors, three weights, and
+   in dark mode two of them stay light. Inside a hairline monochrome panel they
+   read as holes in the design. These rules put them back on the system's
+   terms without replacing the native controls themselves — the date picker,
+   the option list and the numeric keyboard are all still the platform's. */
+
+/* Spinners fight a right-aligned figure and are unreachable on a phone. Arrow
+   keys and the numeric keyboard both still work without them. Applied to every
+   number input, not just `.field` — the grams box in the food search sits in
+   its own bordered wrapper and would otherwise be the one place they survive. */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* One chevron, masked so it takes a token colour and follows the theme. Drawn
+   at lucide's weight and terminals so it belongs to the same icon family as the
+   bottom nav. The `+`/`2` disclosure glyph stays the Panel's alone: a select
+   opens the platform's own list, and must not claim to be a Panel. */
+select.field {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 26px;
+  background-image: none;
+  background-repeat: no-repeat;
+}
+.select-wrap {
+  position: relative;
+  display: block;
+}
+.select-wrap::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translateY(-50%);
+  pointer-events: none;
+  background-color: var(--ink-faint);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+/* The calendar button is a fixed-colour bitmap in Chrome: black on a near-black
+   field in dark mode. Inverting it is the only way to reach it. */
+.field[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+}
+.field[type="date"]:hover::-webkit-calendar-picker-indicator {
+  opacity: 0.9;
+}
+.dark .field[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+/* Chrome renders the unfilled parts of a date in its own placeholder grey,
+   which does not track the theme. */
+.field[type="date"]::-webkit-datetime-edit-text,
+.field[type="date"]::-webkit-datetime-edit-month-field,
+.field[type="date"]::-webkit-datetime-edit-day-field,
+.field[type="date"]::-webkit-datetime-edit-year-field {
+  color: var(--ink);
 }
 
 /* Compact primary/secondary buttons. */

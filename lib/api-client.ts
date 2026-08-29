@@ -1,3 +1,5 @@
+import { consumedAtFor } from "./time-client";
+import { toBase, unitLabel, type Basis, type QuantityUnit, type ServingUnit, type WeightUnit } from "./units";
 // Thin fetch wrapper for the browser UI. Relies on the httpOnly auth cookie
 // (sent automatically for same-origin requests), so no token handling here.
 
@@ -15,7 +17,10 @@ export interface FoodEntry {
   sodium: number;
   mealType: Meal;
   productId?: string | null;
-  quantityGrams?: number | null;
+  quantity?: number | null;
+  quantityUnit?: QuantityUnit | null;
+  /** Which front door wrote this row: the screen, the assistant, or an import. */
+  source?: "ui" | "mcp" | "import";
   consumedAt: string;
   createdAt: string;
 }
@@ -45,7 +50,7 @@ export interface Goals {
   dailyFiber: number | null;
   dailySugar: number | null;
   dailySodium: number | null;
-  weightUnit: string;
+  weightUnit: WeightUnit;
   timezone: string;
   sex: "male" | "female" | null;
   birthYear: number | null;
@@ -54,7 +59,11 @@ export interface Goals {
 
 export interface WeightLog {
   id: string;
+  /** The reading in the account's display unit. Storage is canonical kg. */
   weight: number;
+  weightKg: number;
+  /** The unit it was originally entered in, which may differ from the display. */
+  enteredUnit: WeightUnit;
   loggedAt: string;
   createdAt: string;
 }
@@ -92,7 +101,8 @@ export interface Product extends FoodMacros {
   brand: string | null;
   barcode: string | null;
   basis: "100g" | "100ml";
-  servingGrams: number | null;
+  servingSize: number | null;
+  servingUnit: ServingUnit | null;
   source: string;
   createdAt: string;
   updatedAt: string;
@@ -101,11 +111,16 @@ export interface Product extends FoodMacros {
 export type ProductInput = Omit<
   Product,
   "id" | "source" | "createdAt" | "updatedAt"
-> & { brand?: string | null; barcode?: string | null; servingGrams?: number | null };
+> & { brand?: string | null; barcode?: string | null; servingSize?: number | null; servingUnit?: ServingUnit | null };
 
 export interface TemplateItem extends FoodMacros {
   name: string;
   mealType: Meal;
+  // Provenance, carried through so an applied template still says which product
+  // and how many grams each row came from.
+  productId?: string | null;
+  quantity?: number | null;
+  quantityUnit?: QuantityUnit | null;
 }
 
 export interface MealTemplate {
@@ -121,20 +136,50 @@ export interface TrendDay {
   protein: number;
   carbs: number;
   fat: number;
+  fiber: number;
+  sugar: number;
+  sodium: number;
   count: number;
 }
+
+export type MealTotals = Record<Meal, { calories: number; count: number }>;
 
 export interface Trends {
   days: number;
   nutrition: TrendDay[];
   weight: { date: string; value: number }[];
+  /** Range totals per meal, for the distribution of when calories land. */
+  meals: MealTotals;
+}
+
+/** An error `fetch` never reached the server with. */
+export interface NetworkError extends Error {
+  status?: number;
+  offline?: boolean;
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    });
+  } catch {
+    // `fetch` rejects with a bare "Failed to fetch", which every write path was
+    // showing the user verbatim. Say what actually happened, and mark it so the
+    // caller can tell "nothing was saved" from "the server said no".
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    const reach = offline ? "You are offline" : "Could not reach the server";
+    // A failed write has a second fact to report; a failed read does not.
+    const write = Boolean(init?.method) && init!.method !== "GET";
+    const err = new Error(
+      write ? `${reach} — nothing was saved` : reach,
+    ) as NetworkError;
+    err.status = 0;
+    err.offline = true;
+    throw err;
+  }
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {
@@ -143,7 +188,11 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     } catch {
       // ignore non-JSON error bodies
     }
-    throw new Error(message);
+    // Carry the status so callers can distinguish "log in again" (401/403)
+    // from "the network is flaky", which must not look like being signed out.
+    const err = new Error(message) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
   return res.json() as Promise<T>;
 }
@@ -188,11 +237,11 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  listWeight: () => request<{ logs: WeightLog[] }>("/api/weight"),
-  logWeight: (weight: number, loggedAt?: string) =>
-    request<{ log: WeightLog }>("/api/weight", {
+  listWeight: () => request<{ logs: WeightLog[]; unit: WeightUnit }>("/api/weight"),
+  logWeight: (weight: number, loggedAt?: string, unit?: WeightUnit) =>
+    request<{ log: WeightLog; unit: WeightUnit }>("/api/weight", {
       method: "POST",
-      body: JSON.stringify({ weight, loggedAt }),
+      body: JSON.stringify({ weight, loggedAt, unit }),
     }),
   deleteWeight: (id: string) =>
     request(`/api/weight/${id}`, { method: "DELETE" }),
@@ -252,8 +301,34 @@ export const api = {
     request(`/api/products/${id}`, { method: "DELETE" }),
 
   // Log a saved product by weight — macros scale from the per-100 basis.
-  logProduct: (p: Product, grams: number, mealType: Meal, date: string) => {
-    const f = grams / 100;
+  /** The saved catalog first, then Open Food Facts. */
+  lookupBarcode: (code: string) =>
+    request<{
+      source: "saved" | "openfoodfacts" | "none";
+      product: (ProductInput & { id?: string }) | null;
+    }>(`/api/products/barcode/${encodeURIComponent(code)}`),
+
+  logProduct: (
+    p: Product,
+    quantity: number,
+    unit: QuantityUnit,
+    mealType: Meal,
+    date: string,
+  ) => {
+    // Resolved into the product's own base unit, so 2 oz of a per-100g label
+    // and 1 serving of it go through the same arithmetic.
+    const base = toBase(
+      quantity,
+      unit,
+      p.basis as Basis,
+      p.servingSize != null ? { size: p.servingSize, unit: p.servingUnit as ServingUnit } : null,
+    );
+    if (base === null) {
+      return Promise.reject(
+        new Error(`Cannot log ${quantity}${unitLabel(unit)} of a product measured per ${p.basis}`),
+      );
+    }
+    const f = base / 100;
     const r1 = (n: number) => Math.round(n * f * 10) / 10;
     return request<{ entry: FoodEntry }>("/api/entries", {
       method: "POST",
@@ -268,8 +343,9 @@ export const api = {
         sodium: Math.round(p.sodium * f),
         mealType,
         productId: p.id,
-        quantityGrams: grams,
-        consumedAt: new Date(`${date}T12:00:00`).toISOString(),
+        quantity,
+        quantityUnit: unit,
+        consumedAt: consumedAtFor(date),
       }),
     });
   },

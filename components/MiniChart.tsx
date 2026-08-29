@@ -1,20 +1,43 @@
 "use client";
 
+/*
+ * Both charts stretch to their container with `preserveAspectRatio="none"`, so
+ * only two kinds of mark survive intact: a rect, and a stroke carrying
+ * `vector-effect="non-scaling-stroke"`. Anything else is scaled non-uniformly —
+ * which is why the bars no longer carry a corner radius (a 1-unit radius became
+ * ~6px wide and 1px tall) and why the line's points are drawn as zero-length
+ * round-capped strokes rather than circles, which rendered as flat ellipses.
+ */
+
 interface BarChartProps {
   data: { label: string; value: number }[];
   color?: string;
   height?: number;
+  /** Draws a hairline at this value, so the bars read against a target. */
+  reference?: number | null;
+  /** Bars past `reference` take this colour. */
+  overColor?: string;
 }
 
-export function BarChart({ data, color = "#10b981", height = 80 }: BarChartProps) {
+export function BarChart({
+  data,
+  color = "var(--accent)",
+  height = 80,
+  reference = null,
+  overColor = "var(--over)",
+}: BarChartProps) {
   if (data.length === 0) return null;
-  const max = Math.max(...data.map((d) => d.value), 1);
+  // The reference line has to fit too, or a day under a goal it never reaches
+  // would push the goal off the top of the frame.
+  const max = Math.max(...data.map((d) => d.value), reference ?? 0, 1);
   const w = 100 / data.length;
+  const refY = reference ? height - (reference / max) * (height - 4) : null;
 
   return (
     <svg viewBox={`0 0 100 ${height}`} className="w-full" preserveAspectRatio="none">
       {data.map((d, i) => {
         const barH = (d.value / max) * (height - 4);
+        const over = reference != null && d.value > reference;
         return (
           <rect
             key={i}
@@ -22,12 +45,23 @@ export function BarChart({ data, color = "#10b981", height = 80 }: BarChartProps
             y={height - barH}
             width={w * 0.8}
             height={barH}
-            fill={color}
-            opacity={0.8}
-            rx={1}
+            fill={over ? overColor : color}
+            opacity={0.85}
           />
         );
       })}
+      {refY != null && (
+        <line
+          x1={0}
+          y1={refY}
+          x2={100}
+          y2={refY}
+          stroke="var(--ink-faint)"
+          strokeWidth={1}
+          strokeDasharray="3 3"
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
     </svg>
   );
 }
@@ -38,7 +72,7 @@ interface LineChartProps {
   height?: number;
 }
 
-export function LineChart({ data, color = "#10b981", height = 80 }: LineChartProps) {
+export function LineChart({ data, color = "var(--accent)", height = 80 }: LineChartProps) {
   if (data.length < 2) return null;
   const vals = data.map((d) => d.value);
   const min = Math.min(...vals);
@@ -47,14 +81,12 @@ export function LineChart({ data, color = "#10b981", height = 80 }: LineChartPro
   const pad = 4;
   const innerH = height - pad * 2;
   const step = 100 / (data.length - 1);
+  const at = (i: number, v: number) => ({
+    x: i * step,
+    y: pad + innerH - ((v - min) / range) * innerH,
+  });
 
-  const points = data
-    .map((d, i) => {
-      const x = i * step;
-      const y = pad + innerH - ((d.value - min) / range) * innerH;
-      return `${x},${y}`;
-    })
-    .join(" ");
+  const points = data.map((d, i) => { const p = at(i, d.value); return `${p.x},${p.y}`; }).join(" ");
 
   return (
     <svg viewBox={`0 0 100 ${height}`} className="w-full" preserveAspectRatio="none">
@@ -68,9 +100,22 @@ export function LineChart({ data, color = "#10b981", height = 80 }: LineChartPro
         vectorEffect="non-scaling-stroke"
       />
       {data.map((d, i) => {
-        const x = i * step;
-        const y = pad + innerH - ((d.value - min) / range) * innerH;
-        return <circle key={i} cx={x} cy={y} r={2.5} fill={color} vectorEffect="non-scaling-stroke" />;
+        const p = at(i, d.value);
+        // A zero-length stroke with a round cap is a true circle of the stroke's
+        // width, and non-scaling-stroke keeps it round under the stretch.
+        return (
+          <line
+            key={i}
+            x1={p.x}
+            y1={p.y}
+            x2={p.x}
+            y2={p.y}
+            stroke={color}
+            strokeWidth={5}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        );
       })}
     </svg>
   );

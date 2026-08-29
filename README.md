@@ -11,6 +11,7 @@ and **SQLite**. It has a small web UI for logging meals and a fully documented
 - Daily dashboard with per-meal grouping and running totals
 - REST API documented with OpenAPI 3.1, browsable at `/api-docs`
 - Each user only sees their own entries
+- Installable PWA that opens and reads offline (see below)
 
 ## Tech stack
 
@@ -46,6 +47,59 @@ npm run dev
 
 Open <http://localhost:3000>. Register an account, or log in with the seeded
 demo user.
+
+## Units
+
+Every stored number is canonical, with the unit it was entered in recorded beside it.
+
+| Thing | Stored as | Entered / displayed as |
+| --- | --- | --- |
+| Body weight | kilograms (`WeightLog.weight`) | kg or lb (`WeightLog.unit`, account preference) |
+| Food quantity | the amount plus `quantityUnit` | g, oz, ml, fl oz, or `serving` |
+| Product nutrition | per 100 g or 100 ml (`basis`) | same |
+| Nutrients | grams, except sodium in mg | same |
+| Energy | kcal | same |
+
+`weightUnit` used to be a display label with no conversion behind it: `WeightLog.weight` was a
+bare number, so switching kg to lb relabelled every historical reading as pounds instead of
+converting it — and `TdeeCard` then computed a BMR from the wrong figure. Weight is kilograms
+now. The migration converted existing rows by reading them as the account's unit *at that time*,
+which is correct for any account that never switched; an account that did switch had readings
+that were already ambiguous, and no migration can recover which was which.
+
+`lib/units.ts` owns every conversion. `toBase()` resolves a quantity into a product's own basis
+and returns `null` when the pairing is impossible — 200 ml of a per-100g product has no answer
+without a density, and inventing one would be inventing data. Callers surface the refusal.
+
+The older `quantityGrams` and `servingGrams` fields are still accepted by the REST API and the
+MCP tools, normalised through `normaliseQuantity()` / `normaliseServing()`, so anything written
+against the previous shape keeps working.
+
+## Offline behaviour
+
+The app installs as a PWA and opens without a network.
+
+`public/sw.js` caches the application shell — the HTML for `/`, `/login` and
+`/register`, plus the hashed `/_next/static/` bundles, which are immutable and so
+safe to serve cache-first. Navigations are network-first and fall back to the
+cached shell.
+
+**The worker never caches `/api/`.** Two writers reach this data — the screen and
+the assistant — so a cached day served through the same code path as a live one
+would be a lie the user cannot detect, and a URL-keyed Cache Storage entry would
+outlive a logout and hand one account's food log to the next person holding the
+phone.
+
+Offline reads are the app's job instead. After every successful load of *today*,
+the dashboard writes a snapshot to `localStorage` (`lib/offline-cache.ts`) scoped
+to a user id and stamped with the moment the reading was taken. Launched without
+a network, the app renders that snapshot behind a banner naming its time, and the
+calorie readout's clock shows that time rather than now. The snapshot is dropped
+on logout and whenever a different account signs in on the device.
+
+Writes are never queued. Offline, a save fails immediately with "You are offline
+— nothing was saved", because a silent replay would collide with whatever the
+assistant did to the same day in the meantime.
 
 ## The API (how Claude logs entries)
 
@@ -111,6 +165,12 @@ lib/
   validation.ts   zod schemas (shared by routes + OpenAPI)
   openapi.ts      OpenAPI 3.1 document
   http.ts         JSON error helpers + date-range helper
+  time.ts         timezone-aware day boundaries (server)
+  time-client.ts  day/clock formatting and entry stamping (browser)
+  offline-cache.ts  the device-side snapshot behind offline reads
+  units.ts        every unit conversion, and the rules about refusing one
+public/
+  sw.js           shell-caching service worker; never touches /api/
 prisma/
   schema.prisma   data model
   seed.ts         demo data

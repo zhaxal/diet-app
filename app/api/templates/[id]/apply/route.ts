@@ -28,7 +28,15 @@ export async function POST(
   const parsed = applyTemplateSchema.safeParse(body);
   if (!parsed.success) return zodError(parsed.error);
 
-  const items = z.array(templateItemSchema).safeParse(JSON.parse(tpl.items));
+  // `tpl.items` is a JSON string column; a malformed one must not throw a 500.
+  let raw: unknown;
+  try {
+    raw = JSON.parse(tpl.items);
+  } catch {
+    return jsonError("Template has no valid items", 422);
+  }
+
+  const items = z.array(templateItemSchema).safeParse(raw);
   if (!items.success || items.data.length === 0) {
     return jsonError("Template has no valid items", 422);
   }

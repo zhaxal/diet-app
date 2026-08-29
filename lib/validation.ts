@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isValidTimeZone } from "./time";
+import { QUANTITY_UNITS, SERVING_UNITS, WEIGHT_UNITS } from "./units";
 
 export const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
 export type MealType = (typeof MEAL_TYPES)[number];
@@ -24,6 +25,9 @@ const entryBase = {
   mealType: z.enum(MEAL_TYPES),
   // Provenance when the entry came from a saved Product.
   productId: z.string().min(1).nullable().optional(),
+  quantity: z.number().positive().max(100000).nullable().optional(),
+  quantityUnit: z.enum(QUANTITY_UNITS).nullable().optional(),
+  /** @deprecated Accepted for older callers; normalised to quantity + "g". */
   quantityGrams: z.number().positive().max(100000).nullable().optional(),
   // ISO 8601 timestamp; defaults to "now" server-side when omitted.
   consumedAt: z.string().datetime({ offset: true }).optional(),
@@ -80,6 +84,10 @@ export const goalsSchema = z.object({
 
 export const weightSchema = z.object({
   weight: z.number().positive("Weight must be positive").max(1000),
+  // Omitted means "the unit this account is set to". The row stores canonical
+  // kilograms either way, so a later change of setting re-renders the reading
+  // instead of reinterpreting it.
+  unit: z.enum(WEIGHT_UNITS).optional(),
   loggedAt: z.string().datetime({ offset: true }).optional(),
 });
 
@@ -95,7 +103,9 @@ export const favoriteSchema = z.object({
   mealType: z.enum(MEAL_TYPES).optional(),
 });
 
-// A single item inside a meal template.
+// A single item inside a meal template. Carries the same provenance fields as an
+// entry: a template built from product-logged rows must still know which product
+// and how many grams, or applying it silently degrades the data.
 export const templateItemSchema = z.object({
   name: z.string().min(1).max(200),
   calories: z.number().int().min(0).max(100000),
@@ -106,6 +116,9 @@ export const templateItemSchema = z.object({
   sugar: nutrient(),
   sodium: nutrient(),
   mealType: z.enum(MEAL_TYPES),
+  productId: z.string().min(1).nullable().optional(),
+  quantity: z.number().positive().max(100000).nullable().optional(),
+  quantityUnit: z.enum(QUANTITY_UNITS).nullable().optional(),
 });
 
 export const templateSchema = z.object({
@@ -146,6 +159,9 @@ export const productSchema = z.object({
   fiber: per100(),
   sugar: per100(),
   sodium: per100(), // mg
+  servingSize: z.coerce.number().positive().max(100000).nullable().optional(),
+  servingUnit: z.enum(SERVING_UNITS).nullable().optional(),
+  /** @deprecated Accepted for older callers; normalised to servingSize + base unit. */
   servingGrams: z.coerce.number().positive().max(100000).nullable().optional(),
 });
 

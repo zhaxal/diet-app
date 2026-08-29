@@ -80,6 +80,20 @@ export function localDateInTz(date: Date, timeZone: string): string {
   }).format(date);
 }
 
+/** The local wall-clock time of `date` in `timeZone`, as "HH:MM:SS.mmm". */
+export function localTimeInTz(date: Date, timeZone: string): string {
+  const hms = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
+  // en-GB can render midnight as "24:00:00".
+  const normalised = hms.startsWith("24:") ? `00:${hms.slice(3)}` : hms;
+  return `${normalised}.${String(date.getUTCMilliseconds()).padStart(3, "0")}`;
+}
+
 /** Today's YYYY-MM-DD in `timeZone`. */
 export function todayInTz(timeZone: string): string {
   return localDateInTz(new Date(), timeZone);

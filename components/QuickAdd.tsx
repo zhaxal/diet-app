@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, type Favorite, type RecentFood } from "@/lib/api-client";
+import { consumedAtFor } from "@/lib/time-client";
 import { useToast } from "./Toast";
 
 interface Props {
@@ -11,9 +12,10 @@ interface Props {
   selectedDate: string;
   onLogged: () => void;
   onFavoriteDeleted: (id: string) => void;
+  onFavoritesChanged: () => void;
 }
 
-export default function QuickAdd({ favorites, recent, selectedMeal, selectedDate, onLogged, onFavoriteDeleted }: Props) {
+export default function QuickAdd({ favorites, recent, selectedMeal, selectedDate, onLogged, onFavoriteDeleted, onFavoritesChanged }: Props) {
   const toast = useToast();
   const [logging, setLogging] = useState<string | null>(null);
 
@@ -29,8 +31,10 @@ export default function QuickAdd({ favorites, recent, selectedMeal, selectedDate
         fiber: food.fiber,
         sugar: food.sugar,
         sodium: food.sodium,
-        mealType: (food.mealType ?? selectedMeal) as "breakfast" | "lunch" | "dinner" | "snack",
-        consumedAt: new Date(`${selectedDate}T12:00:00`).toISOString(),
+        // The visible meal control wins. A favorite saved months ago under
+        // "breakfast" must not silently override what the screen says right now.
+        mealType: selectedMeal as "breakfast" | "lunch" | "dinner" | "snack",
+        consumedAt: consumedAtFor(selectedDate),
       });
       toast(`Logged ${food.name}`);
       onLogged();
@@ -42,9 +46,42 @@ export default function QuickAdd({ favorites, recent, selectedMeal, selectedDate
   }
 
   async function deleteFav(id: string, name: string) {
-    await api.deleteFavorite(id);
-    onFavoriteDeleted(id);
-    toast(`Removed ${name} from favorites`, "info");
+    const doomed = favorites.find((f) => f.id === id);
+    try {
+      await api.deleteFavorite(id);
+      onFavoriteDeleted(id);
+      // Recoverable: this control sits inside the chip you tap to log, so a
+      // mis-tap must not be final.
+      toast(
+        `Removed ${name}`,
+        "info",
+        doomed
+          ? {
+              label: "Undo",
+              onAct: () => {
+                api
+                  .saveFavorite({
+                    name: doomed.name,
+                    calories: doomed.calories,
+                    protein: doomed.protein,
+                    carbs: doomed.carbs,
+                    fat: doomed.fat,
+                    fiber: doomed.fiber,
+                    sugar: doomed.sugar,
+                    sodium: doomed.sodium,
+                    mealType: doomed.mealType ?? undefined,
+                  })
+                  .then(onFavoritesChanged)
+                  .catch(() => toast("Could not restore favorite", "error"));
+              },
+            }
+          : undefined,
+      );
+    } catch (e) {
+      // Without this the row vanished locally while surviving on the server,
+      // and reappeared on the next load.
+      toast(e instanceof Error ? e.message : "Could not remove favorite", "error");
+    }
   }
 
   if (favorites.length === 0 && recent.length === 0) return null;
@@ -56,7 +93,7 @@ export default function QuickAdd({ favorites, recent, selectedMeal, selectedDate
           <p className="text-xs font-medium text-ink-dim mb-1.5">Favorites</p>
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
             {favorites.map((f) => (
-              <div key={f.id} className="flex shrink-0 items-center gap-1 rounded border border-line bg-panel-2 pl-2.5 pr-1 py-1">
+              <div key={f.id} className="flex shrink-0 items-stretch gap-1 rounded border border-line bg-panel-2 py-1.5 pl-2.5 pr-1">
                 <button
                   onClick={() => logFood(f)}
                   disabled={logging === f.name}
@@ -64,7 +101,13 @@ export default function QuickAdd({ favorites, recent, selectedMeal, selectedDate
                 >
                   ★ {f.name} <span className="text-accent">{f.calories}</span>
                 </button>
-                <button onClick={() => deleteFav(f.id, f.name)} className="ml-0.5 text-ink-faint hover:text-over text-sm leading-none" title="Remove favorite">×</button>
+                <button
+                  onClick={() => deleteFav(f.id, f.name)}
+                  className="glyph-btn ml-1 border-l border-line text-sm leading-none text-ink-faint hover:text-over"
+                  aria-label={`Remove ${f.name} from favorites`}
+                >
+                  ×
+                </button>
               </div>
             ))}
           </div>

@@ -12,9 +12,20 @@ interface Props {
   onApplied: () => void;
 }
 
+// Local date arithmetic on a YYYY-MM-DD string, matching the dashboard helper.
+function shiftDay(date: string, days: number) {
+  const d = new Date(`${date}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
 export default function TemplatesCard({ date, entries, templates, onTemplatesChange, onApplied }: Props) {
   const toast = useToast();
-  const [copyFrom, setCopyFrom] = useState(date);
+  // Defaulting to `date` made the primary action "copy today onto today", which
+  // silently doubles the day. Yesterday is the only sane default here.
+  const [copyFrom, setCopyFrom] = useState(() => shiftDay(date, -1));
   const [busy, setBusy] = useState(false);
 
   async function copyDay() {
@@ -43,6 +54,8 @@ export default function TemplatesCard({ date, entries, templates, onTemplatesCha
     const items: TemplateItem[] = entries.map((e) => ({
       name: e.name, calories: e.calories, protein: e.protein, carbs: e.carbs,
       fat: e.fat, fiber: e.fiber, sugar: e.sugar, sodium: e.sodium, mealType: e.mealType,
+      productId: e.productId ?? null,
+      quantity: e.quantity ?? null, quantityUnit: e.quantityUnit ?? null,
     }));
     try {
       const { template } = await api.saveTemplate(name, items);
@@ -77,8 +90,15 @@ export default function TemplatesCard({ date, entries, templates, onTemplatesCha
           <div>
             <p className="mb-1.5 text-xs font-medium text-ink-dim">Copy a day&apos;s meals to {date}</p>
             <div className="flex gap-2">
-              <input type="date" max={date} value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)} className="flex-1 rounded border border-line bg-transparent px-3 py-2 text-sm outline-none" />
-              <button onClick={copyDay} disabled={busy} className="btn btn-primary">Copy</button>
+              <input
+                type="date"
+                max={shiftDay(date, -1)}
+                value={copyFrom}
+                onChange={(e) => setCopyFrom(e.target.value)}
+                aria-label="Day to copy from"
+                className="field flex-1"
+              />
+              <button onClick={copyDay} disabled={busy || copyFrom === date} className="btn btn-primary">Copy</button>
             </div>
           </div>
 
@@ -96,7 +116,7 @@ export default function TemplatesCard({ date, entries, templates, onTemplatesCha
                   <li key={t.id} className="flex items-center justify-between gap-2 rounded bg-panel-2 px-3 py-2">
                     <span className="min-w-0 truncate text-sm text-ink">{t.name} <span className="text-xs text-ink-faint">· {t.items.length} items</span></span>
                     <div className="flex shrink-0 gap-2">
-                      <button onClick={() => apply(t)} className="rounded-lg bg-accent px-2.5 py-1 text-xs font-medium text-white">Apply</button>
+                      <button onClick={() => apply(t)} className="btn btn-primary">Apply</button>
                       <button onClick={() => remove(t)} className="text-xs text-ink-faint hover:text-over">Delete</button>
                     </div>
                   </li>

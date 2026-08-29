@@ -18,6 +18,8 @@ export interface AuthUser {
   id: string;
   email: string;
   timezone: string;
+  /** The account's display unit for body weight. Storage is always kilograms. */
+  weightUnit: string;
 }
 
 interface TokenPayload {
@@ -76,7 +78,9 @@ export async function getUserFromRequest(
   // Confirm the user still exists (e.g. not deleted after the token was issued).
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    select: { id: true, email: true, timezone: true },
+    // weightUnit rides along because body weight is stored canonically and
+    // every read has to render it in the account's own unit.
+    select: { id: true, email: true, timezone: true, weightUnit: true },
   });
 
   return user;

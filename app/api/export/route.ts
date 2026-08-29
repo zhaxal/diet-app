@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { unauthorized } from "@/lib/http";
+import { fromKg, isWeightUnit, type WeightUnit } from "@/lib/units";
 
 // GET /api/export?format=json|csv — download all of the user's data.
 export async function GET(req: NextRequest) {
@@ -11,11 +12,14 @@ export async function GET(req: NextRequest) {
   const format = req.nextUrl.searchParams.get("format") === "csv" ? "csv" : "json";
   const stamp = new Date().toISOString().slice(0, 10);
 
-  const [entries, weightLogs, favorites, templates, profile] = await Promise.all([
+  const [entries, weightLogs, favorites, templates, products, profile] = await Promise.all([
     prisma.foodEntry.findMany({ where: { userId: user.id }, orderBy: { consumedAt: "asc" } }),
     prisma.weightLog.findMany({ where: { userId: user.id }, orderBy: { loggedAt: "asc" } }),
     prisma.favorite.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
     prisma.mealTemplate.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+    // The product catalog is a first-class feature and was missing from every
+    // export: an "all of your data" file that omitted the labels you had saved.
+    prisma.product.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
     prisma.user.findUnique({
       where: { id: user.id },
       select: {
@@ -26,20 +30,34 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
+  const displayUnit: WeightUnit = isWeightUnit(user.weightUnit) ? user.weightUnit : "kg";
+
   if (format === "csv") {
-    const cols = ["consumedAt", "mealType", "name", "calories", "protein", "carbs", "fat", "fiber", "sugar", "sodium"] as const;
-    const header = cols.join(",");
-    const rows = entries.map((e) =>
-      cols
-        .map((c) => {
-          const v = c === "consumedAt" ? e.consumedAt.toISOString() : (e as Record<string, unknown>)[c];
+    // The CSV used to carry ten columns and drop provenance entirely, so a
+    // "200 g of the yoghurt I saved" entry exported as an anonymous row of
+    // numbers. Everything the row knows about itself is now in the file.
+    const csvRow = (values: unknown[]) =>
+      values
+        .map((v) => {
           const s = String(v ?? "");
           return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
         })
-        .join(","),
+        .join(",");
+
+    const header = [
+      "consumedAt", "mealType", "name", "calories",
+      "protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "sodium_mg",
+      "quantity", "quantityUnit", "productId", "source",
+    ];
+    const rows = entries.map((e) =>
+      csvRow([
+        e.consumedAt.toISOString(), e.mealType, e.name, e.calories,
+        e.protein, e.carbs, e.fat, e.fiber, e.sugar, e.sodium,
+        e.quantity, e.quantityUnit, e.productId, e.source,
+      ]),
     );
-    const csv = [header, ...rows].join("\n");
-    return new NextResponse(csv, {
+
+    return new NextResponse([csvRow(header), ...rows].join("\n"), {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="diet-entries-${stamp}.csv"`,
@@ -49,12 +67,37 @@ export async function GET(req: NextRequest) {
 
   const payload = {
     exportedAt: new Date().toISOString(),
+    // Says what the numbers in this file mean, so it can be read back — or read
+    // by anything else — without knowing the app's internal conventions.
+    units: {
+      energy: "kcal",
+      nutrients: "g, except sodium in mg",
+      weight: "kg (canonical); `weight` is also given in the account's unit",
+      products: "per 100 g or 100 ml, per each product's `basis`",
+    },
     profile,
     entries,
-    weightLogs,
+    weightLogs: weightLogs.map(({ unit, ...l }) => ({
+      ...l,
+      weightKg: l.weight,
+      weight: fromKg(l.weight, displayUnit),
+      // Named as the API names it, not as the column does.
+      enteredUnit: unit,
+      displayUnit,
+    })),
     favorites,
-    templates: templates.map((t) => ({ ...t, items: JSON.parse(t.items) })),
+    products,
+    templates: templates.map((t) => {
+      // One malformed row used to throw, taking the whole export down with a
+      // 500 — the file you reach for precisely when something is wrong.
+      try {
+        return { ...t, items: JSON.parse(t.items) };
+      } catch {
+        return { ...t, items: [], itemsUnparsed: t.items };
+      }
+    }),
   };
+
   return new NextResponse(JSON.stringify(payload, null, 2), {
     headers: {
       "Content-Type": "application/json; charset=utf-8",

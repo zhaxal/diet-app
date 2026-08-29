@@ -1,0 +1,28 @@
+// Browser-side day helpers. The server owns timezone-correct day boundaries;
+// these only format and stamp what the user is looking at right now.
+
+export const todayStr = () => {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+};
+
+/**
+ * Entries logged through the assistant carry real times; stamping the UI's at
+ * noon made an 8am coffee sort above an 8pm dinner and left every UI entry tied
+ * at the same instant. Use the actual clock for today, and keep noon as the
+ * neutral anchor only for a backdated day.
+ */
+export function consumedAtFor(date: string): string {
+  if (date === todayStr()) return new Date().toISOString();
+  return new Date(`${date}T12:00:00`).toISOString();
+}
+
+/** "14:32" in the viewer's own locale. */
+export function clockTime(value: string | number | Date): string {
+  return new Date(value).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

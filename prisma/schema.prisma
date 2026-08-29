@@ -46,7 +46,8 @@ model Product {
   fiber        Float    @default(0)
   sugar        Float    @default(0)
   sodium       Float    @default(0) // mg
-  servingGrams Float? // one serving = N grams, when the label states it
+  servingSize  Float? // one serving = N of servingUnit, when the label states it
+  servingUnit  String? // g | oz | ml | floz
   source       String   @default("manual") // manual | mcp | openfoodfacts
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -70,7 +71,8 @@ model MealTemplate {
 model WeightLog {
   id        String   @id @default(cuid())
   userId    String
-  weight    Float
+  weight    Float // canonical kilograms, always
+  unit      String   @default("kg") // the unit it was entered in: kg | lb
   loggedAt  DateTime @default(now())
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -109,7 +111,9 @@ model FoodEntry {
   sodium     Float    @default(0) // mg
   mealType   String // breakfast | lunch | dinner | snack
   productId  String? // provenance: logged from a saved Product
-  quantityGrams Float? // grams consumed, when logged from a Product
+  quantity   Float? // amount consumed, in `quantityUnit`
+  quantityUnit String? // g | oz | ml | floz | serving
+  source     String   @default("ui") // which front door wrote this: ui | mcp | import
   consumedAt DateTime @default(now())
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)

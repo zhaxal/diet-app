@@ -37,19 +37,53 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  // Bucket entries by their local calendar date in the user's tz.
-  const byDate: Record<string, { calories: number; protein: number; carbs: number; fat: number; count: number }> = {};
-  for (const date of dates) {
-    byDate[date] = { calories: 0, protein: 0, carbs: 0, fat: 0, count: 0 };
-  }
+  // Bucket entries by their local calendar date in the user's tz. All six
+  // nutrients, not just the macros: the goals screen sets targets for every one
+  // of them, so a range view that reported only three could not say whether the
+  // average day met them.
+  type DayTotals = {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    fiber: number;
+    sugar: number;
+    sodium: number;
+    count: number;
+  };
+  const emptyDay = (): DayTotals => ({
+    calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0, count: 0,
+  });
+
+  const byDate: Record<string, DayTotals> = {};
+  for (const date of dates) byDate[date] = emptyDay();
+
+  // Where the range's calories landed across the day. Totals, not averages —
+  // the caller divides by whatever denominator it is willing to defend.
+  const meals: Record<string, { calories: number; count: number }> = {
+    breakfast: { calories: 0, count: 0 },
+    lunch: { calories: 0, count: 0 },
+    dinner: { calories: 0, count: 0 },
+    snack: { calories: 0, count: 0 },
+  };
+
   for (const e of entries) {
     const date = localDateInTz(e.consumedAt, tz);
-    if (byDate[date]) {
-      byDate[date].calories += e.calories;
-      byDate[date].protein += e.protein;
-      byDate[date].carbs += e.carbs;
-      byDate[date].fat += e.fat;
-      byDate[date].count += 1;
+    const day = byDate[date];
+    if (!day) continue;
+    day.calories += e.calories;
+    day.protein += e.protein;
+    day.carbs += e.carbs;
+    day.fat += e.fat;
+    day.fiber += e.fiber;
+    day.sugar += e.sugar;
+    day.sodium += e.sodium;
+    day.count += 1;
+
+    const bucket = meals[e.mealType];
+    if (bucket) {
+      bucket.calories += e.calories;
+      bucket.count += 1;
     }
   }
 
@@ -62,5 +96,5 @@ export async function GET(req: NextRequest) {
   }
   const weight = Object.entries(weightByDate).map(([date, value]) => ({ date, value }));
 
-  return NextResponse.json({ days, nutrition, weight });
+  return NextResponse.json({ days, nutrition, weight, meals });
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, type Goals } from "@/lib/api-client";
+import Select from "./Select";
 import { useToast } from "./Toast";
 
 interface Props {
@@ -78,16 +79,25 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
         ))}
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">unit</span>
-          <select
+          <Select
             value={form.weightUnit}
-            onChange={(e) => setForm({ ...form, weightUnit: e.target.value })}
-            className="field mt-0.5 w-full [&>option]:text-black"
+            onChange={(e) => setForm({ ...form, weightUnit: e.target.value as "kg" | "lb" })}
+            wrapClassName="mt-0.5"
           >
             <option value="kg">kg</option>
             <option value="lb">lb</option>
-          </select>
+          </Select>
         </label>
       </div>
+      {/* This setting used to be a label with no conversion behind it: switching
+          it reinterpreted every stored reading instead of re-rendering it.
+          Readings are canonical kilograms now, so the switch is safe — and
+          saying so is worth two lines, because the old behaviour means readings
+          taken before the change were read as whatever this was set to then. */}
+      <p className="mt-2 text-2xs text-ink-faint">
+        Weight is stored in kilograms and converted for display, so changing the
+        unit re-renders your history rather than reinterpreting it.
+      </p>
       <button onClick={save} disabled={saving} className="btn btn-primary mt-2.5 w-full">
         {saving ? "Saving…" : "Save goals"}
       </button>

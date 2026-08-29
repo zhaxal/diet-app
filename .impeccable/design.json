@@ -1,0 +1,278 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-29T00:00:00.000Z",
+  "title": "Design System: Diet Tracker",
+  "extensions": {
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Field Grey",
+        "canonical": "#eceef1",
+        "dark": "#090c11",
+        "purpose": "The page ground panels sit on.",
+        "tonalRamp": ["oklch(15% 0.012 250)", "oklch(24% 0.012 250)", "oklch(34% 0.011 250)", "oklch(46% 0.010 250)", "oklch(58% 0.009 250)", "oklch(72% 0.008 250)", "oklch(86% 0.007 250)", "oklch(95% 0.005 250)"]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel White",
+        "canonical": "#ffffff",
+        "dark": "#10151c",
+        "purpose": "Surface of every bordered region; also the text colour on inverted elements.",
+        "tonalRamp": ["oklch(16% 0.013 250)", "oklch(25% 0.013 250)", "oklch(35% 0.012 250)", "oklch(47% 0.010 250)", "oklch(60% 0.008 250)", "oklch(74% 0.006 250)", "oklch(88% 0.004 250)", "oklch(100% 0 0)"]
+      },
+      "panel-2": {
+        "role": "neutral",
+        "displayName": "Sunken Panel",
+        "canonical": "#f6f7f9",
+        "dark": "#151b24",
+        "purpose": "Inset areas that recede: input interiors, header strips, chips, edit rows.",
+        "tonalRamp": ["oklch(18% 0.013 250)", "oklch(27% 0.013 250)", "oklch(37% 0.012 250)", "oklch(49% 0.010 250)", "oklch(62% 0.008 250)", "oklch(76% 0.006 250)", "oklch(89% 0.005 250)", "oklch(97% 0.003 250)"]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "#d5dae1",
+        "dark": "#222a35",
+        "purpose": "The 1px border on every panel, field, chip and divider. The system's primary separator.",
+        "tonalRamp": ["oklch(20% 0.016 250)", "oklch(29% 0.016 250)", "oklch(39% 0.015 250)", "oklch(51% 0.014 250)", "oklch(64% 0.013 250)", "oklch(78% 0.012 250)", "oklch(88% 0.011 250)", "oklch(95% 0.008 250)"]
+      },
+      "line-soft": {
+        "role": "neutral",
+        "displayName": "Soft Rule",
+        "canonical": "#e7eaef",
+        "dark": "#1a2029",
+        "purpose": "Row dividers inside lists, and the empty track behind every progress bar.",
+        "tonalRamp": ["oklch(19% 0.014 250)", "oklch(28% 0.014 250)", "oklch(38% 0.013 250)", "oklch(50% 0.012 250)", "oklch(63% 0.011 250)", "oklch(77% 0.009 250)", "oklch(91% 0.007 250)", "oklch(97% 0.005 250)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#11151b",
+        "dark": "#e7ebf1",
+        "purpose": "Primary text and figures; also the background of inverted elements.",
+        "tonalRamp": ["oklch(15% 0.014 250)", "oklch(25% 0.014 250)", "oklch(35% 0.013 250)", "oklch(47% 0.012 250)", "oklch(60% 0.011 250)", "oklch(74% 0.009 250)", "oklch(87% 0.007 250)", "oklch(95% 0.005 250)"]
+      },
+      "ink-dim": {
+        "role": "neutral",
+        "displayName": "Dim Ink",
+        "canonical": "#58616f",
+        "dark": "#8a94a4",
+        "purpose": "Section headings, secondary figures, ghost button text.",
+        "tonalRamp": ["oklch(20% 0.020 250)", "oklch(30% 0.021 250)", "oklch(40% 0.022 250)", "oklch(50% 0.023 250)", "oklch(62% 0.022 250)", "oklch(75% 0.018 250)", "oklch(87% 0.013 250)", "oklch(95% 0.008 250)"]
+      },
+      "ink-faint": {
+        "role": "neutral",
+        "displayName": "Faint Ink",
+        "canonical": "#636c7a",
+        "dark": "#7d8797",
+        "purpose": "The annotation layer: labels, units, counts, placeholders. Must clear 4.5:1 on bg, panel and panel-2 at 11px; the earlier #8891a0 / #5b6473 pair measured 3.18/2.97/2.74 light and 3.07/2.90/3.28 dark and failed everywhere.",
+        "tonalRamp": ["oklch(21% 0.021 250)", "oklch(31% 0.022 250)", "oklch(41% 0.023 250)", "oklch(52% 0.024 250)", "oklch(63% 0.023 250)", "oklch(76% 0.019 250)", "oklch(88% 0.014 250)", "oklch(96% 0.008 250)"]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Signal Amber",
+        "canonical": "#b45309",
+        "dark": "#f59e0b",
+        "purpose": "The only accent. In-range progress fill, active nav tab, input focus border, inline creating actions.",
+        "tonalRamp": ["oklch(20% 0.055 58)", "oklch(30% 0.085 58)", "oklch(40% 0.115 58)", "oklch(52% 0.140 58)", "oklch(63% 0.150 62)", "oklch(75% 0.150 68)", "oklch(86% 0.110 74)", "oklch(95% 0.045 78)"]
+      },
+      "ok": {
+        "role": "secondary",
+        "displayName": "Goal Green",
+        "canonical": "#15803d",
+        "dark": "#4ade80",
+        "purpose": "Used only for the calorie readout's remaining-headroom figure. A state report, never a reward.",
+        "tonalRamp": ["oklch(20% 0.045 150)", "oklch(30% 0.075 150)", "oklch(40% 0.105 150)", "oklch(51% 0.130 150)", "oklch(63% 0.145 150)", "oklch(75% 0.150 150)", "oklch(87% 0.100 150)", "oklch(95% 0.045 150)"]
+      },
+      "warn": {
+        "role": "secondary",
+        "displayName": "Warn Amber",
+        "canonical": "#b45309",
+        "dark": "#fbbf24",
+        "purpose": "Declared alongside the accent and currently identical to it in light. Reserved; no component consumes it today.",
+        "tonalRamp": ["oklch(20% 0.055 58)", "oklch(30% 0.085 58)", "oklch(40% 0.115 58)", "oklch(52% 0.140 58)", "oklch(64% 0.150 70)", "oklch(78% 0.145 80)", "oklch(89% 0.100 85)", "oklch(96% 0.040 88)"]
+      },
+      "over": {
+        "role": "secondary",
+        "displayName": "Over Red",
+        "canonical": "#b91c1c",
+        "dark": "#f87171",
+        "purpose": "Past-target figures and fills, and destructive affordances on hover.",
+        "tonalRamp": ["oklch(20% 0.060 27)", "oklch(30% 0.100 27)", "oklch(40% 0.140 27)", "oklch(51% 0.175 27)", "oklch(63% 0.180 27)", "oklch(74% 0.155 27)", "oklch(86% 0.100 27)", "oklch(95% 0.040 27)"]
+      },
+      "grid": {
+        "role": "neutral",
+        "displayName": "Grid",
+        "canonical": "rgba(0, 0, 0, 0.045)",
+        "dark": "rgba(255, 255, 255, 0.035)",
+        "purpose": "The 16px two-axis measurement grid behind the calorie readout, and nowhere else.",
+        "tonalRamp": ["rgba(0,0,0,0.015)", "rgba(0,0,0,0.025)", "rgba(0,0,0,0.035)", "rgba(0,0,0,0.045)", "rgba(0,0,0,0.06)", "rgba(0,0,0,0.08)", "rgba(0,0,0,0.10)", "rgba(0,0,0,0.14)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The day's calorie total, and nothing else. The single largest object on screen." },
+      "headline": { "displayName": "Headline", "purpose": "Tab titles. A location marker, not a banner — deliberately only 0.875rem." },
+      "title": { "displayName": "Title", "purpose": "Panel headers and meal-group headers." },
+      "body": { "displayName": "Body", "purpose": "Food names, input values, prose. The only size real sentences are set at." },
+      "label": { "displayName": "Label", "purpose": "The annotation layer: metric names, units, counts, hints. Uniform everywhere." },
+      "data": { "displayName": "Data", "purpose": "Inline measured values. Mono + tabular; the .num class. Never used for prose." }
+    },
+    "shadows": [
+      {
+        "name": "overlay",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Toasts only. The sole shadow in the application; permitted because a toast overlays page content."
+      },
+      {
+        "name": "overlay-veil",
+        "value": "backdrop-filter: blur(16px); background: color-mix(in srgb, var(--panel) 88%, transparent)",
+        "purpose": "The fixed bottom navigation, so content scrolling beneath stays perceptible without competing."
+      }
+    ],
+    "motion": [
+      { "name": "state", "value": "150ms ease (transition-colors)", "purpose": "Every hover, focus and active colour change. The system's default and most common transition." },
+      { "name": "fill", "value": "500ms cubic-bezier(0, 0, 0.2, 1)", "purpose": "Progress bar width on meters and the calorie bar. Slow enough to be read as a value settling." },
+      { "name": "toast-in", "value": "250ms ease, opacity 0→1 with translateY(8px)→0", "purpose": "Toast entry. The only keyframe animation in the system." },
+      { "name": "reveal", "value": "opacity 150ms (group-hover)", "purpose": "The delete affordance on an entry row, hidden until hover or focus." }
+    ],
+    "breakpoints": [
+      { "name": "column-max", "value": "672px", "purpose": "The single content column's maximum width (max-w-2xl). The system has no other breakpoint." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The concluding action of a form. Inverted ink block, uppercase micro-label.",
+      "html": "<button class=\"ds-btn-primary\">Add</button>",
+      "css": ".ds-btn-primary { background: var(--ink); color: var(--panel); border: none; border-radius: 4px; padding: 6px 12px; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: color 150ms ease, background-color 150ms ease; } .ds-btn-primary:disabled { opacity: 0.45; cursor: default; } .ds-btn-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary and paired actions. Hairline border, dim text that firms up on hover.",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: var(--ink-dim); border: 1px solid var(--line); border-radius: 4px; padding: 6px 12px; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: color 150ms ease, border-color 150ms ease; } .ds-btn-ghost:hover { color: var(--ink); border-color: var(--ink-faint); } .ds-btn-ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Every text and numeric input. Sunken interior, hairline border, amber border on focus — no ring.",
+      "html": "<div style=\"display:flex; gap:6px;\"><input class=\"ds-field\" placeholder=\"Food name\" style=\"flex:1\"><input class=\"ds-field ds-num\" placeholder=\"kcal\" style=\"width:72px\"></div>",
+      "css": ".ds-field { background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); border-radius: 4px; padding: 6px 8px; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.875rem; outline: none; transition: border-color 150ms ease; } .ds-field:focus { border-color: var(--accent); } .ds-field::placeholder { color: var(--ink-faint); } .ds-num { font-family: ui-monospace, SFMono-Regular, Menlo, 'Cascadia Mono', Consolas, monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; text-align: right; }"
+    },
+    {
+      "name": "Meter",
+      "kind": "custom",
+      "refersTo": "meter-track",
+      "description": "The signature component. Label and value/goal above a 4px track with an amber fill; the fill and figure turn red past goal.",
+      "html": "<div class=\"ds-meter\"><div class=\"ds-meter-row\"><span class=\"ds-meter-label\">Protein</span><span class=\"ds-meter-val\"><b>96</b>/150<span class=\"ds-meter-unit\">g</span></span></div><div class=\"ds-meter-track\"><div class=\"ds-meter-fill\" style=\"width:64%\"></div></div></div>",
+      "css": ".ds-meter { min-width: 140px; } .ds-meter-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; } .ds-meter-label { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.6875rem; line-height: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); } .ds-meter-val { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; font-size: 11px; color: var(--ink-dim); } .ds-meter-val b { font-weight: 600; color: var(--ink); } .ds-meter-unit { color: var(--ink-faint); } .ds-meter-track { margin-top: 4px; width: 100%; height: 4px; border-radius: 2px; overflow: hidden; background: var(--line-soft); } .ds-meter-fill { height: 100%; background: var(--accent); transition: width 500ms cubic-bezier(0, 0, 0.2, 1); } .ds-meter-fill.is-over { background: var(--over); }"
+    },
+    {
+      "name": "Calorie Readout",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "The primary instrument face: gridlined panel, 2.25rem mono total, remaining figure in green or red, 8px bar.",
+      "html": "<section class=\"ds-readout\"><div class=\"ds-readout-top\"><span class=\"ds-readout-label\">Calories</span><span class=\"ds-readout-count\">12 entries</span></div><div class=\"ds-readout-figures\"><span class=\"ds-readout-total\">1,840</span><span class=\"ds-readout-goal\">/ 2,100</span><span class=\"ds-readout-left\">260<span class=\"ds-readout-state\">left</span></span></div><div class=\"ds-readout-track\"><div class=\"ds-readout-fill\" style=\"width:88%\"></div></div></section>",
+      "css": ".ds-readout { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 12px; background-image: linear-gradient(to right, var(--grid) 1px, transparent 1px), linear-gradient(to bottom, var(--grid) 1px, transparent 1px); background-size: 16px 16px; } .ds-readout-top { display: flex; align-items: baseline; justify-content: space-between; } .ds-readout-label { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); } .ds-readout-count { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 0.6875rem; color: var(--ink-faint); } .ds-readout-figures { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; } .ds-readout-total { font-size: 2.25rem; font-weight: 700; line-height: 1; color: var(--ink); } .ds-readout-goal { font-size: 0.875rem; color: var(--ink-faint); } .ds-readout-left { margin-left: auto; font-size: 0.875rem; font-weight: 600; color: var(--ok); } .ds-readout-left.is-over { color: var(--over); } .ds-readout-state { margin-left: 4px; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8; } .ds-readout-track { margin-top: 8px; width: 100%; height: 8px; border-radius: 2px; overflow: hidden; background: var(--line-soft); } .ds-readout-fill { height: 100%; background: var(--accent); transition: width 500ms cubic-bezier(0, 0, 0.2, 1); }"
+    },
+    {
+      "name": "Collapsible Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Bordered region with an uppercase header, optional faint hint, and a monospace +/− as the only disclosure indicator.",
+      "html": "<section class=\"ds-panel\"><button class=\"ds-panel-head\"><span class=\"ds-panel-title\">Products</span><span class=\"ds-panel-right\"><span class=\"ds-panel-hint\">Saved labels</span><span class=\"ds-panel-glyph\">+</span></span></button></section>",
+      "css": ".ds-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; } .ds-panel-head { display: flex; width: 100%; align-items: center; justify-content: space-between; padding: 8px 12px; background: none; border: none; cursor: pointer; } .ds-panel-title { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-dim); } .ds-panel-right { display: flex; align-items: center; gap: 8px; } .ds-panel-hint { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.6875rem; color: var(--ink-faint); } .ds-panel-glyph { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.75rem; color: var(--ink-faint); } .ds-panel-body { border-top: 1px solid var(--line); padding: 10px 12px; }"
+    },
+    {
+      "name": "Week Strip",
+      "kind": "nav",
+      "refersTo": "day-cell",
+      "description": "Seven cells sharing vertical hairlines. The selected day inverts to an ink block — the same inversion the primary button uses.",
+      "html": "<nav class=\"ds-week\"><button class=\"ds-day\"><span class=\"ds-day-w\">S</span><span class=\"ds-day-n\">23</span></button><button class=\"ds-day\"><span class=\"ds-day-w\">M</span><span class=\"ds-day-n\">24</span></button><button class=\"ds-day\"><span class=\"ds-day-w\">T</span><span class=\"ds-day-n\">25</span></button><button class=\"ds-day\"><span class=\"ds-day-w\">W</span><span class=\"ds-day-n\">26</span></button><button class=\"ds-day\"><span class=\"ds-day-w\">T</span><span class=\"ds-day-n\">27</span></button><button class=\"ds-day\"><span class=\"ds-day-w\">F</span><span class=\"ds-day-n\">28</span></button><button class=\"ds-day is-active\"><span class=\"ds-day-w\">S</span><span class=\"ds-day-n\">29</span></button></nav>",
+      "css": ".ds-week { display: flex; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; } .ds-day { flex: 1; border: none; border-right: 1px solid var(--line); background: transparent; color: var(--ink-dim); padding: 6px 0; text-align: center; cursor: pointer; transition: color 150ms ease, background-color 150ms ease; } .ds-day:last-child { border-right: none; } .ds-day.is-active { background: var(--ink); color: var(--panel); } .ds-day-w { display: block; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; } .ds-day-n { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 0.875rem; font-weight: 600; }"
+    },
+    {
+      "name": "Quick-Add Chips",
+      "kind": "chip",
+      "refersTo": "chip-recent",
+      "description": "Horizontally scrolling one-tap log targets. Favourites carry amber text and a star; recents are plain ink.",
+      "html": "<div class=\"ds-chips\"><span class=\"ds-chip ds-chip-fav\">★ Oatmeal <b>320</b></span><span class=\"ds-chip\">Greek yogurt <b>140</b></span><span class=\"ds-chip\">Chicken breast <b>330</b></span></div>",
+      "css": ".ds-chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; } .ds-chips::-webkit-scrollbar { display: none; } .ds-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 4px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 0.75rem; color: var(--ink); cursor: pointer; transition: border-color 150ms ease, color 150ms ease; } .ds-chip:hover { border-color: var(--ink-faint); } .ds-chip b { font-weight: 400; color: var(--ink-faint); } .ds-chip-fav { color: var(--accent); font-weight: 500; } .ds-chip-fav b { color: var(--accent); font-weight: 400; }"
+    },
+    {
+      "name": "Entry Row",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "One logged food. Sans name on the left, mono macro triplet and calories right-aligned, delete revealed on hover.",
+      "html": "<ul class=\"ds-rows\"><li class=\"ds-row\"><span class=\"ds-row-name\">Grilled chicken <i>200g</i></span><span class=\"ds-row-macros\">62/0/7</span><span class=\"ds-row-cal\">330</span><span class=\"ds-row-del\">✕</span></li><li class=\"ds-row\"><span class=\"ds-row-name\">Oatmeal</span><span class=\"ds-row-macros\">12/54/6</span><span class=\"ds-row-cal\">320</span><span class=\"ds-row-del\">✕</span></li></ul>",
+      "css": ".ds-rows { list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; } .ds-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--line-soft); } .ds-row:first-child { border-top: none; } .ds-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; color: var(--ink); cursor: pointer; transition: color 150ms ease; } .ds-row:hover .ds-row-name { color: var(--accent); } .ds-row-name i { font-style: normal; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.6875rem; color: var(--ink-faint); } .ds-row-macros { flex-shrink: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 0.6875rem; color: var(--ink-faint); } .ds-row-cal { flex-shrink: 0; width: 56px; text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 0.875rem; font-weight: 600; color: var(--ink); } .ds-row-del { flex-shrink: 0; font-size: 0.6875rem; color: var(--ink-faint); opacity: 0; cursor: pointer; transition: opacity 150ms ease, color 150ms ease; } .ds-row:hover .ds-row-del { opacity: 1; } .ds-row-del:hover { color: var(--over); }"
+    },
+    {
+      "name": "Bottom Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Four fixed tabs. Active is amber with a heavier stroke; no indicator bar, pill, or underline.",
+      "html": "<nav class=\"ds-nav\"><button class=\"ds-nav-item is-active\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 12l9-9 9 9M5 10v10h14V10\"/></svg>Today</button><button class=\"ds-nav-item\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 17l6-6 4 4 8-8M21 7v6M21 7h-6\"/></svg>Trends</button><button class=\"ds-nav-item\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3a4 4 0 014 4H8a4 4 0 014-4zM4 21l2-12h12l2 12z\"/></svg>Weight</button><button class=\"ds-nav-item\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 15a3 3 0 100-6 3 3 0 000 6z\"/></svg>Settings</button></nav>",
+      "css": ".ds-nav { display: flex; align-items: stretch; justify-content: space-around; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(16px); } .ds-nav-item { display: flex; flex: 1; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; background: none; border: none; cursor: pointer; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.6875rem; font-weight: 500; color: var(--ink-faint); transition: color 150ms ease; } .ds-nav-item.is-active { color: var(--accent); }"
+    },
+    {
+      "name": "Toast",
+      "kind": "custom",
+      "refersTo": "toast-success",
+      "description": "The only shadowed element in the system, and the only place amber is used as a large fill.",
+      "html": "<div style=\"display:flex; flex-direction:column; gap:8px; align-items:center;\"><div class=\"ds-toast ds-toast-success\"><span>✓</span>Added Oatmeal</div><div class=\"ds-toast ds-toast-error\"><span>!</span>Update failed</div><div class=\"ds-toast ds-toast-info\"><span>ℹ</span>Entry deleted</div></div>",
+      "css": ".ds-toast { display: inline-flex; align-items: center; gap: 8px; border-radius: 4px; padding: 10px 16px; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.875rem; font-weight: 500; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); animation: ds-toast-in 0.25s ease; } .ds-toast-success { background: var(--accent); color: #fff; } .ds-toast-error { background: var(--over); color: #fff; } .ds-toast-info { background: var(--ink); color: var(--panel); } @keyframes ds-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Terminal Readout",
+    "overview": "This is an app that reports. It does not congratulate, encourage, or celebrate. A day of eating is a set of measured quantities against a set of targets, and the interface's whole job is to put those quantities in front of a competent daily user as fast and as densely as a phone screen allows. Everything reads on a grid: hairline-divided cells, right-aligned figures in tabular monospace, uppercase labels at the smallest legible size, and a near-monochrome field carrying exactly one signal colour. Density is the virtue. Whitespace is not added to seem friendly.\n\nThe palette is a full light/dark pair defined wholesale in app/globals.css — every token has two values and nothing is theme-conditional beyond those definitions. Dark is the app's home ground (it is the PWA's declared theme_color), and light is the same instrument under daylight rather than a different design. Surfaces are flat: separation comes from a 1px rule and a half-step of tonal shift, never from a shadow. Corners are barely rounded — 4px is the house radius, enough to avoid looking broken, too little to read as soft.\n\nThe single amber accent is a signal, not warmth. It marks progress inside a goal and the few pieces of text that act on something. It is not there to make the app feel friendly, and it must never be spent on decoration; when a number goes over its target the fill turns red and the amber's absence is the message. The system is deliberately unfashionable — no gradients, no glass, no glow, no illustration — because it is meant to look the same in five years as it does today.",
+    "keyCharacteristics": [
+      "Monospace tabular numerals for every measured quantity; system sans for everything else",
+      "1px hairline borders and tonal panel layering as the only separation devices",
+      "One amber signal colour, with green and red reserved strictly for goal state",
+      "11px uppercase 0.05em labels as the universal annotation voice",
+      "Flat by default; shadow permitted only on elements that overlay the page",
+      "A 672px maximum column, tuned for one-handed portrait use with a fixed bottom nav"
+    ],
+    "rules": [
+      { "name": "The One Signal Rule", "body": "Amber means \"measured progress, still in range\" or \"this text performs an action\". It is never a background for a large area, never a decorative highlight, never applied to a heading, and never used to make something look important. If a screen has more than a few percent amber on it, the rule is broken.", "section": "colors" },
+      { "name": "The Three-State Number Rule", "body": "A figure is neutral ink by default, green only when it reports remaining headroom, and red only when it has passed its target. There is no fourth colour for numbers, and no colour that means \"good job\".", "section": "colors" },
+      { "name": "The Two-Value Rule", "body": "Every colour is defined once in :root and once in .dark, both in app/globals.css. No component may hardcode a hex, and no component may branch on theme — if a value needs to differ between themes, it becomes a token.", "section": "colors" },
+      { "name": "The Measurement Rule", "body": "Monospace and tabular figures are reserved for quantities that were measured or recorded. Prose never takes mono, and a number never takes sans. This split is what makes the numerals mean something — if everything were mono, nothing would read as data. Apply it with the .num class, never with an ad-hoc font-family.", "section": "typography" },
+      { "name": "The Small Caps Rule", "body": "Every label in the system is the same object: 0.6875rem, uppercase, 0.05em tracking, faint ink. Labels do not vary in size, weight, or colour between panels. Their uniformity is what lets the eye skip them and land on the figures.", "section": "typography" },
+      { "name": "The No Column Rule", "body": "Right-aligned figures with tabular numerals do the aligning; the system never adds a border, a background, or extra tracking to make a column line up.", "section": "typography" },
+      { "name": "The One Column Rule", "body": "There is exactly one content column at every viewport. Extra horizontal space becomes margin, never a second column or a sidebar. Anything that needs horizontal room scrolls inside its own row (.no-scrollbar), as the favourite and recent chips already do.", "section": "layout" },
+      { "name": "The Reachable Nav Rule", "body": "Primary navigation stays fixed at the bottom within thumb reach, and no primary action may live in a top bar.", "section": "layout" },
+      { "name": "The Float-Only Rule", "body": "Shadow and blur are permitted only on elements that overlay page content. Anything in the document flow — panels, cards, rows, inputs, chips, buttons — is flat, at rest and on hover, without exception.", "section": "elevation" },
+      { "name": "The Hairline Rule", "body": "One pixel, --line, is the system's separator. Do not reach for a thicker border, a coloured border, a double rule, or a shadow to separate two regions.", "section": "shapes" },
+      { "name": "The Nothing-Is-Round Rule", "body": "No pills, no circles, no fully-rounded controls. Segmented controls and toggles are square-cornered like everything else.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do put every colour in app/globals.css as a token with both a :root and a .dark value, and consume it via the Tailwind alias (text-ink-faint) or var(--token).",
+      "Do apply .num to every measured quantity, and right-align it. A figure that is not tabular monospace is a bug.",
+      "Do set labels at 0.6875rem uppercase with 0.05em tracking in --ink-faint, always.",
+      "Do separate regions with a single 1px --line border and, where a region should recede, a shift to --panel-2.",
+      "Do keep the accent for in-range progress, the active nav tab, focus borders, and inline creating actions — and nothing else.",
+      "Do let a progress fill turn --over red the moment its value passes its goal, in both the meter and the calorie bar.",
+      "Do collapse anything optional behind a Panel with a + / − glyph, so the day's figures stay above it.",
+      "Do keep new panels at 12px padding and 8px separation; match the existing rhythm rather than introducing a larger step."
+    ],
+    "donts": [
+      "Don't hardcode a hex value in a component. components/MiniChart.tsx currently defaults to emerald #10b981 and components/TrendsCard.tsx passes indigo #6366f1 — both are outside the palette and are drift to be corrected. Charts take --accent, with --ink-dim and --ink-faint for additional series; the system has one signal colour and data visualisation is not an exemption.",
+      "Don't use round or pill shapes. components/ThemeToggle.tsx currently renders rounded-full pills with emoji; it is drift on both counts — a segmented control here is square-cornered with stroked SVG glyphs, and no emoji appears anywhere in the interface.",
+      "Don't use the older auth-screen language. components/AuthForm.tsx still uses rounded-lg inputs with an amber focus ring, a 1.5rem heading, and bespoke padding; the field, button, and type scale defined here are the system, and the login screen is not exempt.",
+      "Don't add a shadow to anything that sits in the document flow, including on hover.",
+      "Don't introduce a webfont, an icon package, or any CDN-hosted asset. The app ships self-contained.",
+      "Don't add gradients, glass or translucency (outside the nav's existing veil), glow, illustration, or decorative imagery. The system is intentionally unfashionable.",
+      "Don't use green or red for anything except goal state and destructive intent. Neither colour may be used to praise, congratulate, or mark a streak.",
+      "Don't widen past the 672px column or add a second column, sidebar, or top navigation bar on any surface.",
+      "Don't set prose in monospace or figures in sans. The split is the system's primary semantic signal."
+    ]
+  }
+}

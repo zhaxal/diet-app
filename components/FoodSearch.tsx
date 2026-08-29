@@ -12,12 +12,14 @@ export default function FoodSearch({ onPick }: { onPick: (name: string, macros: 
   const [results, setResults] = useState<FoodSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [empty, setEmpty] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
     if (q.trim().length < 2) {
       setResults([]);
+      setEmpty(false);
       return;
     }
     timer.current = setTimeout(async () => {
@@ -26,8 +28,11 @@ export default function FoodSearch({ onPick }: { onPick: (name: string, macros: 
         const { results } = await api.searchFoods(q.trim());
         setResults(results);
         setOpen(true);
-        if (results.length === 0) toast("No matches found", "info");
+        // "No matches" belongs in the results area, not in a toast: a toast
+        // fired on every debounce tick while the user was still typing the word.
+        setEmpty(results.length === 0);
       } catch {
+        setEmpty(false);
         toast("Search unavailable", "error");
       } finally {
         setLoading(false);
@@ -53,6 +58,7 @@ export default function FoodSearch({ onPick }: { onPick: (name: string, macros: 
     });
     setOpen(false);
     setResults([]);
+    setEmpty(false);
     setQ("");
   }
 
@@ -63,24 +69,33 @@ export default function FoodSearch({ onPick }: { onPick: (name: string, macros: 
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onFocus={() => results.length && setOpen(true)}
-          placeholder="🔍 Search food database…"
-          className="flex-1 rounded border border-line bg-transparent px-3 py-2 text-sm outline-none focus:border-accent"
+          placeholder="Search food database…"
+          aria-label="Search food database"
+          className="field flex-1"
         />
-        <div className="flex items-center gap-1 rounded border border-line px-2">
+        {/* `outline-none` on the inner input left this control with no visible
+            focus at all; the border it sits in carries it instead. */}
+        <div className="flex items-center gap-1 rounded border border-line px-2 focus-within:border-accent">
           <input
             type="number"
             min={1}
             value={grams}
             onChange={(e) => setGrams(e.target.value)}
+            aria-label="Grams"
             className="w-12 bg-transparent text-right text-sm num outline-none"
           />
           <span className="text-xs text-ink-faint">g</span>
         </div>
       </div>
 
-      {open && (results.length > 0 || loading) && (
-        <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded border border-line bg-white shadow-lg dark:bg-[#1a2437]">
+      {open && (results.length > 0 || loading || empty) && (
+        <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded border border-line bg-panel shadow-lg">
           {loading && <p className="px-3 py-2 text-xs text-ink-faint">Searching…</p>}
+          {!loading && empty && (
+            <p className="px-3 py-2 text-xs text-ink-faint">
+              No matches for &ldquo;{q.trim()}&rdquo; — enter the values by hand below.
+            </p>
+          )}
           {results.map((r, i) => (
             <button
               key={i}
