@@ -48,6 +48,23 @@ npm run dev
 Open <http://localhost:3000>. Register an account, or log in with the seeded
 demo user.
 
+## iOS PWA notes
+
+Two things the installed app depends on, both easy to break:
+
+- **Safe areas.** `viewport-fit: cover` puts the web view into every inset, so `body` pads all
+  four with `env(safe-area-inset-*)`. Padding only the bottom — as it did originally — runs the
+  top of the page under the notch and the Dynamic Island. Full-height screens use `.min-h-safe`,
+  since `100vh` inside a padded body overflows by the inset.
+- **The 16px floor.** iOS Safari zooms the viewport whenever a focused input's text is under
+  16px, and does not zoom back. Every form control is therefore 16px under
+  `@media (pointer: coarse)`. Do not "fix" a cramped mobile form by dropping a field to 14px.
+
+The status bar style is `default` rather than `black-translucent`: translucent forces white
+glyphs, unreadable on the light theme. The strip behind it is painted from a single
+`theme-color` meta that the theme script and `ThemeToggle` both keep in step with the `.dark`
+class — a `prefers-color-scheme` media query would be wrong, because the class can contradict it.
+
 ## Units
 
 Every stored number is canonical, with the unit it was entered in recorded beside it.

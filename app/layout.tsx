@@ -8,7 +8,13 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    // Not "black-translucent". That style paints the status bar transparent over
+    // the content *and* forces white glyphs — unreadable on the light theme's
+    // #eceef1 — and it is what pushed the web view under the Dynamic Island in
+    // the first place. "default" lets iOS inset the view below the status bar
+    // and pick legible glyphs for the theme-color underneath it. Nothing in this
+    // app bleeds to the top edge, so there is nothing to gain from going under.
+    statusBarStyle: "default",
     title: "Diet Tracker",
   },
   icons: {
@@ -22,20 +28,27 @@ export const viewport: Viewport = {
   initialScale: 1,
   // Zoom stays available. The annotation layer is 11px, and blocking pinch-zoom
   // removes the only compensation a presbyopic user has in a bright kitchen.
+  // Kept: the home indicator and the landscape notch still need real insets,
+  // which body pads for. It is safe now that the top inset is honoured too.
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#eceef1" },
-    { media: "(prefers-color-scheme: dark)", color: "#090c11" },
-  ],
 };
 
-// Apply the saved/system theme before first paint to avoid a flash.
+// The status bar strip takes its colour from theme-color. A media query on
+// prefers-color-scheme would be wrong here: the theme is a class this app sets
+// from localStorage, so forcing light on a dark phone painted the strip black
+// above a light page. One meta, kept in step with the class that actually won.
+const THEME_COLOR = { light: "#eceef1", dark: "#090c11" } as const;
+
+// Apply the saved/system theme before first paint to avoid a flash, and point
+// theme-color at the same answer so the iOS status bar strip matches the page.
 const themeScript = `
 (function () {
   try {
     var t = localStorage.getItem('theme');
     var dark = t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches);
     if (dark) document.documentElement.classList.add('dark');
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', dark ? '${THEME_COLOR.dark}' : '${THEME_COLOR.light}');
   } catch (e) {}
 })();
 `;
@@ -48,6 +61,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Corrected by themeScript before first paint; the served value is the
+            dark default, matching the manifest and the app's home ground. */}
+        <meta name="theme-color" content={THEME_COLOR.dark} />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>

@@ -19,6 +19,11 @@ export default function ThemeToggle() {
   function apply(next: Theme) {
     setTheme(next);
     document.documentElement.classList.toggle("dark", next === "dark");
+    // The iOS status bar strip is painted from theme-color, so it has to move
+    // with the theme or it sits as a black band above a light page.
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", next === "dark" ? "#090c11" : "#eceef1");
     try {
       localStorage.setItem("theme", next);
     } catch {

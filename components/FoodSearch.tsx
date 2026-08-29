@@ -82,7 +82,7 @@ export default function FoodSearch({ onPick }: { onPick: (name: string, macros: 
             value={grams}
             onChange={(e) => setGrams(e.target.value)}
             aria-label="Grams"
-            className="w-12 bg-transparent text-right text-sm num outline-none"
+            className="w-14 bg-transparent text-right text-sm num outline-none"
           />
           <span className="text-xs text-ink-faint">g</span>
         </div>

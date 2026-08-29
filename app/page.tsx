@@ -552,7 +552,7 @@ function Dashboard() {
 
   if (!ready) {
     return (
-      <main className="flex min-h-screen items-center justify-center p-3">
+      <main className="flex min-h-safe items-center justify-center p-3">
         {loadError ? (
           <div className="panel w-full max-w-sm p-3 text-center">
             <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">

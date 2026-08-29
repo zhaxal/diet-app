@@ -53,6 +53,12 @@ typography:
     lineHeight: "1.25rem"
     letterSpacing: "-0.01em"
     fontFeature: "tnum 1"
+  field-touch:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
+    fontSize: "16px"
+    fontWeight: 400
+    lineHeight: "1.5rem"
+    letterSpacing: "normal"
 rounded:
   sm: "2px"
   base: "4px"
@@ -268,6 +274,8 @@ kind of thing you are looking at, which is why it must not be diluted.
   only size at which real sentences are set.
 - **Label** (sans, 400, 0.6875rem, 0.05em, uppercase, faint ink): The annotation layer —
   metric names, units, entry counts, hints, "over" / "left".
+- **Field (touch)** (sans, 400, 16px): Every form control on a coarse pointer. Not a design
+  choice — the iOS zoom floor. See The Touch Floor below.
 - **Data** (mono, 600, 0.875rem, tabular): Inline measured values — an entry's calories, its
   P/C/F triplet, a meter's value/goal pair. Scales down to 0.6875rem for secondary figures
   without changing character.
@@ -278,6 +286,13 @@ kind of thing you are looking at, which is why it must not be diluted.
 measured or recorded. Prose never takes mono, and a number never takes sans. This split is
 what makes the numerals mean something — if everything were mono, nothing would read as data.
 Apply it with the `.num` class, never with an ad-hoc font-family.
+
+**The Touch Floor.** On a coarse pointer every form control is 16px, overriding the
+0.875rem body size. This is not a stylistic choice: iOS Safari zooms the entire viewport when a
+focused field's text is under 16px and never zooms back, so at 14px every tap into every field
+left the page magnified. `maximum-scale=1` would suppress it only by disabling pinch-zoom, which
+this app deliberately keeps. The desktop is unaffected and stays at 14px. Fields get taller on a
+phone, which also lifts them off the 32–34px they used to sit at, under the 44px a thumb needs.
 
 **The Small Caps Rule.** Every label in the system is the same object: 0.6875rem, uppercase,
 0.05em tracking, faint ink. Labels do not vary in size, weight, or colour between panels.
@@ -313,6 +328,15 @@ range *was*; it does not project, streak, or congratulate.
 Responsive behaviour is deliberately minimal — the column has one width rule and the macro
 grid stays three columns at every size. There are no breakpoint-specific layouts, because
 there is no layout here that would benefit from one.
+
+**Safe areas.** `viewport-fit: cover` extends the web view into all four insets, so `body` pads
+all four with `env(safe-area-inset-*)`. Only the bottom one was padded originally, which put the
+top of every screen under the notch and the Dynamic Island in the installed PWA. A full-height
+screen uses `.min-h-safe` rather than `min-h-screen`: `100vh` inside an already-padded body
+overflows by exactly the inset. The status bar style is `default`, not `black-translucent` —
+translucent forces white glyphs, which vanish on the light theme — and the strip behind it takes
+its colour from a single `theme-color` meta kept in step with the `.dark` class, not from a
+`prefers-color-scheme` media query the class can contradict.
 
 ### Named Rules
 
@@ -407,6 +431,9 @@ controls and toggles are square-cornered like everything else.
   body text. Numeric fields add `.num` and right-align, so a row of four inputs reads as a
   column of figures.
 - **Focus:** The border alone changes to amber. No ring, no glow, no shadow, no background change.
+- **Size:** 0.875rem, raised to **16px under `@media (pointer: coarse)`** — see The Touch Floor.
+  A control sized in a fixed-width box must be measured at 16px, not 14px, or it truncates on the
+  device the app is actually used on.
 - **Label:** a persistent 11px uppercase label sits above the field. A placeholder is a hint,
   never the label — it disappears exactly when the value most needs identifying.
 - **Disabled:** 50% opacity and `not-allowed`. The colour does not change.
@@ -447,6 +474,27 @@ hand-written paths that came from three different grids — a 20-vertex gear tha
 - **Week strip:** Seven equal cells sharing vertical hairlines, each showing a narrow weekday
   initial over a monospace date. The selected day inverts to an ink block with panel-coloured
   text — the same inversion the primary button uses.
+
+### Quick add
+
+Two strips of chips above the day's panels — the fastest capture path in the product, and the
+most used.
+
+- **Favorites** are pinned by hand: amber, `★`-prefixed, with a `×` behind a hairline divider to
+  unpin. Order is when they were pinned.
+- **Recent** is derived from the last 30 days and **ranked, not listed**. `lib/quick-add-rank.ts`
+  scores each food by how often it was eaten, weighted by the share of its occurrences that fell
+  on the meal currently selected, and decayed on a 14-day half-life with a floor — so a habit
+  fades rather than vanishing. The strip therefore answers a different question at 8am than at
+  7pm, from the same payload and with no round trip, which is why the API returns per-meal counts
+  instead of a sorted list.
+- **Nothing appears twice.** A pinned food is excluded from Recent; the strip is what you eat but
+  have not pinned, which is also what makes `★` worth offering.
+- Each Recent chip carries a second line — `12× · 2d`, plus the amount when the entry came from a
+  product — so the strip reports as well as offers.
+- A chip is one tap to log. A `⋯` behind a hairline divider opens a single inline editor beneath
+  the strip, never more than one at a time: adjust the amount (in the product's own unit, or as a
+  multiple of last time when there is no unit), pin it, or log. Every log offers Undo.
 
 ### Meter
 
@@ -504,6 +552,12 @@ place the system uses a shadow, and the only place amber is used as a large fill
   unlogged. An empty track reads as "you have eaten nothing", not "no goal set"; four zeroed
   averages read as a measurement rather than an absence. Say what is missing, and link to where
   it is set.
+- **Don't** rank a list of the user's own habits by recency alone. One meal eaten yesterday is
+  not more relevant than the one eaten every morning for a month, and the strip where this
+  matters most is the one used most.
+- **Don't** drop provenance on a re-log. Re-logging from Recent must carry the `productId`,
+  `quantity` and `quantityUnit` of the occurrence it copies, or the fastest path in the app is
+  also the one that quietly degrades the record.
 - **Don't** state a denominator the figure was not computed over. Averages here are over
   *logged* days, and the caption says so; "average over 30 days" when 12 of them were never
   logged is a different number and a false one.

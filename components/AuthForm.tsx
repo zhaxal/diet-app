@@ -33,7 +33,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-3">
+    <main className="flex min-h-safe items-center justify-center p-3">
       <div className="panel w-full max-w-sm p-3">
         <h1 className="text-sm font-semibold uppercase tracking-widest text-ink">
           {isLogin ? "Welcome back" : "Create your account"}

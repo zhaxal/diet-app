@@ -210,7 +210,7 @@ export default function ProductsCard({
                         step="any"
                         value={amount[p.id] ?? String(defaultAmount(p))}
                         onChange={(e) => setAmount({ ...amount, [p.id]: e.target.value })}
-                        className="field num w-14 px-1.5 py-1 text-right text-xs"
+                        className="field num w-16 px-1.5 py-1 text-right text-xs"
                         aria-label={`Amount of ${p.name}`}
                       />
                       {/* Only units this product can actually be measured in:
@@ -224,7 +224,7 @@ export default function ProductsCard({
                           setUnit({ ...unit, [p.id]: e.target.value as QuantityUnit })
                         }
                         aria-label={`Unit for ${p.name}`}
-                        wrapClassName="w-[4.5rem] shrink-0"
+                        wrapClassName="w-24 shrink-0"
                         className="px-1.5 py-1 text-xs"
                       >
                         {unitsFor(p.basis as Basis, p.servingSize != null).map((u) => (

@@ -26,3 +26,15 @@ export function clockTime(value: string | number | Date): string {
     minute: "2-digit",
   });
 }
+
+/**
+ * How long ago, at the coarseness a food strip needs: "today", "2d", "3w".
+ * Nothing here is precise enough to warrant hours.
+ */
+export function agoLabel(value: string | number | Date): string {
+  const days = Math.floor((Date.now() - new Date(value).getTime()) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "1d";
+  if (days < 14) return `${days}d`;
+  return `${Math.floor(days / 7)}w`;
+}

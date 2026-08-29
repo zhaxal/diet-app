@@ -87,7 +87,18 @@ export interface Favorite extends FoodMacros {
 
 export interface RecentFood extends FoodMacros {
   name: string;
+  /** The meal it was last eaten at. */
   mealType: string;
+  /** Times eaten in the 30-day window. */
+  count: number;
+  /** ISO timestamp of the most recent time. */
+  lastAt: string;
+  /** Occurrences per meal slot, for meal-affinity ranking on the client. */
+  byMeal: Record<string, number>;
+  // Provenance from the most recent occurrence, so re-logging is not anonymous.
+  productId?: string | null;
+  quantity?: number | null;
+  quantityUnit?: QuantityUnit | null;
 }
 
 export interface FoodSearchResult extends FoodMacros {
