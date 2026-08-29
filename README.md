@@ -56,6 +56,9 @@ Two things the installed app depends on, both easy to break:
   four with `env(safe-area-inset-*)`. Padding only the bottom — as it did originally — runs the
   top of the page under the notch and the Dynamic Island. Full-height screens use `.min-h-safe`,
   since `100vh` inside a padded body overflows by the inset.
+- **The app icon must include PNGs.** iOS ignores an SVG `apple-touch-icon` and falls back to a
+  screenshot of the page. `npm run icons` regenerates every size from one definition; bump
+  `VERSION` in `public/sw.js` afterwards, since icons are cached first and are not hashed.
 - **The 16px floor.** iOS Safari zooms the viewport whenever a focused input's text is under
   16px, and does not zoom back. Every form control is therefore 16px under
   `@media (pointer: coarse)`. Do not "fix" a cramped mobile form by dropping a field to 14px.
@@ -186,6 +189,8 @@ lib/
   time-client.ts  day/clock formatting and entry stamping (browser)
   offline-cache.ts  the device-side snapshot behind offline reads
   units.ts        every unit conversion, and the rules about refusing one
+scripts/
+  generate-icons.mjs  all app icons from one geometry definition (npm run icons)
 public/
   sw.js           shell-caching service worker; never touches /api/
 prisma/

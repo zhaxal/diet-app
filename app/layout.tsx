@@ -18,8 +18,14 @@ export const metadata: Metadata = {
     title: "Diet Tracker",
   },
   icons: {
-    icon: "/icon.svg",
-    apple: "/icon.svg",
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    // A PNG, not the SVG. iOS ignores an SVG apple-touch-icon outright and
+    // falls back to a screenshot of the page, which is what the home-screen
+    // icon had been all along.
+    apple: { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
   },
 };
 

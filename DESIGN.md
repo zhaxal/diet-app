@@ -463,6 +463,28 @@ hand-written paths that came from three different grids — a 20-vertex gear tha
 - The typographic marks the system already uses — `+` / `−` for disclosure, `✕`, `★`, `↻`, `→` —
   are **not** icons and stay as they are. They are set in the text, at text weight.
 
+### App icon
+
+Three meter bars — the system's signature component, and the structure of the Today screen at a
+glance — in `--accent` against `--line-soft` tracks on the `--bg` dark ground, which is also the
+manifest's `theme_color`. Square-cornered and full-bleed: iOS and Android apply their own masks,
+and a radius baked into the artwork fights them.
+
+It replaced an emerald gradient progress ring, which broke six rules at once — a colour outside
+the palette (and the last place `#10b981` survived), a gradient, a circle, a progress ring, a
+22% corner radius against a 2% system, and no relationship to anything on screen.
+
+Every file is generated from one geometry definition by `scripts/generate-icons.mjs`
+(`npm run icons`), so the SVG and the PNGs cannot drift. The script has no image dependency: the
+mark is axis-aligned rectangles, so it rasterises exactly, and it asserts that the maskable
+variant fits inside the 80%-diameter safe circle before writing. Regenerating the icons means
+bumping `VERSION` in `public/sw.js` — the icons are cache-first and are not content-hashed.
+
+- **`icon.svg` / `icon-192.png` / `icon-512.png`** — `purpose: any`, mark at 76% of the canvas.
+- **`icon-maskable.svg` / `icon-maskable-512.png`** — `purpose: maskable`, mark at 54%.
+- **`apple-touch-icon.png`** — 180×180. **PNG, never SVG:** iOS ignores an SVG apple-touch-icon
+  and falls back to a screenshot of the page.
+
 ### Navigation
 - **Bottom nav:** Four fixed tabs, each a 22px lucide glyph over a 0.6875rem label —
   `CalendarDays` (a day is the unit, and the week strip above it is a calendar), `ChartColumn`

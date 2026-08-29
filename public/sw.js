@@ -14,7 +14,7 @@
  * renders it labelled as a past reading. See lib/offline-cache.ts.
  */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL = `diet-shell-${VERSION}`;
 const ASSETS = `diet-assets-${VERSION}`;
 
@@ -51,12 +51,18 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-/** Hashed build output and static icons: immutable, so cache-first is safe. */
+/**
+ * Hashed build output and the app icons: cache-first.
+ *
+ * The build output is content-hashed, so it is immutable by construction. The
+ * icons are not — they keep their names when redrawn — so a new icon reaches an
+ * installed app only when VERSION changes and `activate` drops the old caches.
+ * That is why VERSION is bumped whenever the icons are regenerated.
+ */
 function isImmutableAsset(url) {
   return (
     url.pathname.startsWith("/_next/static/") ||
-    url.pathname === "/icon.svg" ||
-    url.pathname === "/icon-maskable.svg"
+    /^\/(icon|apple-touch-icon)[\w-]*\.(svg|png)$/.test(url.pathname)
   );
 }
 
