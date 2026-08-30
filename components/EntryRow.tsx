@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { Copy } from "lucide-react";
 import { api, type FoodEntry } from "@/lib/api-client";
 import { clockTime } from "@/lib/time-client";
-import { formatQuantity, type QuantityUnit } from "@/lib/units";
+import { comparableUnits, formatQuantity, unitLabel, type QuantityUnit } from "@/lib/units";
 import Select from "./Select";
 import { useToast } from "./Toast";
 
@@ -23,9 +24,10 @@ interface Props {
   entry: FoodEntry;
   onUpdate: (e: FoodEntry) => void;
   onDelete: (id: string) => void;
+  onCopy: (e: FoodEntry) => void;
 }
 
-export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
+export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -39,11 +41,15 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
     sugar: entry.sugar.toString(),
     sodium: entry.sodium.toString(),
     mealType: entry.mealType,
+    quantity: entry.quantity != null ? String(entry.quantity) : "",
+    quantityUnit: (entry.quantityUnit ?? "g") as QuantityUnit,
   });
 
   async function save() {
     setSaving(true);
     try {
+      const amount = Number(form.quantity);
+      const hasAmount = form.quantity.trim() !== "" && Number.isFinite(amount) && amount > 0;
       const { entry: updated } = await api.updateEntry(entry.id, {
         name: form.name,
         calories: Number(form.calories),
@@ -54,6 +60,10 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
         sugar: Number(form.sugar),
         sodium: Number(form.sodium),
         mealType: form.mealType as FoodEntry["mealType"],
+        // The amount is corrected here too, and clearing the field removes the
+        // claim rather than leaving a stale one attached to new figures.
+        quantity: hasAmount ? amount : null,
+        quantityUnit: hasAmount ? form.quantityUnit : null,
       });
       onUpdate(updated);
       setEditing(false);
@@ -66,6 +76,9 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
   }
 
   if (editing) {
+    // A row logged in millilitres is corrected in millilitres. Offering grams
+    // for it would invite a unit change that silently reinterprets the figure.
+    const units = comparableUnits((entry.quantityUnit ?? "g") as QuantityUnit);
     return (
       <li className="px-3 py-2" style={{ background: "var(--panel-2)" }}>
         <div className="grid grid-cols-4 gap-1.5">
@@ -73,6 +86,7 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             className="field col-span-4"
+            aria-label="Food name"
           />
           {/* Labels persist above the field. A placeholder disappears the moment
               the field is populated, and these are always populated — leaving
@@ -94,11 +108,45 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
               />
             </label>
           ))}
+          <label className="block">
+            <span className="block text-2xs uppercase tracking-wider text-ink-faint">
+              Amount
+            </span>
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={form.quantity}
+              onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+              className="field num mt-0.5 w-full text-right"
+            />
+          </label>
+          {units.length > 1 ? (
+            <Select
+              value={form.quantityUnit}
+              onChange={(e) =>
+                setForm({ ...form, quantityUnit: e.target.value as QuantityUnit })
+              }
+              aria-label="Amount unit"
+              wrapClassName="self-end"
+            >
+              {units.map((u) => (
+                <option key={u} value={u}>
+                  {unitLabel(u)}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <div className="self-end pb-1.5 text-2xs uppercase tracking-wider text-ink-faint">
+              {unitLabel(form.quantityUnit)}
+            </div>
+          )}
           <Select
             value={form.mealType}
             onChange={(e) => setForm({ ...form, mealType: e.target.value as FoodEntry["mealType"] })}
             aria-label="Meal"
             className="capitalize"
+            wrapClassName="col-span-2 self-end"
           >
             {MEALS.map((m) => <option key={m} value={m}>{m}</option>)}
           </Select>
@@ -154,6 +202,18 @@ export default function EntryRow({ entry, onUpdate, onDelete }: Props) {
       <span className="num w-14 shrink-0 text-right text-sm font-semibold text-ink">
         {entry.calories}
       </span>
+      {/* Copy lifts the row onto the tray in Add food rather than logging it
+          again here. Eating the same thing rarely means eating the same amount,
+          and a duplicate that lands before you can say otherwise is a figure
+          you then have to correct. */}
+      <button
+        onClick={() => onCopy(entry)}
+        className="glyph-btn shrink-0 text-ink-faint transition-colors hover:text-ink"
+        aria-label={`Copy ${entry.name} to add food`}
+        title="Copy to Add food"
+      >
+        <Copy size={13} strokeWidth={1.75} aria-hidden="true" />
+      </button>
       {/* Always visible — this was opacity-0 until group-hover, i.e. permanently
           invisible on a touch device while remaining tappable. */}
       <button

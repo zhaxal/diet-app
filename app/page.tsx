@@ -13,28 +13,34 @@ import {
   type Favorite,
   type RecentFood,
   type Trends,
-  type MealTemplate,
-  type FoodMacros,
+  type TrendRange,
 } from "@/lib/api-client";
-import { clockTime, consumedAtFor, todayStr } from "@/lib/time-client";
+import { clockTime, todayStr } from "@/lib/time-client";
 import {
   clearSnapshot,
   clearSnapshotUnless,
   readSnapshot,
   writeSnapshot,
 } from "@/lib/offline-cache";
+import {
+  addManyToTray,
+  addToTray,
+  clearTray,
+  clearTrayUnless,
+  readTray,
+  removeFromTray,
+  type CopiedItem,
+} from "@/lib/copied";
 import { ToastProvider, useToast } from "@/components/Toast";
 import { Meter } from "@/components/Meter";
 import BottomNav, { type Tab } from "@/components/BottomNav";
-import Select from "@/components/Select";
 import ThemeToggle from "@/components/ThemeToggle";
 import GoalsCard from "@/components/GoalsCard";
 import QuickAdd from "@/components/QuickAdd";
 import EntryRow from "@/components/EntryRow";
 import WeightCard from "@/components/WeightCard";
 import TrendsCard from "@/components/TrendsCard";
-import FoodSearch from "@/components/FoodSearch";
-import TemplatesCard from "@/components/TemplatesCard";
+import AddFood from "@/components/AddFood";
 import TdeeCard from "@/components/TdeeCard";
 import ProductsCard from "@/components/ProductsCard";
 
@@ -55,8 +61,6 @@ function prettyDate(date: string) {
   if (date === shiftDate(todayStr(), -1)) return "Yesterday";
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
-
-const emptyForm = { name: "", calories: "", protein: "", carbs: "", fat: "", fiber: "", sugar: "", sodium: "" };
 
 // The meal a one-tap log lands in follows the clock, not a stale select. Whatever
 // this returns is shown on screen before anything is logged, never inferred silently.
@@ -131,7 +135,7 @@ function Dashboard() {
   const setDate = useCallback((d: string) => writeParams({ d }), [writeParams]);
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [urlCopied, setUrlCopied] = useState(false);
   const [origin, setOrigin] = useState("");
 
   const [entries, setEntries] = useState<FoodEntry[]>([]);
@@ -141,16 +145,25 @@ function Dashboard() {
   const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [recent, setRecent] = useState<RecentFood[]>([]);
-  const [templates, setTemplates] = useState<MealTemplate[]>([]);
   const [trends, setTrends] = useState<Trends | null>(null);
   const [trendsError, setTrendsError] = useState<string | null>(null);
-  const [trendDays, setTrendDays] = useState<7 | 30>(7);
+  const [trendRange, setTrendRange] = useState<TrendRange>(7);
 
-  const [form, setForm] = useState(emptyForm);
+  // Per-day calorie totals behind the week strip, accumulated from every window
+  // that has been read. They used to be lifted out of whatever Trends happened
+  // to hold, so the moment you navigated past that window the strip stopped
+  // reporting — on exactly the days you had gone back to look at.
+  const [dayTotals, setDayTotals] = useState<Map<string, { calories: number; count: number }>>(
+    () => new Map(),
+  );
+
+  // The copy tray. Device state, not a record - see lib/copied.ts.
+  const [copied, setCopied] = useState<CopiedItem[]>([]);
+  // A query handed up from Quick add, which only knows what you already eat.
+  const [addFoodSeed, setAddFoodSeed] = useState("");
+
   const [meal, setMeal] = useState<Meal>(mealForNow);
   const [showAdd, setShowAdd] = useState(false);
-  const [showMore, setShowMore] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState<"json" | "csv" | null>(null);
   const [lastLoaded, setLastLoaded] = useState<number | null>(null);
   const lastLoadedRef = useRef<number | null>(null);
@@ -172,10 +185,10 @@ function Dashboard() {
   // Everything a snapshot needs beyond the day itself, held in a ref so that
   // writing one does not change `loadDay`'s identity — which would re-run the
   // day-loading effect every time a favorite changed.
-  const auxRef = useRef({ email, goals, favorites, recent, weightLogs, templates });
+  const auxRef = useRef({ email, goals, favorites, recent, weightLogs });
   useEffect(() => {
-    auxRef.current = { email, goals, favorites, recent, weightLogs, templates };
-  }, [email, goals, favorites, recent, weightLogs, templates]);
+    auxRef.current = { email, goals, favorites, recent, weightLogs };
+  }, [email, goals, favorites, recent, weightLogs]);
   useEffect(() => {
     lastLoadedRef.current = lastLoaded;
   }, [lastLoaded]);
@@ -199,25 +212,59 @@ function Dashboard() {
         favorites: aux.favorites,
         recent: aux.recent,
         weightLogs: aux.weightLogs,
-        templates: aux.templates,
       });
     },
     [],
   );
 
+  // A day's totals belong to the strip as much as to the readout, so both are
+  // written from one place - otherwise logging on a past day moves the figure
+  // above and leaves that day's bar reporting the total it had on load.
+  const applySummary = useCallback((d: string, sum: Summary | null) => {
+    setSummary(sum);
+    if (sum) {
+      setDayTotals((prev) =>
+        new Map(prev).set(d, { calories: sum.total.calories, count: sum.total.count }),
+      );
+    }
+  }, []);
+
   const loadDay = useCallback(async (d: string) => {
     const [{ entries }, sum] = await Promise.all([api.listEntries(d), api.summary(d)]);
     setEntries(entries);
-    setSummary(sum);
+    applySummary(d, sum);
     setLastLoaded(Date.now());
     // The screen is live again the moment a read succeeds.
     setStaleSince(null);
     setDaySnapshot(d, entries, sum);
-  }, [setDaySnapshot]);
+  }, [applySummary, setDaySnapshot]);
 
-  const loadTrends = useCallback(async (days: 7 | 30) => {
+  const mergeDayTotals = useCallback(
+    (rows: { date: string; calories: number; count: number }[]) => {
+      setDayTotals((prev) => {
+        const next = new Map(prev);
+        for (const r of rows) next.set(r.date, { calories: r.calories, count: r.count });
+        return next;
+      });
+    },
+    [],
+  );
+
+  /** The seven days the strip is currently showing, whenever they change. */
+  const loadStrip = useCallback(
+    async (end: string) => {
+      const { nutrition } = await api.dayTotals(shiftDate(end, -6), end);
+      mergeDayTotals(nutrition);
+    },
+    [mergeDayTotals],
+  );
+
+  const loadTrends = useCallback(async (range: TrendRange) => {
     try {
-      setTrends(await api.getTrends(days));
+      const t = await api.getTrends(range);
+      setTrends(t);
+      // Free readings for the strip: the same days, already fetched.
+      mergeDayTotals(t.nutrition);
       setTrendsError(null);
     } catch (e) {
       // Swallowing this rendered a heading above nothing, forever. Keep any
@@ -225,23 +272,24 @@ function Dashboard() {
       setTrendsError(e instanceof Error ? e.message : "Could not load trends");
       throw e;
     }
-  }, []);
+  }, [mergeDayTotals]);
 
   useEffect(() => {
     (async () => {
       try {
-        const [{ user }, { goals: g }, { logs }, { favorites: favs, recent: rec }, { templates: tpls }, { apiKey: key }] =
-          await Promise.all([api.me(), api.getGoals(), api.listWeight(), api.listFavorites(), api.listTemplates(), api.getApiKey()]);
+        const [{ user }, { goals: g }, { logs }, { favorites: favs, recent: rec }, { apiKey: key }] =
+          await Promise.all([api.me(), api.getGoals(), api.listWeight(), api.listFavorites(), api.getApiKey()]);
         userIdRef.current = user.id;
         // A phone gets handed around. Anything stored for a different account
         // goes before this session can render a byte of it.
         clearSnapshotUnless(user.id);
+        clearTrayUnless(user.id);
+        setCopied(readTray(user.id));
         setEmail(user.email);
         setGoals(g);
         setWeightLogs(logs);
         setFavorites(favs);
         setRecent(rec);
-        setTemplates(tpls);
         setApiKey(key);
         setOrigin(window.location.origin);
         setReady(true);
@@ -272,13 +320,13 @@ function Dashboard() {
           setFavorites(snap.favorites);
           setRecent(snap.recent);
           setWeightLogs(snap.weightLogs ?? []);
-          setTemplates(snap.templates ?? []);
+          setCopied(readTray(snap.userId));
           // Only if it is the day being asked for. Painting yesterday's figures
           // under today's heading for one frame is exactly the lie this whole
           // path exists to avoid.
           if (snap.date === dateRef.current) {
             setEntries(snap.entries);
-            setSummary(snap.summary);
+            applySummary(snap.date, snap.summary);
             setLastLoaded(snap.at);
             setStaleSince(snap.at);
           }
@@ -289,7 +337,7 @@ function Dashboard() {
         }
       }
     })();
-  }, [router]);
+  }, [router, applySummary]);
 
   useEffect(() => {
     if (!ready) return;
@@ -301,7 +349,7 @@ function Dashboard() {
         const snap = readSnapshot();
         if (snap && snap.date === date && snap.userId === userIdRef.current) {
           setEntries(snap.entries);
-          setSummary(snap.summary);
+          applySummary(snap.date, snap.summary);
           setLastLoaded(snap.at);
           setStaleSince(snap.at);
           setDayError(null);
@@ -312,11 +360,18 @@ function Dashboard() {
           setDayError(e.message);
         }
       });
-  }, [ready, date, loadDay]);
+  }, [ready, date, loadDay, applySummary]);
+
+  // The strip reads its own window. Seven days is a small query, and it is the
+  // only thing that makes the bars true for a day reached by navigating back.
+  const stripEnd = stripEnding(date, todayStr());
+  useEffect(() => {
+    if (ready) loadStrip(stripEnd).catch(() => {});
+  }, [ready, stripEnd, loadStrip]);
 
   useEffect(() => {
-    if (ready) loadTrends(trendDays).catch(() => {});
-  }, [ready, trendDays, loadTrends]);
+    if (ready) loadTrends(trendRange).catch(() => {});
+  }, [ready, trendRange, loadTrends]);
 
   // An installed PWA is not remounted when it comes back from the background, so
   // without this the screen keeps showing whatever it loaded hours ago — including
@@ -352,13 +407,14 @@ function Dashboard() {
       setFavorites(favs);
       setRecent(rec);
       setGoals(g);
-      loadTrends(trendDays).catch(() => {});
+      loadStrip(stripEnding(date, todayStr())).catch(() => {});
+      loadTrends(trendRange).catch(() => {});
     } catch {
       // A failed background refresh must not replace the data already on screen.
     } finally {
       setRefreshing(false);
     }
-  }, [date, loadDay, loadTrends, trendDays, writeParams]);
+  }, [date, loadDay, loadStrip, loadTrends, trendRange, writeParams]);
 
   useEffect(() => {
     if (!ready) return;
@@ -380,49 +436,49 @@ function Dashboard() {
     };
   }, [ready, revalidate]);
 
-  async function addEntry(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await api.createEntry({
-        name: form.name,
-        calories: Number(form.calories),
-        protein: form.protein ? Number(form.protein) : 0,
-        carbs: form.carbs ? Number(form.carbs) : 0,
-        fat: form.fat ? Number(form.fat) : 0,
-        fiber: form.fiber ? Number(form.fiber) : 0,
-        sugar: form.sugar ? Number(form.sugar) : 0,
-        sodium: form.sodium ? Number(form.sodium) : 0,
-        mealType: meal,
-        consumedAt: consumedAtFor(date),
-      });
-      setForm(emptyForm);
-      setShowAdd(false);
-      setShowMore(false);
-      toast(`Added ${form.name || "entry"}`);
-      await loadDay(date);
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Failed to add entry", "error");
-    } finally {
-      setSaving(false);
-    }
+  /** An entry as the tray stores it, so one row and a whole meal agree. */
+  function asCopy(e: FoodEntry) {
+    return {
+      name: e.name,
+      calories: e.calories,
+      protein: e.protein,
+      carbs: e.carbs,
+      fat: e.fat,
+      fiber: e.fiber,
+      sugar: e.sugar,
+      sodium: e.sodium,
+      mealType: e.mealType,
+      productId: e.productId ?? null,
+      quantity: e.quantity ?? null,
+      quantityUnit: e.quantityUnit ?? null,
+      fromDate: date,
+    };
   }
 
-  function fillFromSearch(name: string, m: FoodMacros) {
-    setForm((f) => ({
-      ...f,
-      name,
-      calories: String(m.calories),
-      protein: String(m.protein),
-      carbs: String(m.carbs),
-      fat: String(m.fat),
-      fiber: String(m.fiber),
-      sugar: String(m.sugar),
-      sodium: String(m.sodium),
-    }));
+  // Copying writes nothing to the log. It opens Add food with the row loaded,
+  // where the amount can be changed before anything is recorded — because
+  // eating the same thing twice rarely means eating the same amount of it.
+  function copyEntry(e: FoodEntry) {
+    const userId = userIdRef.current;
+    if (!userId) return;
+    setCopied(addToTray(userId, asCopy(e)));
     setShowAdd(true);
-    if (m.fiber || m.sugar || m.sodium) setShowMore(true);
-    toast(`Filled “${name}” — review & add`, "info");
+    toast(`Copied ${e.name} — set the amount in Add food`, "info");
+  }
+
+  function copyMeal(m: Meal, items: FoodEntry[]) {
+    const userId = userIdRef.current;
+    if (!userId || items.length === 0) return;
+    // Reversed, so the first row of the meal ends up first in the tray.
+    setCopied(addManyToTray(userId, [...items].reverse().map(asCopy)));
+    setShowAdd(true);
+    toast(`Copied ${items.length} ${m} ${items.length === 1 ? "entry" : "entries"}`, "info");
+  }
+
+  function dropCopy(key: string) {
+    const userId = userIdRef.current;
+    if (!userId) return;
+    setCopied(removeFromTray(userId, key));
   }
 
   async function removeEntry(id: string) {
@@ -470,7 +526,7 @@ function Dashboard() {
     api
       .summary(date)
       .then((sum) => {
-        setSummary(sum);
+        applySummary(date, sum);
         setLastLoaded(Date.now());
       })
       .catch(() => {});
@@ -518,9 +574,9 @@ function Dashboard() {
     try {
       if (!navigator.clipboard) throw new Error("no clipboard");
       await navigator.clipboard.writeText(mcpUrl);
-      setCopied(true);
+      setUrlCopied(true);
       toast("Connector URL copied");
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setUrlCopied(false), 2000);
     } catch {
       toast("Could not copy — select the URL above and copy it manually", "error");
     }
@@ -541,6 +597,7 @@ function Dashboard() {
     // Before the request, so a failed logout still leaves nothing readable on
     // the device.
     clearSnapshot();
+    clearTray();
     try {
       await api.logout();
     } catch {
@@ -582,15 +639,6 @@ function Dashboard() {
   const calLeft = calGoal ? calGoal - total.calories : 0;
   const calOver = calLeft < 0;
 
-  // Per-day totals behind the week strip. Sourced from the trends payload already
-  // in memory — no extra request — with the currently loaded day overridden by the
-  // live summary so the strip moves the instant something is logged.
-  const dayTotals = new Map<string, { calories: number; count: number }>();
-  for (const d of trends?.nutrition ?? []) {
-    dayTotals.set(d.date, { calories: d.calories, count: d.count });
-  }
-  if (summary) dayTotals.set(date, { calories: total.calories, count: total.count });
-
   return (
     <div className="mx-auto max-w-2xl px-3 pb-24 pt-3">
       {/* ── Today ─────────────────────────────────────── */}
@@ -605,7 +653,7 @@ function Dashboard() {
               a report, not a score: no streak, no praise, no colour beyond the two
               the system already uses for in-range and over. */}
           <nav className="panel flex overflow-hidden" aria-label="Week">
-            {weekEnding(stripEnding(date, todayStr())).map((d) => {
+            {weekEnding(stripEnd).map((d) => {
               const active = d === date;
               const dt = new Date(`${d}T00:00:00`);
               const day = dayTotals.get(d);
@@ -851,123 +899,36 @@ function Dashboard() {
                 selectedDate={date}
                 onLogged={() => loadDay(date)}
                 onFavoriteDeleted={(id) => setFavorites((f) => f.filter((x) => x.id !== id))}
-                onFavoritesChanged={() =>
-                  api.listFavorites().then(({ favorites: favs }) => setFavorites(favs)).catch(() => {})
-                }
+                onSearchAll={(query) => {
+                  setAddFoodSeed(query);
+                  setShowAdd(true);
+                }}
               />
             </section>
           )}
 
-          {/* Saved products */}
-          <Panel title="Products" hint="Saved labels" defaultOpen={false}>
-            <ProductsCard
-              date={date}
-              defaultMeal={meal}
-              onLogged={() => loadDay(date)}
-            />
-          </Panel>
-
-          {/* Add food */}
+          {/* Add food — the one place an entry is composed, whether it comes
+              from the copy tray, a saved label, something eaten before, Open
+              Food Facts, or nothing but the numbers on a wrapper. */}
           <Panel
             title="Add food"
+            hint={copied.length > 0 ? `${copied.length} copied` : undefined}
             open={showAdd}
             onToggle={() => setShowAdd((s) => !s)}
           >
-            <div className="space-y-2">
-              <FoodSearch onPick={fillFromSearch} />
-              <form onSubmit={addEntry} className="grid grid-cols-4 gap-1.5">
-                <label className="col-span-4 block">
-                  <span className="block text-2xs uppercase tracking-wider text-ink-faint">
-                    Food
-                  </span>
-                  <input
-                    required
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    className="field mt-0.5 w-full"
-                  />
-                </label>
-                {/* Labelled above, not by placeholder. `fillFromSearch` populates
-                    all seven from Open Food Facts and asks the user to review
-                    them — and populating a field is exactly what erases a
-                    placeholder. Same labels as the row editor. */}
-                <NumInput label="kcal" value={form.calories} onChange={(v) => setForm({ ...form, calories: v })} required />
-                <NumInput label="Protein g" value={form.protein} onChange={(v) => setForm({ ...form, protein: v })} />
-                <NumInput label="Carbs g" value={form.carbs} onChange={(v) => setForm({ ...form, carbs: v })} />
-                <NumInput label="Fat g" value={form.fat} onChange={(v) => setForm({ ...form, fat: v })} />
-                {showMore && (
-                  <>
-                    <NumInput label="Fiber g" value={form.fiber} onChange={(v) => setForm({ ...form, fiber: v })} />
-                    <NumInput label="Sugar g" value={form.sugar} onChange={(v) => setForm({ ...form, sugar: v })} />
-                    <NumInput label="Sodium mg" value={form.sodium} onChange={(v) => setForm({ ...form, sodium: v })} />
-                    <div />
-                  </>
-                )}
-                {/* Mirrors the shared meal state above; it does not own it. */}
-                <Select
-                  value={meal}
-                  onChange={(e) => setMeal(e.target.value as Meal)}
-                  aria-label="Meal"
-                  wrapClassName="col-span-2"
-                  className="capitalize"
-                >
-                  {MEALS.map((m) => <option key={m} value={m}>{m}</option>)}
-                </Select>
-                <button type="submit" disabled={saving} className="btn btn-primary col-span-2">
-                  {saving ? "Adding…" : "Add"}
-                </button>
-                <div className="col-span-4 flex items-center gap-3 pt-0.5">
-                  <button type="button" onClick={() => setShowMore((s) => !s)} className="text-2xs text-ink-faint hover:text-ink">
-                    {showMore ? "− fewer" : "+ fiber / sugar / sodium"}
-                  </button>
-                  {form.name && form.calories && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await api.saveFavorite({ name: form.name, calories: Number(form.calories), protein: Number(form.protein) || 0, carbs: Number(form.carbs) || 0, fat: Number(form.fat) || 0, fiber: Number(form.fiber) || 0, sugar: Number(form.sugar) || 0, sodium: Number(form.sodium) || 0, mealType: meal });
-                          const { favorites: favs } = await api.listFavorites();
-                          setFavorites(favs);
-                          toast("Saved to favorites");
-                        }}
-                        className="text-2xs text-accent hover:underline"
-                      >
-                        ★ favorite
-                      </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await api.saveProduct({
-                            name: form.name,
-                            calories: Number(form.calories) || 0,
-                            protein: Number(form.protein) || 0,
-                            carbs: Number(form.carbs) || 0,
-                            fat: Number(form.fat) || 0,
-                            fiber: Number(form.fiber) || 0,
-                            sugar: Number(form.sugar) || 0,
-                            sodium: Number(form.sodium) || 0,
-                            basis: "100g",
-                          });
-                          toast("Saved to products (per 100g)");
-                        }}
-                        className="text-2xs text-accent hover:underline"
-                      >
-                        ⬚ product
-                      </button>
-                    </>
-                  )}
-                </div>
-              </form>
-            </div>
-          </Panel>
-
-          <Panel title="Copy &amp; templates" defaultOpen={false} bare>
-            <TemplatesCard
+            <AddFood
               date={date}
-              entries={entries}
-              templates={templates}
-              onTemplatesChange={setTemplates}
-              onApplied={() => loadDay(date)}
+              meal={meal}
+              onMealChange={setMeal}
+              favorites={favorites}
+              recent={recent}
+              copied={copied}
+              onRemoveCopied={dropCopy}
+              onLogged={() => loadDay(date)}
+              onFavoritesChanged={() =>
+                api.listFavorites().then(({ favorites: favs }) => setFavorites(favs)).catch(() => {})
+              }
+              seedQuery={addFoodSeed}
             />
           </Panel>
 
@@ -1027,13 +988,30 @@ function Dashboard() {
                       <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
                         {meal}
                       </h3>
-                      <span className="num text-2xs text-ink-faint">
-                        {Math.round(summary?.byMeal[meal]?.calories ?? 0)} kcal
-                      </span>
+                      <div className="flex items-baseline gap-2">
+                        <span className="num text-2xs text-ink-faint">
+                          {Math.round(summary?.byMeal[meal]?.calories ?? 0)} kcal
+                        </span>
+                        {/* The bulk case the day-copy panel used to serve, in one
+                            tap and without a second surface: a whole meal onto the
+                            tray, where each row keeps its own amount. */}
+                        <button
+                          onClick={() => copyMeal(meal, items)}
+                          className="text-2xs font-semibold uppercase tracking-wider text-ink-faint transition-colors hover:text-accent"
+                        >
+                          copy all
+                        </button>
+                      </div>
                     </div>
                     <ul className="divide-y" style={{ borderColor: "var(--line-soft)" }}>
                       {items.map((entry) => (
-                        <EntryRow key={entry.id} entry={entry} onUpdate={updateEntry} onDelete={removeEntry} />
+                        <EntryRow
+                          key={entry.id}
+                          entry={entry}
+                          onUpdate={updateEntry}
+                          onDelete={removeEntry}
+                          onCopy={copyEntry}
+                        />
                       ))}
                     </ul>
                   </div>
@@ -1052,7 +1030,8 @@ function Dashboard() {
             <TrendsCard
               trends={trends}
               goals={goals}
-              onDaysChange={(d) => setTrendDays(d)}
+              range={trendRange}
+              onRangeChange={setTrendRange}
               onSetGoals={() => goTab("settings")}
             />
           ) : trendsError ? (
@@ -1062,7 +1041,7 @@ function Dashboard() {
               </p>
               <p className="mt-1 text-xs text-ink-faint">{trendsError}</p>
               <button
-                onClick={() => loadTrends(trendDays).catch(() => {})}
+                onClick={() => loadTrends(trendRange).catch(() => {})}
                 className="btn btn-primary mt-3 w-full"
               >
                 Retry
@@ -1118,15 +1097,15 @@ function Dashboard() {
             <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">Claude connector</h2>
             <p className="mt-1 text-2xs text-ink-faint">
               Claude.ai → Settings → Connectors → Add custom connector. Photograph a
-              nutrition label and Claude saves it as a product you can re-log without
-              another photo.
+              nutrition label and Claude saves it to the catalog below, where Add
+              food can log it by weight without another photo.
             </p>
             <div className="mt-2 flex items-center gap-1.5">
               <code className="num flex-1 truncate rounded px-2 py-1.5 text-2xs text-ink-dim" style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}>
                 {mcpUrl || "…"}
               </code>
               <button onClick={copyUrl} disabled={!mcpUrl} className="btn btn-primary shrink-0">
-                {copied ? "✓" : "Copy"}
+                {urlCopied ? "✓" : "Copy"}
               </button>
             </div>
             <div className="mt-2 flex items-center justify-between text-2xs">
@@ -1137,8 +1116,8 @@ function Dashboard() {
             </div>
           </section>
 
-          <Panel title="Saved products" defaultOpen={false}>
-            <ProductsCard date={date} defaultMeal="snack" manageOnly />
+          <Panel title="Product catalog" hint="labels you can log by amount" defaultOpen={false}>
+            <ProductsCard />
           </Panel>
 
           <section className="panel mt-2 p-3">

@@ -158,3 +158,65 @@ export function normaliseServing(
   }
   return { servingSize: null, servingUnit: null };
 }
+
+// ── Comparing two amounts ──────────────────────────────────────────────────
+//
+// `toBase` answers "how much of this product", which needs the product. The
+// compose form asks a different question — "these numbers describe 250 g; what
+// do 300 g look like?" — and that one has an answer without a product at all,
+// as long as the two amounts share a dimension.
+
+export type Dimension = "mass" | "volume" | "serving";
+
+export function dimensionOf(unit: QuantityUnit): Dimension {
+  if (isMassUnit(unit)) return "mass";
+  if (isVolumeUnit(unit)) return "volume";
+  return "serving";
+}
+
+/**
+ * The units an amount may be restated in without inventing a density. A serving
+ * is only comparable to another serving unless the product declares its size,
+ * which is exactly when `unitsFor` is the right question instead.
+ */
+export function comparableUnits(unit: QuantityUnit): QuantityUnit[] {
+  const d = dimensionOf(unit);
+  return d === "mass" ? ["g", "oz"] : d === "volume" ? ["ml", "floz"] : ["serving"];
+}
+
+/** An amount reduced to its dimension's canonical unit: grams, or millilitres. */
+function canonical(
+  amount: number,
+  unit: QuantityUnit,
+  serving?: { size: number; unit: ServingUnit } | null,
+): { dim: Dimension; value: number } | null {
+  if (unit === "serving") {
+    // Without a declared size a serving is only ever comparable to another
+    // serving. Guessing grams here would be inventing the number the whole
+    // module exists to refuse.
+    if (!serving || !(serving.size > 0)) return { dim: "serving", value: amount };
+    const inner = canonical(serving.size, serving.unit, null);
+    return inner ? { dim: inner.dim, value: inner.value * amount } : null;
+  }
+  if (isMassUnit(unit)) return { dim: "mass", value: amount * MASS_IN_G[unit] };
+  if (isVolumeUnit(unit)) return { dim: "volume", value: amount * VOLUME_IN_ML[unit] };
+  return null;
+}
+
+/**
+ * The factor that turns nutrition stated for `per` into nutrition for `want`.
+ * Null when the two cannot be compared — 200 ml against a figure quoted per
+ * 100 g, or a serving of something whose serving size nobody wrote down.
+ */
+export function scaleFactor(
+  want: { amount: number; unit: QuantityUnit },
+  per: { amount: number; unit: QuantityUnit },
+  serving?: { size: number; unit: ServingUnit } | null,
+): number | null {
+  if (!Number.isFinite(want.amount) || want.amount <= 0) return null;
+  if (!Number.isFinite(per.amount) || per.amount <= 0) return null;
+  const a = canonical(want.amount, want.unit, serving);
+  const b = canonical(per.amount, per.unit, serving);
+  if (!a || !b || a.dim !== b.dim) return null;
+  return a.value / b.value;
+}

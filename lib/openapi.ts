@@ -110,7 +110,15 @@ export function buildOpenApiDocument(baseUrl?: string) {
       "Every figure is an aggregation of entries reachable through /entries; " +
       "this endpoint exists so a caller does not have to page the range itself.",
     properties: {
-      days: { type: "integer", enum: [7, 30] },
+      days: {
+        type: "integer",
+        description:
+          "The width of the window that was actually served, in days. Not " +
+          "always the width that was asked for: `all` resolves to one, and an " +
+          "over-long `from` is clamped to one.",
+      },
+      from: { type: "string", example: "2026-08-01" },
+      to: { type: "string", example: "2026-08-30" },
       nutrition: {
         type: "array",
         description:
@@ -209,14 +217,22 @@ export function buildOpenApiDocument(baseUrl?: string) {
         },
         UpdateEntry: {
           type: "object",
-          description: "Any subset of the create fields.",
+          description:
+            "Any subset of the create fields. `quantity` and `quantityUnit` are " +
+            "correctable like anything else, and either may be sent as null to " +
+            "drop an amount the row should no longer claim.",
           properties: {
             name: entryProps.name,
             calories: entryProps.calories,
             protein: entryProps.protein,
             carbs: entryProps.carbs,
             fat: entryProps.fat,
+            fiber: entryProps.fiber,
+            sugar: entryProps.sugar,
+            sodium: entryProps.sodium,
             mealType: entryProps.mealType,
+            quantity: entryProps.quantity,
+            quantityUnit: entryProps.quantityUnit,
             consumedAt: { type: "string", format: "date-time" },
           },
         },
@@ -444,18 +460,39 @@ export function buildOpenApiDocument(baseUrl?: string) {
       "/trends": {
         get: {
           tags: ["Summary"],
-          summary: "Per-day totals over a trailing window",
+          summary: "Per-day totals over a window",
           description:
-            "The range view behind the Trends tab. Documented because the " +
-            "assistant reads the same day the UI does, and nothing the screen " +
-            "can see should be reachable only through the browser.",
+            "The range view behind the Trends tab, and the source of the week " +
+            "strip's per-day bars. Documented because the assistant reads the " +
+            "same day the UI does, and nothing the screen can see should be " +
+            "reachable only through the browser.",
           parameters: [
             {
               name: "days",
               in: "query",
               required: false,
-              schema: { type: "integer", enum: [7, 30], default: 30 },
-              description: "Window length. Anything other than 7 is treated as 30.",
+              schema: { type: "string", example: "30", default: "30" },
+              description:
+                "Window length in days, counting back from today: any integer " +
+                "from 1 to 3660, or `all` for everything since the first record. " +
+                "Anything unparseable is treated as 30. Ignored when `from` is given.",
+            },
+            {
+              name: "from",
+              in: "query",
+              required: false,
+              schema: { type: "string", example: "2026-08-01" },
+              description:
+                "First local calendar day of the window (YYYY-MM-DD). Takes " +
+                "precedence over `days`. Windows longer than 3660 days are " +
+                "clamped, and the response says which window was served.",
+            },
+            {
+              name: "to",
+              in: "query",
+              required: false,
+              schema: { type: "string", example: "2026-08-31" },
+              description: "Last local calendar day of the window. Defaults to today.",
             },
           ],
           responses: {

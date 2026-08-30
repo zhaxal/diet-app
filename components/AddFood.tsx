@@ -1,0 +1,1009 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ScanBarcode } from "lucide-react";
+import {
+  api,
+  type Favorite,
+  type FoodSearchResult,
+  type Meal,
+  type Product,
+  type RecentFood,
+} from "@/lib/api-client";
+import type { CopiedItem } from "@/lib/copied";
+import {
+  EMPTY_MACRO_STRINGS,
+  hasTrace,
+  macroStrings,
+  parseMacros,
+  scaleMacros,
+  type MacroStrings,
+} from "@/lib/macros";
+import { consumedAtFor, todayStr } from "@/lib/time-client";
+import { rankRecent } from "@/lib/quick-add-rank";
+import {
+  baseUnitFor,
+  comparableUnits,
+  dimensionOf,
+  formatQuantity,
+  scaleFactor,
+  unitLabel,
+  unitsFor,
+  type Basis as ProductBasis,
+  type QuantityUnit,
+  type ServingUnit,
+} from "@/lib/units";
+import BarcodeScanner, { isBarcodeScanningSupported } from "./BarcodeScanner";
+import Select from "./Select";
+import { useToast } from "./Toast";
+
+const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
+
+/**
+ * What the numbers in the form describe.
+ *
+ * Every food in this app arrives quoted against something — a label quotes per
+ * 100 g, a copied row quotes the 250 g that was eaten, and a meal you are
+ * typing from memory quotes itself. Naming that reference is what lets one
+ * amount field mean "scale this" in the first two cases and "record this" in
+ * the third, instead of silently doing the wrong one.
+ */
+type Reference =
+  /** The numbers are the entry. An amount, if given, is recorded, not applied. */
+  | { kind: "portion" }
+  /** The numbers describe this much of it. An amount rescales them. */
+  | { kind: "per"; amount: number; unit: QuantityUnit }
+  /** The numbers are one helping of unstated size. Only a multiple can move them. */
+  | { kind: "unitless" };
+
+interface Origin {
+  /** Where the numbers came from, in the label voice. */
+  label: string;
+  /** What they are quoted against, so the fields below are unambiguous. */
+  detail: string;
+}
+
+interface Props {
+  date: string;
+  meal: Meal;
+  onMealChange: (m: Meal) => void;
+  favorites: Favorite[];
+  recent: RecentFood[];
+  copied: CopiedItem[];
+  onRemoveCopied: (key: string) => void;
+  onLogged: () => void;
+  onFavoritesChanged: () => void;
+  /** A query handed over from Quick add, which only searches what you already eat. */
+  seedQuery: string;
+}
+
+const MACRO_FIELDS = [
+  { key: "calories", label: "kcal" },
+  { key: "protein", label: "Protein g" },
+  { key: "carbs", label: "Carbs g" },
+  { key: "fat", label: "Fat g" },
+] as const;
+
+const TRACE_FIELDS = [
+  { key: "fiber", label: "Fiber g" },
+  { key: "sugar", label: "Sugar g" },
+  { key: "sodium", label: "Sodium mg" },
+] as const;
+
+/** Which day a copy came from, as a person would say it. */
+function whenLabel(date: string): string {
+  const today = todayStr();
+  if (date === today) return "today";
+  const y = new Date(`${today}T00:00:00`);
+  y.setDate(y.getDate() - 1);
+  if (date === `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`) {
+    return "yesterday";
+  }
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export default function AddFood({
+  date,
+  meal,
+  onMealChange,
+  favorites,
+  recent,
+  copied,
+  onRemoveCopied,
+  onLogged,
+  onFavoritesChanged,
+  seedQuery,
+}: Props) {
+  const toast = useToast();
+
+  // ── Finding something ────────────────────────────────────────────────────
+  const [q, setQ] = useState("");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [online, setOnline] = useState<FoodSearchResult[]>([]);
+  const [searchingOnline, setSearchingOnline] = useState(false);
+  const [onlineFailed, setOnlineFailed] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  // Read once, after mount: `BarcodeDetector` does not exist during SSR, and
+  // branching on it during render would desync hydration.
+  const [canScan, setCanScan] = useState(false);
+  useEffect(() => setCanScan(isBarcodeScanningSupported()), []);
+
+  // ── Composing the entry ──────────────────────────────────────────────────
+  const [name, setName] = useState("");
+  const [vals, setVals] = useState<MacroStrings>(EMPTY_MACRO_STRINGS);
+  const [reference, setReference] = useState<Reference>({ kind: "portion" });
+  const [amount, setAmount] = useState("");
+  const [unit, setUnit] = useState<QuantityUnit>("g");
+  const [multiple, setMultiple] = useState("1");
+  const [serving, setServing] = useState<{ size: number; unit: ServingUnit } | null>(null);
+  const [productId, setProductId] = useState<string | null>(null);
+  const [origin, setOrigin] = useState<Origin | null>(null);
+  const [showTrace, setShowTrace] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const composeRef = useRef<HTMLDivElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  // Quick add hands its query over rather than searching twice. Focus follows
+  // it, so the handover lands on a field the user is already typing into.
+  useEffect(() => {
+    if (!seedQuery) return;
+    setQ(seedQuery);
+    searchRef.current?.focus();
+  }, [seedQuery]);
+
+  const query = q.trim();
+
+  useEffect(() => {
+    if (query.length < 1) {
+      setProducts([]);
+      setOnline([]);
+      setOnlineFailed(false);
+      return;
+    }
+    let live = true;
+    const t = setTimeout(async () => {
+      api
+        .listProducts(query)
+        .then(({ products }) => live && setProducts(products))
+        .catch(() => live && setProducts([]));
+
+      // Open Food Facts is the one outbound call in the app and the slowest
+      // thing here, so it is gated behind a second character and never blocks
+      // the three local groups from rendering.
+      if (query.length < 2) {
+        setOnline([]);
+        return;
+      }
+      setSearchingOnline(true);
+      try {
+        const { results, unavailable } = await api.searchFoods(query);
+        if (live) {
+          setOnline(results);
+          setOnlineFailed(Boolean(unavailable));
+        }
+      } catch {
+        if (live) {
+          setOnline([]);
+          setOnlineFailed(true);
+        }
+      } finally {
+        if (live) setSearchingOnline(false);
+      }
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [query]);
+
+  const lower = query.toLowerCase();
+  const matchesQuery = useCallback(
+    (n: string) => !lower || n.toLowerCase().includes(lower),
+    [lower],
+  );
+
+  const rankedRecent = useMemo(() => rankRecent(recent, meal), [recent, meal]);
+  const copiedHits = useMemo(
+    () => (query ? copied.filter((c) => matchesQuery(c.name)) : []),
+    [copied, query, matchesQuery],
+  );
+  const eatenHits = useMemo(() => {
+    if (!query) return [];
+    // Anything already on the tray is not offered again below it. A copy is the
+    // same food carrying the day and the amount it was eaten at, so it stands
+    // in for the habit rather than sitting beside an identical-looking row.
+    const onTray = new Set(copiedHits.map((c) => c.name.toLowerCase()));
+    const fresh = (n: string) => !onTray.has(n.toLowerCase());
+    return [
+      ...favorites
+        .filter((f) => matchesQuery(f.name) && fresh(f.name))
+        .map((f) => ({ food: f, pinned: true })),
+      ...rankedRecent
+        .filter((r) => matchesQuery(r.name) && fresh(r.name))
+        .map((r) => ({ food: r, pinned: false })),
+    ].slice(0, 6);
+  }, [favorites, rankedRecent, query, matchesQuery, copiedHits]);
+
+  // ── Loading something into the form ──────────────────────────────────────
+
+  function focusCompose() {
+    // The compose block sits below a results list that can be taller than the
+    // screen, so a pick that only changed state off-screen would read as a tap
+    // that did nothing.
+    requestAnimationFrame(() =>
+      composeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }),
+    );
+  }
+
+  function reset() {
+    setName("");
+    setVals(EMPTY_MACRO_STRINGS);
+    setReference({ kind: "portion" });
+    setAmount("");
+    setUnit("g");
+    setMultiple("1");
+    setServing(null);
+    setProductId(null);
+    setOrigin(null);
+    setShowTrace(false);
+  }
+
+  function pickCopied(item: CopiedItem) {
+    setName(item.name);
+    setVals(macroStrings(item));
+    setProductId(item.productId ?? null);
+    setServing(null);
+    if (item.quantity != null && item.quantityUnit) {
+      setReference({ kind: "per", amount: item.quantity, unit: item.quantityUnit });
+      setAmount(String(item.quantity));
+      setUnit(item.quantityUnit);
+    } else {
+      // No amount was ever recorded, so there is nothing to state a new one
+      // against. A multiple of the helping is the only honest handle.
+      setReference({ kind: "unitless" });
+      setMultiple("1");
+    }
+    setOrigin({
+      label: "Copied",
+      detail:
+        item.quantity != null && item.quantityUnit
+          ? `${formatQuantity(item.quantity, item.quantityUnit)}, from ${whenLabel(item.fromDate)}`
+          : `one helping, from ${whenLabel(item.fromDate)}`,
+    });
+    setShowTrace(hasTrace(item));
+    setQ("");
+    focusCompose();
+  }
+
+  function pickEaten(food: Favorite | RecentFood, pinned: boolean) {
+    setName(food.name);
+    setVals(macroStrings(food));
+    const qty = "quantity" in food ? food.quantity : null;
+    const qtyUnit = "quantityUnit" in food ? food.quantityUnit : null;
+    setProductId(("productId" in food ? food.productId : null) ?? null);
+    setServing(null);
+    if (qty != null && qtyUnit) {
+      setReference({ kind: "per", amount: qty, unit: qtyUnit });
+      setAmount(String(qty));
+      setUnit(qtyUnit);
+    } else {
+      setReference({ kind: "unitless" });
+      setMultiple("1");
+    }
+    setOrigin({
+      label: pinned ? "Favorite" : "Eaten before",
+      detail:
+        qty != null && qtyUnit ? formatQuantity(qty, qtyUnit) : "one helping, as last logged",
+    });
+    setShowTrace(hasTrace(food));
+    setQ("");
+    focusCompose();
+  }
+
+  function pickProduct(p: Product) {
+    const base = baseUnitFor(p.basis as ProductBasis);
+    setName(p.brand ? `${p.name} (${p.brand})` : p.name);
+    setVals(macroStrings(p));
+    setReference({ kind: "per", amount: 100, unit: base });
+    setProductId(p.id);
+    const decl = p.servingSize != null ? { size: p.servingSize, unit: (p.servingUnit ?? base) as ServingUnit } : null;
+    setServing(decl);
+    // One serving if the label defines one, else 100 of its base unit.
+    setUnit(decl ? "serving" : base);
+    setAmount(decl ? "1" : "100");
+    setOrigin({
+      label: "Saved label",
+      detail: `per ${p.basis === "100ml" ? "100 ml" : "100 g"}${
+        decl ? ` · serving ${formatQuantity(decl.size, decl.unit)}` : ""
+      }`,
+    });
+    setShowTrace(hasTrace(p));
+    setQ("");
+    focusCompose();
+  }
+
+  function pickOnline(r: FoodSearchResult) {
+    setName(r.name);
+    setVals(macroStrings(r));
+    setReference({ kind: "per", amount: 100, unit: "g" });
+    setProductId(null);
+    setServing(null);
+    setUnit("g");
+    setAmount("100");
+    setOrigin({ label: "Open Food Facts", detail: "per 100 g — check it against the pack" });
+    setShowTrace(hasTrace(r));
+    setQ("");
+    focusCompose();
+  }
+
+  async function onScanned(code: string) {
+    setScanning(false);
+    try {
+      const { source, product } = await api.lookupBarcode(code);
+      if (!product) {
+        toast(`Barcode ${code} is not in your catalog or Open Food Facts`, "info");
+        return;
+      }
+      if (source === "saved") {
+        pickProduct(product as Product);
+        toast(`Found ${product.name}`);
+        return;
+      }
+      // Open Food Facts is a stranger's reading of the label, so it is saved
+      // into the catalog where it can be corrected, not logged straight through.
+      const { product: saved } = await api.saveProduct(product);
+      pickProduct(saved);
+      toast(`Saved ${saved.name} from Open Food Facts — check the numbers`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Barcode lookup failed", "error");
+    }
+  }
+
+  // ── What will actually be logged ─────────────────────────────────────────
+
+  const enteredAmount = Number(amount);
+  const hasAmount = amount.trim() !== "" && Number.isFinite(enteredAmount) && enteredAmount > 0;
+  const enteredMultiple = Number(multiple);
+
+  /** Null means the amount cannot be reconciled with what the numbers describe. */
+  const factor: number | null =
+    reference.kind === "portion"
+      ? 1
+      : reference.kind === "unitless"
+        ? Number.isFinite(enteredMultiple) && enteredMultiple > 0
+          ? enteredMultiple
+          : null
+        : hasAmount
+          ? scaleFactor({ amount: enteredAmount, unit }, reference, serving)
+          : null;
+
+  const source = parseMacros(vals);
+  const result = scaleMacros(source, factor ?? 1);
+
+  // Only units this amount can be restated in. A per-100g label offers grams
+  // and ounces — and servings when it declares one; an impossible pairing is
+  // never offered rather than rejected after the fact.
+  //
+  // Hand-typed values are the exception, because nothing has been read off a
+  // label yet: the basis is still the author's to declare, and it follows
+  // whichever unit they pick. Constraining it to the incumbent dimension made
+  // "per 100 ml" reachable only by choosing millilitres *before* tapping
+  // PER 100 — the same form, two outcomes, decided by tap order and signposted
+  // nowhere.
+  const offeredUnits: QuantityUnit[] =
+    reference.kind === "per"
+      ? origin
+        ? reference.unit === "serving"
+          ? ["serving"]
+          : serving
+            ? unitsFor(dimensionOf(reference.unit) === "volume" ? "100ml" : "100g", true)
+            : comparableUnits(reference.unit)
+        : ["g", "oz", "ml", "floz"]
+      : ["g", "oz", "ml", "floz", "serving"];
+
+  const perLabel = reference.kind === "per" && reference.amount === 100
+    ? `per 100 ${unitLabel(reference.unit)}`
+    : null;
+
+  function setPerHundred(on: boolean) {
+    if (!on) {
+      setReference({ kind: "portion" });
+      return;
+    }
+    // Per 100 of *what* follows the amount's own unit, so switching to
+    // millilitres does not leave the label quoting grams.
+    const base = dimensionOf(unit) === "volume" ? "ml" : "g";
+    if (dimensionOf(unit) === "serving") setUnit(base);
+    setReference({ kind: "per", amount: 100, unit: base });
+  }
+
+  function changeUnit(next: QuantityUnit) {
+    // Changing the unit restates the amount; it does not reinterpret the number.
+    // Switching 241 g to ounces means 8.5 oz — leaving "241" in the box would
+    // silently log four kilos of porridge, with the arithmetic all correct.
+    // scaleFactor is the arbiter, not a dimension check: a per-100g label with a
+    // declared serving genuinely converts grams to servings, and 241 g of a
+    // 170 g serving is 1.42 of them.
+    const restated = hasAmount
+      ? scaleFactor({ amount: enteredAmount, unit }, { amount: 1, unit: next }, serving)
+      : null;
+    if (restated !== null) {
+      // Grams and millilitres are whole numbers — nobody weighs to a hundredth
+      // of a gram, and rounding them is also what makes g→oz→g return 241
+      // rather than 240.97.
+      const whole = next === "g" || next === "ml";
+      setAmount(String(whole ? Math.round(restated) : Math.round(restated * 100) / 100));
+    }
+    setUnit(next);
+
+    // In the hand-typed per-100 mode the basis follows the unit: switching to
+    // millilitres declares a liquid, so the figures become per 100 ml and the
+    // amount keeps its number. Against a saved label the basis must not move —
+    // the label says what it says, and only the catalog editor may change it.
+    if (!origin && reference.kind === "per" && reference.amount === 100) {
+      const base = dimensionOf(next) === "volume" ? "ml" : "g";
+      if (dimensionOf(next) !== "serving") setReference({ kind: "per", amount: 100, unit: base });
+    }
+  }
+
+  /** Why nothing can be logged yet, in the words of the control that is wrong. */
+  const problem: string | null =
+    factor !== null
+      ? null
+      : reference.kind === "unitless"
+        ? "Enter how many helpings."
+        : !hasAmount
+          ? "Enter an amount."
+          : reference.kind === "per"
+            ? `These values are quoted per ${formatQuantity(
+                reference.amount,
+                reference.unit,
+              )}, which cannot be restated in ${unitLabel(unit)}.`
+            : "Enter an amount.";
+
+  /** Nothing has been chosen or typed, so there is no reading to preview yet. */
+  const touched = name.trim().length > 0 || vals.calories.trim() !== "";
+
+  const canLog =
+    name.trim().length > 0 && vals.calories.trim() !== "" && factor !== null && !saving;
+
+  async function log(e: React.FormEvent) {
+    e.preventDefault();
+    if (factor === null) return;
+    setSaving(true);
+    try {
+      // A recorded amount is one the entry can be read back against. In the
+      // unitless case there is none, and inventing "1 serving" would be a claim
+      // the original row never made.
+      const recordAmount = reference.kind !== "unitless" && hasAmount;
+      const { entry } = await api.createEntry({
+        name: name.trim(),
+        ...result,
+        mealType: meal,
+        productId,
+        quantity: recordAmount ? enteredAmount : null,
+        quantityUnit: recordAmount ? unit : null,
+        consumedAt: consumedAtFor(date),
+      });
+      toast(`Added ${name.trim()}`, "success", {
+        label: "Undo",
+        onAct: () => {
+          api
+            .deleteEntry(entry.id)
+            .then(onLogged)
+            .catch(() => toast("Could not undo", "error"));
+        },
+      });
+      reset();
+      onLogged();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to add entry", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveFavorite() {
+    try {
+      await api.saveFavorite({ name: name.trim(), ...result, mealType: meal });
+      onFavoritesChanged();
+      toast("Saved to favorites");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save favorite", "error");
+    }
+  }
+
+  // A label is per 100 of something. It can only be derived when the form knows
+  // how much its numbers describe — which is why this used to be wrong: the old
+  // control saved whatever was typed as a per-100g product even when the
+  // numbers were the 250 g actually eaten.
+  const per100Basis: ProductBasis | null = (() => {
+    const ref =
+      reference.kind === "per"
+        ? reference
+        : reference.kind === "portion" && hasAmount
+          ? { amount: enteredAmount, unit }
+          : null;
+    if (!ref) return null;
+    const dim = dimensionOf(ref.unit);
+    if (dim === "serving" && !serving) return null;
+    const d = dim === "serving" && serving ? dimensionOf(serving.unit) : dim;
+    return d === "volume" ? "100ml" : "100g";
+  })();
+
+  async function saveProduct() {
+    if (!per100Basis) return;
+    const base = baseUnitFor(per100Basis);
+    const ref =
+      reference.kind === "per" ? reference : { amount: enteredAmount, unit };
+    const f = scaleFactor({ amount: 100, unit: base }, ref, serving);
+    if (f === null) {
+      toast("These numbers cannot be restated per 100 — check the unit", "error");
+      return;
+    }
+    try {
+      await api.saveProduct({
+        name: name.trim(),
+        ...scaleMacros(source, f),
+        basis: per100Basis,
+        ...(serving ? { servingSize: serving.size, servingUnit: serving.unit } : {}),
+      });
+      toast(`Saved to products, per 100 ${base}`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save product", "error");
+    }
+  }
+
+  const resultsShown =
+    query.length > 0 &&
+    (copiedHits.length > 0 ||
+      products.length > 0 ||
+      eatenHits.length > 0 ||
+      online.length > 0 ||
+      searchingOnline ||
+      onlineFailed);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-1.5">
+        <input
+          ref={searchRef}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search copied, saved, eaten and online…"
+          aria-label="Search foods"
+          className="field flex-1"
+        />
+        {/* Chrome and Android only — Safari has no BarcodeDetector — so the
+            control is absent rather than present and broken where it cannot
+            work. Photographing the label for Claude remains the path there. */}
+        {canScan && (
+          <button
+            type="button"
+            onClick={() => setScanning(true)}
+            className="btn btn-ghost shrink-0 px-2"
+            aria-label="Scan a barcode"
+            title="Scan a barcode"
+          >
+            <ScanBarcode size={16} strokeWidth={1.75} />
+          </button>
+        )}
+      </div>
+
+      {scanning && <BarcodeScanner onDetected={onScanned} onClose={() => setScanning(false)} />}
+
+      {query.length > 0 && !resultsShown && (
+        <p className="text-xs text-ink-faint">
+          Nothing matches “{query}”. Type the values in below.
+        </p>
+      )}
+
+      {resultsShown && (
+        <div
+          className="max-h-72 overflow-y-auto rounded border"
+          style={{ borderColor: "var(--line)" }}
+        >
+          <Group label="Copied" hint="from your log">
+            {copiedHits.map((c) => (
+              <ResultRow
+                key={c.key}
+                name={c.name}
+                note={
+                  c.quantity != null && c.quantityUnit
+                    ? formatQuantity(c.quantity, c.quantityUnit)
+                    : whenLabel(c.fromDate)
+                }
+                figure={`${c.calories}`}
+                onPick={() => pickCopied(c)}
+              />
+            ))}
+          </Group>
+          <Group label="Saved labels">
+            {products.map((p) => (
+              <ResultRow
+                key={p.id}
+                name={p.brand ? `${p.name} · ${p.brand}` : p.name}
+                note={`per 100${baseUnitFor(p.basis as ProductBasis)}`}
+                figure={`${p.calories}`}
+                onPick={() => pickProduct(p)}
+              />
+            ))}
+          </Group>
+          <Group label="Eaten before">
+            {eatenHits.map(({ food, pinned }) => (
+              <ResultRow
+                key={(pinned ? "f:" : "r:") + food.name}
+                name={`${pinned ? "★ " : ""}${food.name}`}
+                note={
+                  "quantity" in food && food.quantity != null && food.quantityUnit
+                    ? formatQuantity(food.quantity, food.quantityUnit)
+                    : "one helping"
+                }
+                figure={`${food.calories}`}
+                onPick={() => pickEaten(food, pinned)}
+              />
+            ))}
+          </Group>
+          <Group
+            label="Open Food Facts"
+            note={
+              searchingOnline
+                ? "searching…"
+                : onlineFailed
+                  ? "could not be reached"
+                  : query.length >= 2 && online.length === 0
+                    ? "no matches"
+                    : undefined
+            }
+          >
+            {online.map((r, i) => (
+              <ResultRow
+                key={`o${i}`}
+                name={r.name}
+                note="per 100g"
+                figure={`${r.calories}`}
+                onPick={() => pickOnline(r)}
+              />
+            ))}
+          </Group>
+        </div>
+      )}
+
+      {/* The tray, when nothing is being searched. Copying a row is only useful
+          if the copies are visible without having to remember their names. */}
+      {!query && copied.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+            Copied
+          </p>
+          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+            {copied.map((c) => (
+              <div
+                key={c.key}
+                className="flex shrink-0 items-stretch gap-1 rounded border border-line bg-panel-2 py-1 pl-2.5 pr-1"
+              >
+                <button type="button" onClick={() => pickCopied(c)} className="text-left">
+                  <div className="num text-xs text-ink">
+                    {c.name} <span className="text-ink-faint">{c.calories}</span>
+                  </div>
+                  <div className="num text-2xs text-ink-faint">
+                    {c.quantity != null && c.quantityUnit
+                      ? formatQuantity(c.quantity, c.quantityUnit)
+                      : "1 helping"}{" "}
+                    · {whenLabel(c.fromDate)}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemoveCopied(c.key)}
+                  className="glyph-btn ml-1 border-l border-line text-sm leading-none text-ink-faint hover:text-over"
+                  aria-label={`Remove ${c.name} from copied`}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Compose ───────────────────────────────────────────────────────── */}
+      <div ref={composeRef}>
+        <form onSubmit={log} className="grid grid-cols-4 gap-1.5">
+          <label className="col-span-4 block">
+            <span className="block text-2xs uppercase tracking-wider text-ink-faint">Food</span>
+            <input
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="field mt-0.5 w-full"
+            />
+          </label>
+
+          {/* What the seven figures below are quoted against — the one thing
+              that decides whether the amount rescales them or annotates them. */}
+          <div className="col-span-4 flex items-center gap-2">
+            {origin ? (
+              <>
+                <span className="min-w-0 truncate text-2xs uppercase tracking-wider text-ink-dim">
+                  {origin.label}
+                  <span className="ml-1.5 normal-case tracking-normal text-ink-faint">
+                    {origin.detail}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="ml-auto shrink-0 text-2xs text-ink-faint hover:text-over"
+                >
+                  clear
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="shrink-0 text-2xs uppercase tracking-wider text-ink-faint">
+                  Values are
+                </span>
+                <div
+                  className="flex overflow-hidden rounded border"
+                  style={{ borderColor: "var(--line)" }}
+                  role="group"
+                  aria-label="What the values describe"
+                >
+                  {[
+                    { on: false, label: "as eaten" },
+                    { on: true, label: perLabel ?? "per 100" },
+                  ].map((o) => {
+                    const active = (reference.kind === "per") === o.on;
+                    return (
+                      <button
+                        key={String(o.on)}
+                        type="button"
+                        onClick={() => setPerHundred(o.on)}
+                        aria-pressed={active}
+                        className="border-r px-2 py-1 text-2xs font-semibold uppercase tracking-wider transition-colors last:border-r-0"
+                        style={{
+                          borderColor: "var(--line)",
+                          background: active ? "var(--ink)" : "transparent",
+                          color: active ? "var(--panel)" : "var(--ink-dim)",
+                        }}
+                      >
+                        {o.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+
+          {MACRO_FIELDS.map((f) => (
+            <NumInput
+              key={f.key}
+              label={f.label}
+              value={vals[f.key]}
+              onChange={(v) => setVals({ ...vals, [f.key]: v })}
+              required={f.key === "calories"}
+            />
+          ))}
+          {showTrace &&
+            TRACE_FIELDS.map((f) => (
+              <NumInput
+                key={f.key}
+                label={f.label}
+                value={vals[f.key]}
+                onChange={(v) => setVals({ ...vals, [f.key]: v })}
+              />
+            ))}
+          {showTrace && <div />}
+
+          {reference.kind === "unitless" ? (
+            <label className="col-span-2 block">
+              <span className="block text-2xs uppercase tracking-wider text-ink-faint">
+                Helpings
+              </span>
+              <input
+                type="number"
+                min={0}
+                step="any"
+                value={multiple}
+                onChange={(e) => setMultiple(e.target.value)}
+                className="field num mt-0.5 w-full text-right"
+              />
+            </label>
+          ) : (
+            <>
+              <label className="block">
+                <span className="block text-2xs uppercase tracking-wider text-ink-faint">
+                  Amount
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="field num mt-0.5 w-full text-right"
+                  aria-label={
+                    reference.kind === "per" ? "Amount to log" : "Amount, recorded on the entry"
+                  }
+                />
+              </label>
+              <Select
+                value={unit}
+                onChange={(e) => changeUnit(e.target.value as QuantityUnit)}
+                aria-label="Amount unit"
+                wrapClassName="self-end"
+              >
+                {offeredUnits.map((u) => (
+                  <option key={u} value={u}>
+                    {unitLabel(u)}
+                  </option>
+                ))}
+              </Select>
+            </>
+          )}
+
+          <Select
+            value={meal}
+            onChange={(e) => onMealChange(e.target.value as Meal)}
+            aria-label="Meal"
+            className="capitalize"
+            wrapClassName="col-span-2 self-end"
+          >
+            {MEALS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </Select>
+
+          {/* What the row will say, before it says it. Under a label this is the
+              only place the arithmetic is visible. */}
+          <div
+            className="col-span-4 flex items-baseline gap-2 border-t pt-1.5"
+            style={{ borderColor: "var(--line-soft)" }}
+          >
+            {!touched ? (
+              <p className="flex-1 text-2xs text-ink-faint">
+                Pick something above, or type the numbers in.
+              </p>
+            ) : problem ? (
+              <p className="flex-1 text-2xs text-over">{problem}</p>
+            ) : (
+              <p className="num flex-1 text-2xs text-ink-faint">
+                <span className="text-sm font-semibold text-ink">{result.calories}</span> kcal
+                <span className="ml-2">
+                  P{result.protein} C{result.carbs} F{result.fat}
+                </span>
+                {/* In "as eaten" the amount annotates rather than multiplies, and
+                    the difference is invisible unless the preview names it. */}
+                {reference.kind === "portion" && hasAmount && (
+                  <span className="ml-2 text-ink-faint">
+                    · {formatQuantity(enteredAmount, unit)} recorded
+                  </span>
+                )}
+              </p>
+            )}
+            <button type="submit" disabled={!canLog} className="btn btn-primary shrink-0">
+              {saving ? "Adding…" : "Log"}
+            </button>
+          </div>
+
+          <div className="col-span-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <button
+              type="button"
+              onClick={() => setShowTrace((s) => !s)}
+              className="text-2xs text-ink-faint hover:text-ink"
+            >
+              {showTrace ? "− fewer" : "+ fiber / sugar / sodium"}
+            </button>
+            {canLog && (
+              <>
+                <button type="button" onClick={saveFavorite} className="text-2xs text-accent hover:underline">
+                  ★ favorite
+                </button>
+                {per100Basis && (
+                  <button type="button" onClick={saveProduct} className="text-2xs text-accent hover:underline">
+                    ⬚ save label
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/** A labelled band inside the results list. Renders nothing when it is empty. */
+function Group({
+  label,
+  hint,
+  note,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  note?: string;
+  children: React.ReactNode[];
+}) {
+  const items = children.filter(Boolean);
+  if (items.length === 0 && !note) return null;
+  return (
+    <div>
+      <div
+        className="flex items-baseline justify-between border-b px-2.5 py-1"
+        style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
+      >
+        <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">{label}</span>
+        {(note ?? hint) && <span className="text-2xs text-ink-faint">{note ?? hint}</span>}
+      </div>
+      {items.length > 0 && (
+        <ul className="divide-y" style={{ borderColor: "var(--line-soft)" }}>
+          {items}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ResultRow({
+  name,
+  note,
+  figure,
+  onPick,
+}: {
+  name: string;
+  note: string;
+  figure: string;
+  onPick: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onPick}
+        className="flex w-full items-baseline gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-panel-2"
+      >
+        <span className="min-w-0 flex-1 truncate text-sm text-ink">{name}</span>
+        <span className="num shrink-0 text-2xs text-ink-faint">{note}</span>
+        <span className="num w-10 shrink-0 text-right text-sm font-semibold text-ink">
+          {figure}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function NumInput({
+  value,
+  onChange,
+  label,
+  required,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  label: string;
+  required?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-2xs uppercase tracking-wider text-ink-faint">{label}</span>
+      <input
+        type="number"
+        min={0}
+        step="any"
+        required={required}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="field num mt-0.5 w-full text-right"
+      />
+    </label>
+  );
+}

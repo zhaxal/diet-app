@@ -7,6 +7,13 @@
  * which is why the bars no longer carry a corner radius (a 1-unit radius became
  * ~6px wide and 1px tall) and why the line's points are drawn as zero-length
  * round-capped strokes rather than circles, which rendered as flat ellipses.
+ *
+ * Stretching needs both axes given. With `w-full` alone the browser took the
+ * height from the viewBox's own 100:80 ratio — about 350px inside a 112px
+ * `overflow-hidden` frame — so the chart was cropped to its top third and only
+ * bars close to the maximum were visible at all. Every other day rendered
+ * below the fold of its own panel. `h-full` is what makes the viewBox map onto
+ * the frame the caller actually drew.
  */
 
 interface BarChartProps {
@@ -34,7 +41,7 @@ export function BarChart({
   const refY = reference ? height - (reference / max) * (height - 4) : null;
 
   return (
-    <svg viewBox={`0 0 100 ${height}`} className="w-full" preserveAspectRatio="none">
+    <svg viewBox={`0 0 100 ${height}`} className="block h-full w-full" preserveAspectRatio="none">
       {data.map((d, i) => {
         const barH = (d.value / max) * (height - 4);
         const over = reference != null && d.value > reference;
@@ -89,7 +96,7 @@ export function LineChart({ data, color = "var(--accent)", height = 80 }: LineCh
   const points = data.map((d, i) => { const p = at(i, d.value); return `${p.x},${p.y}`; }).join(" ");
 
   return (
-    <svg viewBox={`0 0 100 ${height}`} className="w-full" preserveAspectRatio="none">
+    <svg viewBox={`0 0 100 ${height}`} className="block h-full w-full" preserveAspectRatio="none">
       <polyline
         points={points}
         fill="none"

@@ -1,30 +1,92 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
-import { unauthorized } from "@/lib/http";
+import { jsonError, unauthorized } from "@/lib/http";
 import { dayBoundsInTz, localDateInTz, todayInTz } from "@/lib/time";
+
+/**
+ * A window has to be describable two ways, because two callers ask for it
+ * differently. Trends asks "the last 90 days" and does not know what day it is;
+ * the week strip asks for seven named days that may sit anywhere in the past.
+ * `from`/`to` wins when both are given.
+ */
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Ten years. Not a product limit — a guard against a malformed `from`. */
+const MAX_SPAN_DAYS = 3660;
+
+function shift(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function daysBetween(from: string, to: string): number {
+  const a = Date.parse(`${from}T00:00:00.000Z`);
+  const b = Date.parse(`${to}T00:00:00.000Z`);
+  return Math.round((b - a) / 86_400_000) + 1;
+}
 
 export async function GET(req: NextRequest) {
   const user = await getUserFromRequest(req);
   if (!user) return unauthorized();
 
   const tz = user.timezone;
-  const daysParam = req.nextUrl.searchParams.get("days");
-  const days = daysParam === "7" ? 7 : 30;
-
-  // Build the list of local calendar dates (in the user's tz) ending today.
   const today = todayInTz(tz);
-  const dates: string[] = [];
-  const cursor = new Date(`${today}T00:00:00.000Z`);
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(cursor);
-    d.setUTCDate(d.getUTCDate() - i);
-    dates.push(d.toISOString().slice(0, 10));
+  const q = req.nextUrl.searchParams;
+  const fromParam = q.get("from");
+  const toParam = q.get("to");
+  const daysParam = q.get("days");
+
+  let from: string;
+  let to: string;
+
+  if (fromParam || toParam) {
+    if (!fromParam || !DATE_RE.test(fromParam) || (toParam && !DATE_RE.test(toParam))) {
+      return jsonError("from and to must be YYYY-MM-DD dates", 422);
+    }
+    from = fromParam;
+    to = toParam ?? today;
+    if (from > to) return jsonError("from must not be after to", 422);
+  } else if (daysParam === "all") {
+    // The whole record. Its start is the first thing this account ever logged —
+    // an empty account gets today, not an arbitrary window of zeroes.
+    const [firstEntry, firstWeight] = await Promise.all([
+      prisma.foodEntry.findFirst({
+        where: { userId: user.id },
+        orderBy: { consumedAt: "asc" },
+        select: { consumedAt: true },
+      }),
+      prisma.weightLog.findFirst({
+        where: { userId: user.id },
+        orderBy: { loggedAt: "asc" },
+        select: { loggedAt: true },
+      }),
+    ]);
+    const candidates = [
+      firstEntry ? localDateInTz(firstEntry.consumedAt, tz) : null,
+      firstWeight ? localDateInTz(firstWeight.loggedAt, tz) : null,
+    ].filter((d): d is string => d !== null);
+    from = candidates.length ? candidates.sort()[0] : today;
+    to = today;
+  } else {
+    const n = Number(daysParam);
+    const days = Number.isInteger(n) && n >= 1 && n <= MAX_SPAN_DAYS ? n : 30;
+    to = today;
+    from = shift(to, -(days - 1));
   }
 
-  // Query window: local start of the first day → local end of today, as UTC instants.
-  const { start } = dayBoundsInTz(dates[0], tz);
-  const { end } = dayBoundsInTz(today, tz);
+  // A `from` far enough back to be a mistake is clamped rather than refused:
+  // the caller still gets a real window, and the response says which one.
+  if (daysBetween(from, to) > MAX_SPAN_DAYS) from = shift(to, -(MAX_SPAN_DAYS - 1));
+
+  const dates: string[] = [];
+  for (let d = from; d <= to; d = shift(d, 1)) dates.push(d);
+
+  // Query window: local start of the first day → local end of the last, as UTC
+  // instants.
+  const { start } = dayBoundsInTz(from, tz);
+  const { end } = dayBoundsInTz(to, tz);
 
   const [entries, weightLogs] = await Promise.all([
     prisma.foodEntry.findMany({
@@ -94,7 +156,12 @@ export async function GET(req: NextRequest) {
   for (const w of weightLogs) {
     weightByDate[localDateInTz(w.loggedAt, tz)] = w.weight;
   }
-  const weight = Object.entries(weightByDate).map(([date, value]) => ({ date, value }));
+  const weight = Object.entries(weightByDate)
+    .map(([date, value]) => ({ date, value }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 
-  return NextResponse.json({ days, nutrition, weight, meals });
+  // `days` is the width of the window that was actually served, which is not
+  // always the width that was asked for — `all` resolves to one, and a clamped
+  // `from` shortens one. A caller that echoes the request would mislabel both.
+  return NextResponse.json({ days: dates.length, from, to, nutrition, weight, meals });
 }

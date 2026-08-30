@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
       signal: controller.signal,
     });
 
-    if (!res.ok) return NextResponse.json({ results: [] });
+    if (!res.ok) return NextResponse.json({ results: [], unavailable: true });
     const data = (await res.json()) as { products?: OFFProduct[] };
 
     const num = (v: unknown) => {
@@ -66,8 +66,11 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ results });
   } catch {
-    // Network blocked or timed out — degrade gracefully to manual entry.
-    return NextResponse.json({ results: [] });
+    // Network blocked or timed out — degrade gracefully to manual entry. The
+    // flag is the difference between "Open Food Facts has no such food" and
+    // "Open Food Facts could not be reached", which look identical otherwise
+    // and lead to two different next moves.
+    return NextResponse.json({ results: [], unavailable: true });
   } finally {
     clearTimeout(timeout);
   }

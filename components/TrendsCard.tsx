@@ -1,20 +1,23 @@
 "use client";
 
-import { useState } from "react";
-import { type Goals, type Meal, type Trends } from "@/lib/api-client";
+import { useEffect, useRef, useState } from "react";
+import { type Goals, type Meal, type TrendDay, type TrendRange, type Trends } from "@/lib/api-client";
 import { BarChart, LineChart } from "./MiniChart";
 import { Meter } from "./Meter";
 
 interface Props {
   trends: Trends;
   goals: Goals;
-  onDaysChange: (days: 7 | 30) => void;
+  range: TrendRange;
+  onRangeChange: (range: TrendRange) => void;
   /** Route to the goals form; the range view is unreadable without targets. */
   onSetGoals: () => void;
 }
 
 const METRICS = ["calories", "protein", "weight"] as const;
 type Metric = (typeof METRICS)[number];
+
+const RANGES: readonly TrendRange[] = [7, 30, 90, "all"];
 
 const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
 
@@ -36,12 +39,14 @@ function Segmented<T extends string | number>({
   onChange,
   label,
   grow,
+  format,
 }: {
   options: readonly T[];
   value: T;
   onChange: (v: T) => void;
   label: string;
   grow?: boolean;
+  format?: (v: T) => string;
 }) {
   return (
     <div
@@ -64,7 +69,7 @@ function Segmented<T extends string | number>({
               color: active ? "var(--panel)" : "var(--ink-dim)",
             }}
           >
-            {typeof o === "number" ? `${o}d` : o}
+            {format ? format(o) : typeof o === "number" ? `${o}d` : o}
           </button>
         );
       })}
@@ -92,7 +97,72 @@ function median(values: number[]): number {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
-export default function TrendsCard({ trends, goals, onDaysChange, onSetGoals }: Props) {
+const shortDate = (iso: string) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+type Grain = "day" | "week" | "month";
+
+/**
+ * How finely the chart can be drawn before a bar stops being a bar. A phone
+ * gives the chart roughly 340px, so a year of daily bars is under a pixel each —
+ * a texture, not a measurement. Coarser buckets past those thresholds.
+ */
+function grainFor(days: number): Grain {
+  if (days <= 92) return "day";
+  if (days <= 400) return "week";
+  return "month";
+}
+
+interface Bucket {
+  /** The first day in the bucket, which is also its axis label. */
+  start: string;
+  /** Average over the bucket's *logged* days, so a goal line still reads. */
+  value: number;
+  logged: number;
+}
+
+/**
+ * Buckets carry the average of their logged days, never the sum. A weekly sum
+ * cannot be read against a daily goal, and the reference line in this chart is
+ * a daily goal.
+ */
+function bucketize(days: TrendDay[], grain: Grain, key: "calories" | "protein"): Bucket[] {
+  if (grain === "day") {
+    return days.map((d) => ({ start: d.date, value: d[key], logged: d.count > 0 ? 1 : 0 }));
+  }
+  const out: Bucket[] = [];
+  let current: { start: string; sum: number; logged: number } | null = null;
+  const keyOf = (date: string, i: number) =>
+    grain === "month" ? date.slice(0, 7) : String(Math.floor(i / 7));
+  let currentKey: string | null = null;
+
+  days.forEach((d, i) => {
+    const k = keyOf(d.date, i);
+    if (k !== currentKey) {
+      if (current) out.push({ start: current.start, value: current.logged ? current.sum / current.logged : 0, logged: current.logged });
+      current = { start: d.date, sum: 0, logged: 0 };
+      currentKey = k;
+    }
+    if (d.count > 0) {
+      current!.sum += d[key];
+      current!.logged += 1;
+    }
+  });
+  if (current) {
+    const c = current as { start: string; sum: number; logged: number };
+    out.push({ start: c.start, value: c.logged ? c.sum / c.logged : 0, logged: c.logged });
+  }
+  return out;
+}
+
+/** Monday-first weekday index, so the adherence grid reads as a calendar. */
+function weekdayIndex(iso: string): number {
+  return (new Date(`${iso}T00:00:00`).getDay() + 6) % 7;
+}
+
+const WEEKDAY_INITIALS = ["M", "T", "W", "T", "F", "S", "S"];
+
+export default function TrendsCard({ trends, goals, range, onRangeChange, onSetGoals }: Props) {
   const [metric, setMetric] = useState<Metric>("calories");
 
   // Averages are over days that were actually logged. An unlogged day is missing
@@ -108,14 +178,26 @@ export default function TrendsCard({ trends, goals, onDaysChange, onSetGoals }: 
 
   const header = (
     <div className="flex items-baseline justify-between gap-2">
-      <span className="text-2xs uppercase tracking-wider text-ink-faint">
-        Last {trends.days} days
+      <span className="min-w-0 truncate text-2xs uppercase tracking-wider text-ink-faint">
+        {range === "all" ? (
+          <>
+            All <span className="num">{trends.days}</span> days ·{" "}
+            <span className="num normal-case tracking-normal">
+              from {shortDate(trends.from)}
+            </span>
+          </>
+        ) : (
+          <>
+            Last <span className="num">{trends.days}</span> days
+          </>
+        )}
       </span>
       <Segmented
-        options={[7, 30] as const}
-        value={trends.days as 7 | 30}
-        onChange={onDaysChange}
+        options={RANGES}
+        value={range}
+        onChange={onRangeChange}
         label="Range"
+        format={(r) => (r === "all" ? "all" : `${r}d`)}
       />
     </div>
   );
@@ -126,7 +208,9 @@ export default function TrendsCard({ trends, goals, onDaysChange, onSetGoals }: 
     return (
       <section className="panel p-3">
         {header}
-        <p className="mt-3 text-sm text-ink-dim">Nothing logged in this window.</p>
+        <p className="mt-3 text-sm text-ink-dim">
+          {range === "all" ? "Nothing logged yet." : "Nothing logged in this window."}
+        </p>
         <p className="mt-1 text-xs text-ink-faint">
           Averages, goal adherence and the meal split all appear once a day has entries.
         </p>
@@ -134,16 +218,21 @@ export default function TrendsCard({ trends, goals, onDaysChange, onSetGoals }: 
     );
   }
 
-  // The selected metric's own series and statistics.
+  const grain = grainFor(trends.nutrition.length);
+  const grainNote =
+    grain === "day" ? null : grain === "week" ? "one bar per week" : "one bar per month";
+
+  // The selected metric's own series and statistics. The stats stay per-day
+  // whatever the bars are grouped into — a median of weekly averages is a
+  // different number, and not the one the label claims.
   const series =
     metric === "weight"
       ? weightSeries
       : logged.map((d) => (metric === "calories" ? d.calories : d.protein));
   const unit = metric === "calories" ? "kcal" : metric === "protein" ? "g" : goals.weightUnit;
-  const chartData = trends.nutrition.map((d) => ({
-    label: d.date.slice(5),
-    value: metric === "calories" ? d.calories : d.protein,
-  }));
+  const buckets =
+    metric === "weight" ? [] : bucketize(trends.nutrition, grain, metric === "calories" ? "calories" : "protein");
+  const chartData = buckets.map((b) => ({ label: b.start, value: b.value }));
 
   // Every day in the window is exactly one of three things.
   const inRange = calGoal ? logged.filter((d) => d.calories <= calGoal).length : 0;
@@ -196,6 +285,23 @@ export default function TrendsCard({ trends, goals, onDaysChange, onSetGoals }: 
           )}
         </div>
 
+        {/* Two ticks are an axis. Without them a hundred bars have no anchor in
+            time at all, which is the failure a long range introduces. The bars
+            span the whole window; the line spans only the days that have a
+            reading, so each names its own ends. */}
+        {(metric === "weight" ? trends.weight.length >= 2 : chartData.length > 1) && (
+          <div className="mt-1 flex justify-between text-2xs text-ink-faint">
+            <span className="num">
+              {shortDate(metric === "weight" ? trends.weight[0].date : trends.from)}
+            </span>
+            <span className="num">
+              {shortDate(
+                metric === "weight" ? trends.weight[trends.weight.length - 1].date : trends.to,
+              )}
+            </span>
+          </div>
+        )}
+
         {series.length > 0 && (
           <div
             className="mt-2 grid grid-cols-3 gap-2 border-t pt-2"
@@ -206,12 +312,28 @@ export default function TrendsCard({ trends, goals, onDaysChange, onSetGoals }: 
             <Stat label={`max ${unit}`} value={String(round1(Math.max(...series)))} />
           </div>
         )}
-        {metric === "calories" && calGoal != null && (
-          <p className="mt-1.5 text-2xs text-ink-faint">
-            The dashed rule is your <span className="num">{calGoal.toLocaleString()}</span> kcal
-            goal; bars past it turn red.
-          </p>
-        )}
+        <p className="mt-1.5 text-2xs text-ink-faint">
+          {metric === "weight" ? (
+            "Every reading in the window, oldest first."
+          ) : (
+            <>
+              {grainNote ? (
+                <>
+                  {grainNote[0].toUpperCase() + grainNote.slice(1)}, averaged over the days that
+                  were logged.{" "}
+                </>
+              ) : null}
+              {metric === "calories" && calGoal != null ? (
+                <>
+                  The dashed rule is your <span className="num">{calGoal.toLocaleString()}</span>{" "}
+                  kcal goal; bars past it turn red.
+                </>
+              ) : null}
+              {/* Min/median/max are always per day, whatever the bars group into. */}
+              {grainNote ? " Min, median and max below are per day." : null}
+            </>
+          )}
+        </p>
       </section>
 
       <section className="panel p-3">
@@ -220,36 +342,7 @@ export default function TrendsCard({ trends, goals, onDaysChange, onSetGoals }: 
         </h2>
         {calGoal != null ? (
           <>
-            {/* One cell per day, in the same three-state vocabulary as the week
-                strip: in range, over, or never logged — which is not zero. */}
-            <div
-              className="mt-2 flex gap-px"
-              role="img"
-              aria-label={`${inRange} days in range, ${over} over, ${unlogged} never logged`}
-            >
-              {trends.nutrition.map((d) => {
-                const state = d.count === 0 ? "unlogged" : d.calories <= calGoal ? "in" : "over";
-                return (
-                  <div
-                    key={d.date}
-                    title={`${d.date}: ${
-                      state === "unlogged"
-                        ? "nothing logged"
-                        : `${Math.round(d.calories)} of ${calGoal} kcal`
-                    }`}
-                    className="h-7 flex-1"
-                    style={{
-                      background:
-                        state === "in"
-                          ? "var(--accent)"
-                          : state === "over"
-                            ? "var(--over)"
-                            : "var(--line-soft)",
-                    }}
-                  />
-                );
-              })}
-            </div>
+            <Adherence days={trends.nutrition} goal={calGoal} />
             <div className="mt-2 grid grid-cols-3 gap-2">
               <Stat label="in range" value={String(inRange)} tone="var(--accent)" />
               <Stat label="over" value={String(over)} tone={over > 0 ? "var(--over)" : undefined} />
@@ -333,6 +426,110 @@ export default function TrendsCard({ trends, goals, onDaysChange, onSetGoals }: 
           <p className="mt-1.5 text-xs text-ink-faint">No meals in this window.</p>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * One cell per day, in the same three-state vocabulary as the week strip: in
+ * range, over, or never logged — which is not zero.
+ *
+ * A single row works until a row of 365 cells is a third of a pixel each. Past
+ * a month the cells fold into weekday rows and columns of weeks, which is a
+ * calendar rather than a bar, and keeps every day its own readable cell.
+ */
+function Adherence({ days, goal }: { days: TrendDay[]; goal: number }) {
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const folded = days.length > 31;
+
+  // The most recent week is the one worth seeing first.
+  useEffect(() => {
+    if (folded && scroller.current) scroller.current.scrollLeft = scroller.current.scrollWidth;
+  }, [folded, days.length]);
+
+  const state = (d: TrendDay) => (d.count === 0 ? "unlogged" : d.calories <= goal ? "in" : "over");
+  const fill = (s: string) =>
+    s === "in" ? "var(--accent)" : s === "over" ? "var(--over)" : "var(--line-soft)";
+  const title = (d: TrendDay) =>
+    `${d.date}: ${
+      d.count === 0 ? "nothing logged" : `${Math.round(d.calories)} of ${goal} kcal`
+    }`;
+
+  const inRange = days.filter((d) => d.count > 0 && d.calories <= goal).length;
+  const over = days.filter((d) => d.count > 0 && d.calories > goal).length;
+  const label = `${inRange} days in range, ${over} over, ${days.length - inRange - over} never logged`;
+
+  if (!folded) {
+    return (
+      <div className="mt-2 flex gap-px" role="img" aria-label={label}>
+        {days.map((d) => (
+          <div
+            key={d.date}
+            title={title(d)}
+            className="h-7 flex-1"
+            style={{ background: fill(state(d)) }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // Blank cells before the first day, so every column is a real calendar week.
+  const lead = weekdayIndex(days[0].date);
+
+  return (
+    <div className="mt-2">
+      <div className="flex gap-1">
+        <div
+          className="grid shrink-0 gap-px"
+          style={{ gridTemplateRows: "repeat(7, 8px)" }}
+        >
+          {WEEKDAY_INITIALS.map((w, i) => (
+            <span
+              key={i}
+              className="flex h-2 items-center leading-none text-ink-faint"
+              style={{ fontSize: 8 }}
+              aria-hidden="true"
+            >
+              {i % 2 === 0 ? w : ""}
+            </span>
+          ))}
+        </div>
+        <div ref={scroller} className="no-scrollbar overflow-x-auto" role="img" aria-label={label}>
+          <div
+            className="grid gap-px"
+            style={{
+              gridTemplateRows: "repeat(7, 8px)",
+              gridAutoFlow: "column",
+              gridAutoColumns: "8px",
+            }}
+          >
+            {Array.from({ length: lead }, (_, i) => (
+              <div key={`pad${i}`} className="h-2 w-2" />
+            ))}
+            {days.map((d) => (
+              <div
+                key={d.date}
+                title={title(d)}
+                className="h-2 w-2"
+                style={{ background: fill(state(d)) }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="mt-1.5 flex items-center gap-3 text-2xs text-ink-faint">
+        {[
+          { c: "var(--accent)", t: "in range" },
+          { c: "var(--over)", t: "over" },
+          { c: "var(--line-soft)", t: "never logged" },
+        ].map((k) => (
+          <span key={k.t} className="flex items-center gap-1">
+            <span className="h-2 w-2" style={{ background: k.c }} aria-hidden="true" />
+            {k.t}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

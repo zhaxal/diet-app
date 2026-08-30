@@ -47,6 +47,10 @@ export const updateEntrySchema = z
     sugar: z.number().min(0).max(1000000).optional(),
     sodium: z.number().min(0).max(1000000).optional(),
     mealType: z.enum(MEAL_TYPES).optional(),
+    // Correcting an amount is a correction like any other. Without these, a row
+    // that says "250g" could have its calories halved and go on claiming 250g.
+    quantity: z.number().positive().max(100000).nullable().optional(),
+    quantityUnit: z.enum(QUANTITY_UNITS).nullable().optional(),
     consumedAt: z.string().datetime({ offset: true }).optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {

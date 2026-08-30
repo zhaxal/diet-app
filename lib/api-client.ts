@@ -124,23 +124,6 @@ export type ProductInput = Omit<
   "id" | "source" | "createdAt" | "updatedAt"
 > & { brand?: string | null; barcode?: string | null; servingSize?: number | null; servingUnit?: ServingUnit | null };
 
-export interface TemplateItem extends FoodMacros {
-  name: string;
-  mealType: Meal;
-  // Provenance, carried through so an applied template still says which product
-  // and how many grams each row came from.
-  productId?: string | null;
-  quantity?: number | null;
-  quantityUnit?: QuantityUnit | null;
-}
-
-export interface MealTemplate {
-  id: string;
-  name: string;
-  createdAt: string;
-  items: TemplateItem[];
-}
-
 export interface TrendDay {
   date: string;
   calories: number;
@@ -155,8 +138,14 @@ export interface TrendDay {
 
 export type MealTotals = Record<Meal, { calories: number; count: number }>;
 
+/** The presets the range control offers. `all` starts at the first record. */
+export type TrendRange = 7 | 30 | 90 | "all";
+
 export interface Trends {
+  /** The width of the window that was served, which `all` only resolves at read time. */
   days: number;
+  from: string;
+  to: string;
   nutrition: TrendDay[];
   weight: { date: string; value: number }[];
   /** Range totals per meal, for the distribution of when calories land. */
@@ -267,32 +256,23 @@ export const api = {
   deleteFavorite: (id: string) =>
     request(`/api/favorites/${id}`, { method: "DELETE" }),
 
-  getTrends: (days: 7 | 30) =>
-    request<Trends>(`/api/trends?days=${days}`),
+  getTrends: (range: TrendRange) =>
+    request<Trends>(`/api/trends?days=${range}`),
 
-  copyDay: (from: string, to: string) =>
-    request<{ copied: number }>("/api/entries/copy", {
-      method: "POST",
-      body: JSON.stringify({ from, to }),
-    }),
+  /**
+   * Per-day totals for a named window. The week strip used to read these out of
+   * whatever Trends happened to have loaded, so every day older than that
+   * window rendered without its bar — a strip that reported nothing for exactly
+   * the days you had navigated back to look at.
+   */
+  dayTotals: (from: string, to: string) =>
+    request<Trends>(`/api/trends?from=${from}&to=${to}`),
 
-  listTemplates: () =>
-    request<{ templates: MealTemplate[] }>("/api/templates"),
-  saveTemplate: (name: string, items: TemplateItem[]) =>
-    request<{ template: MealTemplate }>("/api/templates", {
-      method: "POST",
-      body: JSON.stringify({ name, items }),
-    }),
-  applyTemplate: (id: string, date: string) =>
-    request<{ added: number }>(`/api/templates/${id}/apply`, {
-      method: "POST",
-      body: JSON.stringify({ date }),
-    }),
-  deleteTemplate: (id: string) =>
-    request(`/api/templates/${id}`, { method: "DELETE" }),
-
+  /** `unavailable` means the lookup could not be reached, not that it found nothing. */
   searchFoods: (q: string) =>
-    request<{ results: FoodSearchResult[] }>(`/api/foods/search?q=${encodeURIComponent(q)}`),
+    request<{ results: FoodSearchResult[]; unavailable?: boolean }>(
+      `/api/foods/search?q=${encodeURIComponent(q)}`,
+    ),
 
   listProducts: (q?: string) =>
     request<{ products: Product[] }>(

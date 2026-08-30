@@ -13,7 +13,6 @@ import type {
   Favorite,
   FoodEntry,
   Goals,
-  MealTemplate,
   RecentFood,
   Summary,
   WeightLog,
@@ -35,7 +34,6 @@ export interface DaySnapshot {
   // Small, and the tabs that read them would otherwise render "you have none"
   // when the truth is "this device has not been told".
   weightLogs: WeightLog[];
-  templates: MealTemplate[];
 }
 
 export function readSnapshot(): DaySnapshot | null {

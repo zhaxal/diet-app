@@ -315,15 +315,33 @@ gap between two adjacent elements on the Today screen is 8px. This is intentiona
 the main reason the screen carries a full day of nutrition with very little scrolling.
 
 The Today screen is a fixed vertical sequence, densest at the top: seven-day strip → the
-calorie readout → a three-column grid of six macro meters → quick-add chips → collapsible
-panels (Products, Add food, Copy & templates) → entries grouped by meal. Everything optional
+calorie readout → a three-column grid of six macro meters → the meal selector → quick-add
+chips → one collapsible Add food panel → entries grouped by meal. Everything optional
 collapses; the day's numbers never do.
+
+There used to be three panels below the chips — Products, Add food, and Copy & templates —
+which is three places to answer one question. Products was a second logging surface for one
+kind of source; templates and day-copy were a surface of their own for repeating a day. Both
+are now inputs to Add food, which is the single place an entry is composed, and the catalog
+itself moved to Settings where a reference table belongs.
 
 The Trends screen is the same instrument over a window instead of a day, in five panels at the
 same 8px separation: coverage (days logged, average calories, weight delta) → the metric chart
-with its goal rule and min/median/max → goal adherence, one cell per day in range/over/unlogged
-→ the average day, using the same seven meters Today uses → the meal split. It reports what the
-range *was*; it does not project, streak, or congratulate.
+with its goal rule, two date ticks and min/median/max → goal adherence, one cell per day in
+range/over/unlogged → the average day, using the same seven meters Today uses → the meal split.
+It reports what the range *was*; it does not project, streak, or congratulate.
+
+The window is 7, 30 or 90 days, or the whole record. Two of those panels change shape rather
+than shrink, because a year does not fit in the space a week does:
+
+- **The chart buckets.** Past 92 days one bar is a week, past 400 one bar is a month, and a
+  bucket carries the **average of its logged days** — never the sum, because the dashed rule it
+  is read against is a daily goal. The caption names the bucket, and says that the
+  min/median/max below remain per day.
+- **The adherence strip folds.** Up to 31 days it is one flush row of full-height cells. Past
+  that it becomes seven weekday rows by columns of weeks — a calendar, scrolled to the most
+  recent week, with a legend — so every day keeps a cell you can actually see. A 365-cell row
+  is a third of a pixel per day, which is a texture, not a measurement.
 
 Responsive behaviour is deliberately minimal — the column has one width rule and the macro
 grid stays three columns at every size. There are no breakpoint-specific layouts, because
@@ -499,8 +517,8 @@ bumping `VERSION` in `public/sw.js` — the icons are cache-first and are not co
 
 ### Quick add
 
-Two strips of chips above the day's panels — the fastest capture path in the product, and the
-most used.
+A filter field over two strips of chips — the fastest capture path in the product, and the most
+used. One tap logs; there is nothing else to decide.
 
 - **Favorites** are pinned by hand: amber, `★`-prefixed, with a `×` behind a hairline divider to
   unpin. Order is when they were pinned.
@@ -512,11 +530,57 @@ most used.
   instead of a sorted list.
 - **Nothing appears twice.** A pinned food is excluded from Recent; the strip is what you eat but
   have not pinned, which is also what makes `★` worth offering.
-- Each Recent chip carries a second line — `12× · 2d`, plus the amount when the entry came from a
-  product — so the strip reports as well as offers.
-- A chip is one tap to log. A `⋯` behind a hairline divider opens a single inline editor beneath
-  the strip, never more than one at a time: adjust the amount (in the product's own unit, or as a
-  multiple of last time when there is no unit), pin it, or log. Every log offers Undo.
+- **A chip is a name and a figure.** It used to carry a second metadata line (`12× · 2d · 250g`),
+  a caption explaining its own sort order, and a `⋯` editor for amount and pinning. All three
+  were explanation and adjustment sitting on the one path that exists to avoid both. Amount and
+  pinning belong to Add food, which is where an entry is composed; the ranking is still there,
+  and is still invisible, which is the point.
+- **The filter is always present**, because the strips scroll: most of what is in them is
+  off-screen, so "what have I got" is not a question the chips can answer. Typing collapses both
+  strips into one list of matches, and `Search all foods →` hands the same query to Add food,
+  which reaches past what you have already eaten.
+- Every log offers Undo, and carries the amount the food was logged at last time — product or
+  not, since the chip logs last time's figures unscaled.
+
+### Add food
+
+The one place an entry is composed, from whichever of five sources has it. A single search field
+(with the barcode control beside it) queries the copy tray, the saved catalog, favorites and
+recents, and Open Food Facts at once, and returns them in four labelled bands inside one bordered
+list — each row a name, its amount or basis, and its calories.
+
+The composer beneath it is the whole point. Every food arrives **quoted against something**, and
+naming that reference is what lets one amount field mean two different things without ever
+guessing which:
+
+- **per** — a label quotes per 100 g/ml; a copied row quotes the 250 g that was eaten. The amount
+  rescales the figures, and only compatible units are offered (`lib/units.ts` refuses to invent a
+  density). Changing the unit **restates** the amount — 241 g becomes 8.5 oz — rather than
+  reinterpreting the number in the box. The exception is hand-typed values, where nothing has been
+  read off a label yet: all four mass and volume units stay open and the basis follows whichever
+  is chosen, so picking millilitres declares a liquid and the toggle reads `PER 100 ML`. Narrowing
+  that list to the incumbent dimension made per-100-ml reachable only by choosing the unit
+  *before* tapping `PER 100` — one form, two outcomes, decided by tap order and signposted
+  nowhere.
+- **portion** — hand-typed values that are the entry. The amount is recorded on the row and does
+  not multiply anything, and the preview says so.
+- **unitless** — a copy of a row that never recorded an amount. Only a count of helpings can move
+  it, and no amount is written back, because the original never claimed one.
+
+A hand-typed entry chooses between the first two with one segmented control, `AS EATEN` / `PER
+100 G`, whose label follows the unit's own dimension. Above the seven numeric fields sits either
+that control or, when something was picked, a provenance line naming the source and its basis with
+a `clear` beside it. Below them, the preview states the row that will be written before it is
+written, and `★ favorite` / `⬚ save label` are offered only when the current values can honestly
+be turned into one.
+
+### Copy
+
+`⧉` on an entry row, and `copy all` on a meal-group header. Copying writes nothing: it puts the
+row on a device-local tray (`lib/copied.ts`, localStorage, scoped to the account and cleared on
+logout) and opens Add food, where the amount is set before anything is recorded. Eating the same
+thing twice rarely means eating the same amount of it, so a duplicate that lands before you can
+say otherwise is a figure you then have to go and correct.
 
 ### Meter
 
@@ -587,6 +651,17 @@ place the system uses a shadow, and the only place amber is used as a large fill
   with `preserveAspectRatio="none"`, so only rects and `vector-effect="non-scaling-stroke"`
   strokes survive: a corner radius became six times wider than tall, and the line's point
   circles rendered as flat ellipses. Points are zero-length round-capped strokes instead.
+- **Don't** stretch an SVG on one axis only. `w-full` with a 100:80 viewBox gave the chart its
+  height from its own ratio — about 350px inside a 112px `overflow-hidden` frame — so it was
+  cropped to its top third and only bars near the maximum were visible at all. Every other day
+  rendered below the fold of its own panel, silently, for as long as the panel existed. Both
+  axes, always: `block h-full w-full`.
+- **Don't** change a unit without restating the amount. Switching 241 g to ounces and leaving
+  "241" in the field logs four kilos of porridge with every arithmetic step correct. The unit
+  control converts; only the person types a new number.
+- **Don't** drop an amount on a re-log because the row has no `productId`. A quick-add chip logs
+  last time's figures unscaled, so last time's amount is this entry's amount whether a saved
+  label was involved or not.
 - **Don't** add a shadow to anything that sits in the document flow, including on hover.
 - **Don't** introduce a webfont or any CDN-hosted asset. The app ships self-contained. An icon
   set is permitted *because* it bundles: lucide is an npm dependency inside the container, not a

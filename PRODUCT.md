@@ -72,10 +72,14 @@ easy to see, verify, and correct.
   `consumedAt`, provenance (`productId` + a `quantity` with its own `quantityUnit`) when logged
   from a saved product, and a `source` recording which front door wrote the row (`ui` / `mcp`).
 - Daily dashboard grouped by meal, with running totals against goals, and day-to-day navigation.
-- Saved products (per 100 g / 100 ml, optional brand, barcode, serving size), favorites,
-  and multi-item meal templates that can be applied to a day.
+- Saved products (per 100 g / 100 ml, optional brand, barcode, serving size) and favorites.
+  Products are a reference catalog rather than a way to eat: they are searched, scaled and
+  logged from Add food alongside every other source, and read back or corrected in Settings.
+  Multi-item meal templates remain on the API for the assistant; the screen no longer surfaces
+  them, because per-entry copy covers the same ground in fewer taps.
 - Weight logs stored canonically in kilograms with the entered unit recorded per reading, so the
-  kg/lb preference re-renders history rather than reinterpreting it; trends over 7 and 30 days.
+  kg/lb preference re-renders history rather than reinterpreting it; trends over 7, 30 or 90 days,
+  or the whole record from the first entry ever logged.
 - Quantities carry a unit: g/oz against a per-100g product, ml/fl oz against a per-100ml one, or
   `serving` when the label declares one. Incompatible pairings are refused, never guessed at.
 - Barcode capture in the browser via the native `BarcodeDetector`, falling back to Open Food
@@ -83,7 +87,14 @@ easy to see, verify, and correct.
   API, so the control is hidden there and photographing the label for the assistant remains the
   path.
 - TDEE inputs (sex, birth year, height) and per-nutrient daily goals.
-- Copy a previous day's entries; CSV/data export.
+- Copy any entry, or a whole meal, onto a device-local tray, then re-log it from Add food at a
+  different amount and in a different unit. The tray is a clipboard, not a record: it lives in
+  the browser, is scoped to the account, and the assistant cannot see it.
+- One composer for every entry. Add food searches the tray, the saved catalog, what has been
+  eaten before and Open Food Facts at once; whatever is picked arrives quoted against a known
+  amount, which the amount field then rescales. Hand-typed values declare whether they are as
+  eaten or per 100 g/ml.
+- Copy a previous day's entries and apply a template (API only); CSV/data export.
 - Light and dark themes, with the choice persisted and applied before first paint.
 
 **Fixed constraints — future design work must not break these**
