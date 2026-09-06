@@ -139,19 +139,19 @@ components:
     typography: "{typography.label}"
   toast-success:
     backgroundColor: "{colors.accent}"
-    textColor: "#ffffff"
+    textColor: "{colors.panel}"
     rounded: "{rounded.base}"
-    padding: "10px 16px"
+    padding: "8px 12px"
   toast-error:
     backgroundColor: "{colors.over}"
-    textColor: "#ffffff"
+    textColor: "{colors.panel}"
     rounded: "{rounded.base}"
-    padding: "10px 16px"
+    padding: "8px 12px"
   toast-info:
     backgroundColor: "{colors.ink}"
     textColor: "{colors.panel}"
     rounded: "{rounded.base}"
-    padding: "10px 16px"
+    padding: "8px 12px"
 ---
 
 # Design System: Diet Tracker
@@ -315,7 +315,7 @@ gap between two adjacent elements on the Today screen is 8px. This is intentiona
 the main reason the screen carries a full day of nutrition with very little scrolling.
 
 The Today screen is a fixed vertical sequence, densest at the top: seven-day strip → the
-calorie readout → a three-column grid of six macro meters → the meal selector → quick-add
+calorie readout → a responsive grid of six macro meters → the meal selector → quick-add
 chips → one collapsible Add food panel → entries grouped by meal. Everything optional
 collapses; the day's numbers never do.
 
@@ -343,9 +343,12 @@ than shrink, because a year does not fit in the space a week does:
   recent week, with a legend — so every day keeps a cell you can actually see. A 365-cell row
   is a third of a pixel per day, which is a texture, not a measurement.
 
-Responsive behaviour is deliberately minimal — the column has one width rule and the macro
-grid stays three columns at every size. There are no breakpoint-specific layouts, because
-there is no layout here that would benefit from one.
+The column retains its 672px maximum. Below 400px, Today uses two nutrient columns;
+above it, three. Add food uses two form columns below 360px. Meter labels stack above their figures below 560px. Food rows wrap the
+name and keep portion, time, and provenance on a separate metadata line so amounts stay
+visible. On coarse pointers and viewports up to 480px, controls have real 44px minimum
+heights, buttons have 44px minimum widths, and input text stays at least 16px. Glyph hit
+areas never overlap neighboring controls. The week strip scrolls if seven targets cannot fit.
 
 **Safe areas.** `viewport-fit: cover` extends the web view into all four insets, so `body` pads
 all four with `env(safe-area-inset-*)`. Only the bottom one was padded originally, which put the
@@ -422,6 +425,7 @@ controls and toggles are square-cornered like everything else.
   ink and the border lifts to `--ink-faint`. Used for secondary and paired actions (Cancel, Log
   out, JSON/CSV export).
 - **Hover / Focus:** Colour transitions only (`transition-colors`). No lift, no scale, no shadow.
+- **Keyboard focus:** A 2px accent outline with a 2px offset on buttons, links, and fields.
 - **Inline text actions:** A third, deliberately un-button-like variant — 0.6875rem amber text
   that underlines on hover, for actions attached to a form rather than concluding it
   (`★ favorite`, `⬚ product`).
@@ -589,14 +593,26 @@ The system's signature component and the reason it reads as an instrument. A lab
 over) sits above a 4px track in `--line-soft` carrying an amber fill that animates its width
 over 500ms with an ease-out curve. A large variant at 6px height and 13px figures backs the
 calorie readout's 8px bar. Six of these in a three-column grid account for the entire macro
-display; they pack far more per screen than rings and read left-to-right like a scale.
+display at wider sizes; narrower screens use the stacking and two-column rules above.
 
 ### Toasts
 
-Centred above the bottom nav, 4px radius, 10px/16px padding, 0.875rem medium sans with a single
-leading glyph (`✓` / `!` / `ℹ`). Success is amber, error is red, info is inverted ink. They
-enter with an 8px rise over 250ms and dismiss themselves after 2.8 seconds. This is the only
-place the system uses a shadow, and the only place amber is used as a large fill.
+Centred above the bottom nav, 4px radius, 8px/12px padding, and 0.875rem medium sans.
+Success is amber, error is red, info is inverted ink; panel-colored text preserves contrast.
+Ordinary feedback dismisses after four seconds, pausing during hover or keyboard focus.
+Errors and Undo remain until acted on or explicitly dismissed with the library's X icon.
+Stable live regions announce feedback. The stack scrolls within 45% of viewport height.
+
+### Correction and drafts
+
+Entry editing offers Change portion when an original amount is known: totals preview the
+new portion using the saved reading as the basis. Correct values is an explicit manual
+mode for independently editing totals. Unit switches convert the amount in both modes.
+Drafts retain their meal and nutrition basis on this device, scoped to account and day;
+closing Add food, changing tabs, or reloading does not discard them. Logging or Discard
+draft removes that day's draft, and logout clears all account drafts. Date changes show
+loading until a reading for the selected day is available; superseded requests cannot
+overwrite it.
 
 ## Do's and Don'ts
 

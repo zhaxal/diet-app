@@ -43,16 +43,11 @@ export default function WeightCard({ logs, weightUnit, onLogsChange }: Props) {
       toast("Weight entry removed", "info", {
         label: "Undo",
         onAct: async () => {
-          try {
-            const { log } = await api.logWeight(doomed.weight, doomed.loggedAt);
-            onLogsChange(
-              [...logs.filter((l) => l.id !== doomed.id), log].sort(
-                (a, b) => +new Date(a.loggedAt) - +new Date(b.loggedAt),
-              ),
-            );
-          } catch (err) {
-            toast(err instanceof Error ? err.message : "Could not restore it", "error");
-          }
+          // Undo may run after a unit change or further logs. Restore the
+          // canonical reading, then read current history rather than a closure.
+          await api.logWeight(doomed.weightKg, doomed.loggedAt, "kg");
+          await api.listWeight().then(({ logs: fresh }) => onLogsChange(fresh))
+            .catch(() => toast("Reading restored. Reload Weight to refresh the chart.", "info"));
         },
       });
     } catch (err) {

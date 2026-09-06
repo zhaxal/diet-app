@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { api, type Favorite, type Meal, type RecentFood } from "@/lib/api-client";
 import { consumedAtFor } from "@/lib/time-client";
+import { formatQuantity } from "@/lib/units";
 import { rankRecent } from "@/lib/quick-add-rank";
 import { useToast } from "./Toast";
 
@@ -87,10 +88,9 @@ export default function QuickAdd({
       toast(`Logged ${food.name}`, "success", {
         label: "Undo",
         onAct: () => {
-          api
+          return api
             .deleteEntry(entry.id)
-            .then(onLogged)
-            .catch(() => toast("Could not undo", "error"));
+            .then(onLogged);
         },
       });
       onLogged();
@@ -115,7 +115,7 @@ export default function QuickAdd({
           ? {
               label: "Undo",
               onAct: () => {
-                api
+                return api
                   .saveFavorite({
                     name: doomed.name,
                     calories: doomed.calories,
@@ -127,8 +127,7 @@ export default function QuickAdd({
                     sodium: doomed.sodium,
                     mealType: doomed.mealType as Meal | undefined,
                   })
-                  .then(() => onLogged())
-                  .catch(() => toast("Could not restore favorite", "error"));
+                  .then(() => onLogged());
               },
             }
           : undefined,
@@ -213,9 +212,9 @@ export default function QuickAdd({
                     <button
                       onClick={() => logFood(f)}
                       disabled={logging === f.name}
-                      className="num text-xs font-medium text-accent hover:opacity-80 disabled:opacity-50"
+                      className="text-xs font-medium text-accent hover:opacity-80 disabled:opacity-50"
                     >
-                      ★ {f.name} <span className="text-accent">{f.calories}</span>
+                      ★ {f.name} <span className="num text-accent">{f.calories}</span>
                     </button>
                     <button
                       onClick={() => deleteFav(f.id, f.name)}
@@ -241,9 +240,10 @@ export default function QuickAdd({
                     key={r.name}
                     onClick={() => logFood(r)}
                     disabled={logging === r.name}
-                    className="num shrink-0 rounded border border-line bg-panel-2 px-2.5 py-1.5 text-xs text-ink transition-colors hover:border-ink-faint disabled:opacity-50"
+                    className="shrink-0 rounded border border-line bg-panel-2 px-2.5 py-1.5 text-xs text-ink transition-colors hover:border-ink-faint disabled:opacity-50"
                   >
-                    {r.name} <span className="text-ink-faint">{r.calories}</span>
+                    {r.name} <span className="num text-ink-faint">{r.calories}</span>
+                    {r.quantity != null && r.quantityUnit && <span className="num ml-1 text-ink-dim">· {formatQuantity(r.quantity, r.quantityUnit)}</span>}
                   </button>
                 ))}
               </div>

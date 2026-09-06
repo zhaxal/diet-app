@@ -60,7 +60,7 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
             ["fat", "dailyFat"],
             ["fiber", "dailyFiber"],
             ["sugar", "dailySugar"],
-            ["Na mg", "dailySodium"],
+            ["Sodium mg", "dailySodium"],
           ] as [string, keyof typeof form][]
         ).map(([label, key]) => (
           <label key={key} className="block">
@@ -78,7 +78,7 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
           </label>
         ))}
         <label className="block">
-          <span className="text-2xs uppercase tracking-wider text-ink-faint">unit</span>
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">Weight unit</span>
           <Select
             value={form.weightUnit}
             onChange={(e) => setForm({ ...form, weightUnit: e.target.value as "kg" | "lb" })}

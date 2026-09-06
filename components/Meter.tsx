@@ -21,12 +21,12 @@ export function Meter({
   const lg = size === "lg";
 
   return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2">
+    <div className="min-w-0">
+      <div className="flex min-w-0 flex-col gap-0.5 min-[560px]:flex-row min-[560px]:items-baseline min-[560px]:justify-between min-[560px]:gap-2">
         <span className="text-2xs uppercase tracking-wider text-ink-faint">
           {label}
         </span>
-        <span className="num text-ink-dim" style={{ fontSize: lg ? 13 : 11 }}>
+        <span className="num min-w-0 [overflow-wrap:anywhere] text-ink-dim" style={{ fontSize: lg ? 13 : 11 }}>
           <span
             className="font-semibold"
             style={{ color: over ? "var(--over)" : "var(--ink)" }}

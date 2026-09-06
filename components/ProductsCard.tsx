@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createLatestRequest } from "@/lib/latest-request";
 import { api, type Product } from "@/lib/api-client";
 import { macroStrings, parseMacros, type MacroStrings } from "@/lib/macros";
 import {
@@ -42,21 +43,22 @@ export default function ProductsCard() {
   const [products, setProducts] = useState<Product[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const queryRef = useRef(q);
+  queryRef.current = q.trim();
+  const [reads] = useState(() => createLatestRequest(() => queryRef.current));
 
   const load = useCallback(async (query: string) => {
-    try {
-      const { products } = await api.listProducts(query || undefined);
-      setProducts(products);
-      setLoaded(true);
-    } catch {
-      /* leave the previous list in place */
-    }
-  }, []);
+    setError(null);
+    await reads.run(query, () => api.listProducts(query || undefined),
+      ({ products }) => { setProducts(products); setLoaded(true); },
+      (e) => { setError(e instanceof Error ? e.message : "Could not load saved labels"); });
+  }, [reads]);
 
   useEffect(() => {
     const t = setTimeout(() => load(q.trim()), 250);
-    return () => clearTimeout(t);
-  }, [q, load]);
+    return () => { clearTimeout(t); reads.invalidate(); };
+  }, [q, load, reads]);
 
   async function remove(p: Product) {
     try {
@@ -85,7 +87,7 @@ export default function ProductsCard() {
             });
             load(q.trim());
           } catch (e) {
-            toast(e instanceof Error ? e.message : "Could not restore it", "error");
+            throw e;
           }
         },
       });
@@ -106,14 +108,18 @@ export default function ProductsCard() {
         className="field w-full"
       />
 
-      {products.length === 0 ? (
+      {error && <div className="mt-2 text-xs text-ink-dim" role="alert">
+        <p>Saved labels could not be refreshed. {error}</p>
+        <button onClick={() => load(q.trim())} className="btn btn-ghost mt-2">Retry</button>
+      </div>}
+      {products.length === 0 ? (!error && (
         <p className="mt-3 text-xs text-ink-faint">
-          {q
+          {!loaded ? "Loading…" : q
             ? `Nothing matches “${q}”.`
             : loaded
               ? "No labels saved yet. Scan a barcode in Add food, or photograph a nutrition label and ask Claude to save it — it only has to read the label once."
               : "Loading…"}
-        </p>
+        </p>)
       ) : (
         <ul className="mt-2 divide-y" style={{ borderColor: "var(--line-soft)" }}>
           {products.map((p) =>

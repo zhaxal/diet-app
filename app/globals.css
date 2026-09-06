@@ -104,7 +104,7 @@ body {
   justify-content: center;
   min-width: 32px;
   padding: 8px;
-  margin: -8px -4px;
+  flex-shrink: 0;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -146,7 +146,7 @@ body {
    scale. Fields do get taller on a phone — and that is a second thing fixed
    rather than a cost, since every one of them sat at 32–34px, well under the
    44px touch target a thumb needs. */
-@media (pointer: coarse) {
+@media (pointer: coarse), (max-width: 480px) {
   .field,
   input,
   select,
@@ -250,4 +250,34 @@ select.field {
 .btn-ghost:hover {
   color: var(--ink);
   border-color: var(--ink-faint);
+}
+
+/* Keep the readout dense; interactive boxes still need space for a thumb.
+   Actual boxes, without overhanging hit areas that can steal adjacent taps. */
+@media (pointer: coarse), (max-width: 480px) {
+  button,
+  a,
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    min-height: 44px;
+  }
+  button { min-width: 44px; }
+  a { display: inline-flex; align-items: center; }
+  .glyph-btn { margin: 0; min-width: 44px; min-height: 44px; }
+}
+
+button:focus-visible,
+a:focus-visible,
+.field:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

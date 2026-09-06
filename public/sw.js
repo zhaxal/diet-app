@@ -14,7 +14,7 @@
  * renders it labelled as a past reading. See lib/offline-cache.ts.
  */
 
-const VERSION = "v2";
+const VERSION = "v3";
 const SHELL = `diet-shell-${VERSION}`;
 const ASSETS = `diet-assets-${VERSION}`;
 

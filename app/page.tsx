@@ -16,6 +16,8 @@ import {
   type TrendRange,
 } from "@/lib/api-client";
 import { clockTime, todayStr } from "@/lib/time-client";
+import { createLatestRequest } from "@/lib/latest-request";
+import { clearFoodDrafts, clearFoodDraftsUnless } from "@/lib/food-draft";
 import {
   clearSnapshot,
   clearSnapshotUnless,
@@ -140,6 +142,8 @@ function Dashboard() {
 
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [loadedDate, setLoadedDate] = useState<string | null>(null);
+  const loadedDateRef = useRef<string | null>(null);
 
   const [goals, setGoals] = useState<Goals>({ dailyCalories: null, dailyProtein: null, dailyCarbs: null, dailyFat: null, dailyFiber: null, dailySugar: null, dailySodium: null, weightUnit: "kg", timezone: "UTC", sex: null, birthYear: null, heightCm: null });
   const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]);
@@ -181,6 +185,8 @@ function Dashboard() {
   // it reads the current day through a ref rather than closing over it.
   const dateRef = useRef(date);
   dateRef.current = date;
+  const [dayReads] = useState(() => createLatestRequest(() => dateRef.current));
+  useEffect(() => () => dayReads.invalidate(), [dayReads]);
 
   // Everything a snapshot needs beyond the day itself, held in a ref so that
   // writing one does not change `loadDay`'s identity — which would re-run the
@@ -230,14 +236,46 @@ function Dashboard() {
   }, []);
 
   const loadDay = useCallback(async (d: string) => {
-    const [{ entries }, sum] = await Promise.all([api.listEntries(d), api.summary(d)]);
-    setEntries(entries);
-    applySummary(d, sum);
-    setLastLoaded(Date.now());
-    // The screen is live again the moment a read succeeds.
-    setStaleSince(null);
-    setDaySnapshot(d, entries, sum);
-  }, [applySummary, setDaySnapshot]);
+    await dayReads.run(d,
+      () => Promise.all([api.listEntries(d), api.summary(d)]),
+      ([{ entries: rows }, sum]) => {
+        setEntries(rows);
+        applySummary(d, sum);
+        loadedDateRef.current = d;
+        setLoadedDate(d);
+        lastLoadedRef.current = Date.now();
+        setLastLoaded(lastLoadedRef.current);
+        setStaleSince(null);
+        setDayError(null);
+        setDaySnapshot(d, rows, sum);
+      },
+      (error) => {
+        // A same-day refresh failure preserves the reading and labels it stale.
+        if (loadedDateRef.current === d && lastLoadedRef.current !== null) {
+          setStaleSince(lastLoadedRef.current);
+          return;
+        }
+        const snap = readSnapshot();
+        if (snap && snap.date === d && snap.userId === userIdRef.current) {
+          setEntries(snap.entries);
+          applySummary(d, snap.summary);
+          lastLoadedRef.current = snap.at;
+          setLastLoaded(snap.at);
+          setStaleSince(snap.at);
+          setDayError(null);
+        } else {
+          setEntries([]);
+          setSummary(null);
+          lastLoadedRef.current = null;
+          setLastLoaded(null);
+          setStaleSince(null);
+          setDayError(error instanceof Error ? error.message : "Could not load this day");
+        }
+        loadedDateRef.current = d;
+        setLoadedDate(d);
+      },
+    );
+  }, [dayReads, applySummary, setDaySnapshot]);
 
   const mergeDayTotals = useCallback(
     (rows: { date: string; calories: number; count: number }[]) => {
@@ -284,6 +322,7 @@ function Dashboard() {
         // goes before this session can render a byte of it.
         clearSnapshotUnless(user.id);
         clearTrayUnless(user.id);
+        clearFoodDraftsUnless(user.id);
         setCopied(readTray(user.id));
         setEmail(user.email);
         setGoals(g);
@@ -305,6 +344,7 @@ function Dashboard() {
         const status = (e as { status?: number } | null)?.status;
         if (status === 401 || status === 403) {
           clearSnapshot();
+          clearFoodDrafts();
           router.replace("/login");
           return;
         }
@@ -315,6 +355,7 @@ function Dashboard() {
         const snap = readSnapshot();
         if (snap) {
           userIdRef.current = snap.userId;
+          clearFoodDraftsUnless(snap.userId);
           setEmail(snap.email);
           setGoals(snap.goals);
           setFavorites(snap.favorites);
@@ -326,6 +367,8 @@ function Dashboard() {
           // path exists to avoid.
           if (snap.date === dateRef.current) {
             setEntries(snap.entries);
+            loadedDateRef.current = snap.date;
+            setLoadedDate(snap.date);
             applySummary(snap.date, snap.summary);
             setLastLoaded(snap.at);
             setStaleSince(snap.at);
@@ -341,26 +384,8 @@ function Dashboard() {
 
   useEffect(() => {
     if (!ready) return;
-    loadDay(date)
-      .then(() => setDayError(null))
-      .catch((e: Error) => {
-        // Offline, or the server is down. If this device holds a reading of
-        // exactly this day, show it — labelled — rather than an error.
-        const snap = readSnapshot();
-        if (snap && snap.date === date && snap.userId === userIdRef.current) {
-          setEntries(snap.entries);
-          applySummary(snap.date, snap.summary);
-          setLastLoaded(snap.at);
-          setStaleSince(snap.at);
-          setDayError(null);
-        } else {
-          setEntries([]);
-          setSummary(null);
-          setStaleSince(null);
-          setDayError(e.message);
-        }
-      });
-  }, [ready, date, loadDay, applySummary]);
+    void loadDay(date);
+  }, [ready, date, loadDay]);
 
   // The strip reads its own window. Seven days is a small query, and it is the
   // only thing that makes the bars true for a day reached by navigating back.
@@ -389,15 +414,7 @@ function Dashboard() {
         // become a back-button step.
         writeParams({ d: now }, "replace");
       } else {
-        try {
-          await loadDay(date);
-        } catch (e) {
-          // Only the day failing means the figures on screen are a past
-          // reading. Say so, and keep them; the clock beside them is already
-          // the time they were taken.
-          setStaleSince(lastLoadedRef.current);
-          throw e;
-        }
+        await loadDay(date);
       }
 
       const [{ favorites: favs, recent: rec }, { goals: g }] = await Promise.all([
@@ -494,7 +511,7 @@ function Dashboard() {
               label: "Undo",
               onAct: () => {
                 // Re-created rather than restored; the row returns with a new id.
-                api
+                return api
                   .createEntry({
                     name: doomed.name,
                     calories: doomed.calories,
@@ -506,9 +523,11 @@ function Dashboard() {
                     sodium: doomed.sodium,
                     mealType: doomed.mealType,
                     consumedAt: doomed.consumedAt,
+                    productId: doomed.productId,
+                    quantity: doomed.quantity,
+                    quantityUnit: doomed.quantityUnit,
                   })
-                  .then(() => loadDay(date))
-                  .catch(() => toast("Could not restore entry", "error"));
+                  .then(() => loadDay(date));
               },
             }
           : undefined,
@@ -519,17 +538,14 @@ function Dashboard() {
   }
 
   function updateEntry(updated: FoodEntry) {
-    // The row already holds the server's response, so re-fetching the list would
-    // only replace it with itself — visibly, since React re-renders the row. Only
-    // the day totals actually need recomputing.
+    if (date !== dateRef.current) return;
     setEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
-    api
-      .summary(date)
-      .then((sum) => {
-        applySummary(date, sum);
-        setLastLoaded(Date.now());
-      })
-      .catch(() => {});
+    // Use the same guarded read as navigation, including the offline snapshot.
+    void loadDay(date);
+    api.listFavorites().then(({ favorites: favs, recent: rec }) => {
+      setFavorites(favs);
+      setRecent(rec);
+    }).catch(() => {});
   }
 
   const mcpUrl = apiKey ? `${origin}/api/mcp?key=${apiKey}` : "";
@@ -598,6 +614,7 @@ function Dashboard() {
     // the device.
     clearSnapshot();
     clearTray();
+    clearFoodDrafts();
     try {
       await api.logout();
     } catch {
@@ -652,7 +669,7 @@ function Dashboard() {
               goal, so the strip is an instrument rather than a date picker. It is
               a report, not a score: no streak, no praise, no colour beyond the two
               the system already uses for in-range and over. */}
-          <nav className="panel flex overflow-hidden" aria-label="Week">
+          <nav className="panel flex overflow-x-auto" aria-label="Week">
             {weekEnding(stripEnd).map((d) => {
               const active = d === date;
               const dt = new Date(`${d}T00:00:00`);
@@ -723,7 +740,7 @@ function Dashboard() {
           {/* The one thing an offline screen must never do is look current. The
               calorie readout's clock already says when the reading was taken;
               this says why it has not moved since. */}
-          {staleSince !== null && (
+          {loadedDate === date && staleSince !== null && (
             <div
               className="mt-1.5 flex items-center justify-between gap-2 rounded border px-2 py-1.5"
               style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
@@ -744,20 +761,19 @@ function Dashboard() {
             </div>
           )}
 
-          {date !== todayStr() && (
-            <div className="mt-1.5 flex items-center justify-between gap-2">
+          <div className="mt-1.5 flex items-center justify-between gap-2">
               <span className="num text-2xs uppercase tracking-wider text-ink-faint">
                 {prettyDate(date)}
               </span>
               <div className="flex items-center gap-2">
                 {/* Once the strip slides back to an older week there is no cell
                     for today to return to. */}
-                <button
+                {date !== todayStr() && <button
                   onClick={() => setDate(todayStr())}
                   className="text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
                 >
                   Today
-                </button>
+                </button>}
                 <input
                   type="date"
                   value={date}
@@ -767,9 +783,19 @@ function Dashboard() {
                   className="field num py-0.5 text-2xs"
                 />
               </div>
-            </div>
-          )}
+          </div>
 
+          {loadedDate !== date ? (
+            <section className="panel mt-2 p-4 text-sm text-ink-dim" role="status" aria-live="polite">
+              Loading {prettyDate(date).toLowerCase()}…
+            </section>
+          ) : dayError ? (
+            <section className="panel mt-2 p-4" role="alert">
+              <p className="text-sm font-semibold">This day could not be read</p>
+              <p className="mt-1 text-xs text-ink-dim">{dayError}</p>
+              <button onClick={() => void loadDay(date)} className="btn btn-primary mt-3">Retry</button>
+            </section>
+          ) : <>
           {/* Calorie readout */}
           <section className="panel gridlines mt-2 p-3">
             <div className="flex items-baseline justify-between">
@@ -850,7 +876,7 @@ function Dashboard() {
           </section>
 
           {/* Macro meters */}
-          <section className="panel mt-2 grid grid-cols-3 gap-x-4 gap-y-3 p-3">
+          <section className="panel mt-2 grid grid-cols-2 gap-x-4 gap-y-3 p-3 min-[400px]:grid-cols-3">
             {MACROS.map((m) => (
               <Meter
                 key={m.key}
@@ -917,6 +943,8 @@ function Dashboard() {
             onToggle={() => setShowAdd((s) => !s)}
           >
             <AddFood
+              key={`${userIdRef.current}:${date}`}
+              userId={userIdRef.current!}
               date={date}
               meal={meal}
               onMealChange={setMeal}
@@ -929,28 +957,13 @@ function Dashboard() {
                 api.listFavorites().then(({ favorites: favs }) => setFavorites(favs)).catch(() => {})
               }
               seedQuery={addFoodSeed}
+              onSeedConsumed={() => setAddFoodSeed("")}
             />
           </Panel>
 
           {/* Entries, grouped by meal */}
           <section className="mt-2">
-            {dayError ? (
-              <div className="panel px-3 py-8 text-center">
-                <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-                  This day could not be read
-                </p>
-                <p className="mt-1 text-xs text-ink-faint">{dayError}</p>
-                <p className="mt-1 text-2xs text-ink-faint">
-                  Offline, this device holds only its last reading of today.
-                </p>
-                <button
-                  onClick={() => loadDay(date).then(() => setDayError(null)).catch(() => {})}
-                  className="btn btn-primary mt-3"
-                >
-                  Retry
-                </button>
-              </div>
-            ) : entries.length === 0 ? (
+            {entries.length === 0 ? (
               // Names only the routes this account actually has. The old copy
               // pointed a day-one user at a favorite and a saved product that
               // did not exist.
@@ -1019,6 +1032,7 @@ function Dashboard() {
               })
             )}
           </section>
+          </>}
         </>
       )}
 

@@ -11,6 +11,7 @@ import {
   type RecentFood,
 } from "@/lib/api-client";
 import type { CopiedItem } from "@/lib/copied";
+import { readFoodDraft, writeFoodDraft } from "@/lib/food-draft";
 import {
   EMPTY_MACRO_STRINGS,
   hasTrace,
@@ -64,6 +65,7 @@ interface Origin {
 }
 
 interface Props {
+  userId: string;
   date: string;
   meal: Meal;
   onMealChange: (m: Meal) => void;
@@ -75,6 +77,7 @@ interface Props {
   onFavoritesChanged: () => void;
   /** A query handed over from Quick add, which only searches what you already eat. */
   seedQuery: string;
+  onSeedConsumed: () => void;
 }
 
 const MACRO_FIELDS = [
@@ -106,6 +109,7 @@ function whenLabel(date: string): string {
 }
 
 export default function AddFood({
+  userId,
   date,
   meal,
   onMealChange,
@@ -116,11 +120,14 @@ export default function AddFood({
   onLogged,
   onFavoritesChanged,
   seedQuery,
+  onSeedConsumed,
 }: Props) {
   const toast = useToast();
+  const [initialDraft] = useState(() => readFoodDraft(userId, date));
+  const [draftReady, setDraftReady] = useState(false);
 
   // ── Finding something ────────────────────────────────────────────────────
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialDraft?.q ?? "");
   const [products, setProducts] = useState<Product[]>([]);
   const [online, setOnline] = useState<FoodSearchResult[]>([]);
   const [searchingOnline, setSearchingOnline] = useState(false);
@@ -132,17 +139,32 @@ export default function AddFood({
   useEffect(() => setCanScan(isBarcodeScanningSupported()), []);
 
   // ── Composing the entry ──────────────────────────────────────────────────
-  const [name, setName] = useState("");
-  const [vals, setVals] = useState<MacroStrings>(EMPTY_MACRO_STRINGS);
-  const [reference, setReference] = useState<Reference>({ kind: "portion" });
-  const [amount, setAmount] = useState("");
-  const [unit, setUnit] = useState<QuantityUnit>("g");
-  const [multiple, setMultiple] = useState("1");
-  const [serving, setServing] = useState<{ size: number; unit: ServingUnit } | null>(null);
-  const [productId, setProductId] = useState<string | null>(null);
-  const [origin, setOrigin] = useState<Origin | null>(null);
-  const [showTrace, setShowTrace] = useState(false);
+  const [name, setName] = useState(initialDraft?.name ?? "");
+  const [vals, setVals] = useState<MacroStrings>(initialDraft?.vals ?? EMPTY_MACRO_STRINGS);
+  const [reference, setReference] = useState<Reference>(initialDraft?.reference ?? { kind: "portion" });
+  const [amount, setAmount] = useState(initialDraft?.amount ?? "");
+  const [unit, setUnit] = useState<QuantityUnit>(initialDraft?.unit ?? "g");
+  const [multiple, setMultiple] = useState(initialDraft?.multiple ?? "1");
+  const [serving, setServing] = useState<{ size: number; unit: ServingUnit } | null>(initialDraft?.serving ?? null);
+  const [productId, setProductId] = useState<string | null>(initialDraft?.productId ?? null);
+  const [origin, setOrigin] = useState<Origin | null>(initialDraft?.origin ?? null);
+  const [showTrace, setShowTrace] = useState(initialDraft?.showTrace ?? false);
   const [saving, setSaving] = useState(false);
+  const hasDraft = !!(q || name || amount || Object.values(vals).some((v) => v !== ""));
+
+  useEffect(() => {
+    if (initialDraft) onMealChange(initialDraft.meal);
+    setDraftReady(true);
+    // Restore once per account/day mount, not whenever the user changes meal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    writeFoodDraft(userId, date, hasDraft
+      ? { q, name, vals, reference, amount, unit, multiple, serving, productId, origin, showTrace, meal }
+      : null);
+  }, [draftReady, userId, date, hasDraft, q, name, vals, reference, amount, unit, multiple, serving, productId, origin, showTrace, meal]);
 
   const composeRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -153,7 +175,8 @@ export default function AddFood({
     if (!seedQuery) return;
     setQ(seedQuery);
     searchRef.current?.focus();
-  }, [seedQuery]);
+    onSeedConsumed();
+  }, [seedQuery, onSeedConsumed]);
 
   const query = q.trim();
 
@@ -240,6 +263,8 @@ export default function AddFood({
   }
 
   function reset() {
+    writeFoodDraft(userId, date, null);
+    setQ("");
     setName("");
     setVals(EMPTY_MACRO_STRINGS);
     setReference({ kind: "portion" });
@@ -492,10 +517,9 @@ export default function AddFood({
       toast(`Added ${name.trim()}`, "success", {
         label: "Undo",
         onAct: () => {
-          api
+          return api
             .deleteEntry(entry.id)
-            .then(onLogged)
-            .catch(() => toast("Could not undo", "error"));
+            .then(onLogged);
         },
       });
       reset();
@@ -569,6 +593,12 @@ export default function AddFood({
 
   return (
     <div className="space-y-2">
+      {hasDraft && (
+        <div className="flex items-center justify-between gap-2 text-xs text-ink-dim">
+          <span>Draft kept on this device · {meal} · {whenLabel(date)}</span>
+          <button type="button" onClick={reset} disabled={saving} className="shrink-0 text-ink-dim underline">Discard draft</button>
+        </div>
+      )}
       <div className="flex gap-1.5">
         <input
           ref={searchRef}
@@ -713,8 +743,8 @@ export default function AddFood({
 
       {/* ── Compose ───────────────────────────────────────────────────────── */}
       <div ref={composeRef}>
-        <form onSubmit={log} className="grid grid-cols-4 gap-1.5">
-          <label className="col-span-4 block">
+        <form onSubmit={log} className="grid grid-cols-2 gap-1.5 min-[360px]:grid-cols-4">
+          <label className="col-span-full block">
             <span className="block text-2xs uppercase tracking-wider text-ink-faint">Food</span>
             <input
               required
@@ -726,7 +756,7 @@ export default function AddFood({
 
           {/* What the seven figures below are quoted against — the one thing
               that decides whether the amount rescales them or annotates them. */}
-          <div className="col-span-4 flex items-center gap-2">
+          <div className="col-span-full flex items-center gap-2">
             {origin ? (
               <>
                 <span className="min-w-0 truncate text-2xs uppercase tracking-wider text-ink-dim">
@@ -865,7 +895,7 @@ export default function AddFood({
           {/* What the row will say, before it says it. Under a label this is the
               only place the arithmetic is visible. */}
           <div
-            className="col-span-4 flex items-baseline gap-2 border-t pt-1.5"
+            className="col-span-full flex items-baseline gap-2 border-t pt-1.5"
             style={{ borderColor: "var(--line-soft)" }}
           >
             {!touched ? (
@@ -894,7 +924,7 @@ export default function AddFood({
             </button>
           </div>
 
-          <div className="col-span-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="col-span-full flex flex-wrap items-center gap-x-3 gap-y-1">
             <button
               type="button"
               onClick={() => setShowTrace((s) => !s)}
