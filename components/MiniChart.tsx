@@ -18,6 +18,7 @@
 
 interface BarChartProps {
   data: { label: string; value: number }[];
+  ariaLabel: string;
   color?: string;
   height?: number;
   /** Draws a hairline at this value, so the bars read against a target. */
@@ -28,6 +29,7 @@ interface BarChartProps {
 
 export function BarChart({
   data,
+  ariaLabel,
   color = "var(--accent)",
   height = 80,
   reference = null,
@@ -41,7 +43,14 @@ export function BarChart({
   const refY = reference ? height - (reference / max) * (height - 4) : null;
 
   return (
-    <svg viewBox={`0 0 100 ${height}`} className="block h-full w-full" preserveAspectRatio="none">
+    <svg
+      viewBox={`0 0 100 ${height}`}
+      className="block h-full w-full"
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={ariaLabel}
+    >
+      <title>{ariaLabel}</title>
       {data.map((d, i) => {
         const barH = (d.value / max) * (height - 4);
         const over = reference != null && d.value > reference;
@@ -75,11 +84,12 @@ export function BarChart({
 
 interface LineChartProps {
   data: { value: number }[];
+  ariaLabel: string;
   color?: string;
   height?: number;
 }
 
-export function LineChart({ data, color = "var(--accent)", height = 80 }: LineChartProps) {
+export function LineChart({ data, ariaLabel, color = "var(--accent)", height = 80 }: LineChartProps) {
   if (data.length < 2) return null;
   const vals = data.map((d) => d.value);
   const min = Math.min(...vals);
@@ -96,7 +106,14 @@ export function LineChart({ data, color = "var(--accent)", height = 80 }: LineCh
   const points = data.map((d, i) => { const p = at(i, d.value); return `${p.x},${p.y}`; }).join(" ");
 
   return (
-    <svg viewBox={`0 0 100 ${height}`} className="block h-full w-full" preserveAspectRatio="none">
+    <svg
+      viewBox={`0 0 100 ${height}`}
+      className="block h-full w-full"
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={ariaLabel}
+    >
+      <title>{ariaLabel}</title>
       <polyline
         points={points}
         fill="none"

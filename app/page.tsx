@@ -138,6 +138,7 @@ function Dashboard() {
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [urlCopied, setUrlCopied] = useState(false);
+  const [urlRevealed, setUrlRevealed] = useState(false);
   const [origin, setOrigin] = useState("");
 
   const [entries, setEntries] = useState<FoodEntry[]>([]);
@@ -383,20 +384,20 @@ function Dashboard() {
   }, [router, applySummary]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || tab !== "today") return;
     void loadDay(date);
-  }, [ready, date, loadDay]);
+  }, [ready, tab, date, loadDay]);
 
   // The strip reads its own window. Seven days is a small query, and it is the
   // only thing that makes the bars true for a day reached by navigating back.
   const stripEnd = stripEnding(date, todayStr());
   useEffect(() => {
-    if (ready) loadStrip(stripEnd).catch(() => {});
-  }, [ready, stripEnd, loadStrip]);
+    if (ready && tab === "today") loadStrip(stripEnd).catch(() => {});
+  }, [ready, tab, stripEnd, loadStrip]);
 
   useEffect(() => {
-    if (ready) loadTrends(trendRange).catch(() => {});
-  }, [ready, trendRange, loadTrends]);
+    if (ready && tab === "trends") loadTrends(trendRange).catch(() => {});
+  }, [ready, tab, trendRange, loadTrends]);
 
   // An installed PWA is not remounted when it comes back from the background, so
   // without this the screen keeps showing whatever it loaded hours ago — including
@@ -405,33 +406,53 @@ function Dashboard() {
   const revalidate = useCallback(async () => {
     setRefreshing(true);
     try {
-      const now = todayStr();
-      const wasOnToday = date === todayRef.current;
-      todayRef.current = now;
+      if (tab === "today") {
+        const now = todayStr();
+        const wasOnToday = date === todayRef.current;
+        todayRef.current = now;
 
-      if (wasOnToday && date !== now) {
-        // Automatic, so replace rather than push — a midnight roll should not
-        // become a back-button step.
-        writeParams({ d: now }, "replace");
+        if (wasOnToday && date !== now) {
+          // Automatic, so replace rather than push — a midnight roll should not
+          // become a back-button step.
+          writeParams({ d: now }, "replace");
+        } else {
+          await loadDay(date);
+        }
+
+        const [{ favorites: favs, recent: rec }, { goals: g }] = await Promise.all([
+          api.listFavorites(),
+          api.getGoals(),
+        ]);
+        setFavorites(favs);
+        setRecent(rec);
+        setGoals(g);
+        loadStrip(stripEnding(date, todayStr())).catch(() => {});
+      } else if (tab === "trends") {
+        const [{ goals: g }] = await Promise.all([
+          api.getGoals(),
+          loadTrends(trendRange),
+        ]);
+        setGoals(g);
+      } else if (tab === "weight") {
+        const [{ goals: g }, { logs }] = await Promise.all([api.getGoals(), api.listWeight()]);
+        setGoals(g);
+        setWeightLogs(logs);
       } else {
-        await loadDay(date);
+        const [{ goals: g }, { logs }, { apiKey: key }] = await Promise.all([
+          api.getGoals(),
+          api.listWeight(),
+          api.getApiKey(),
+        ]);
+        setGoals(g);
+        setWeightLogs(logs);
+        setApiKey(key);
       }
-
-      const [{ favorites: favs, recent: rec }, { goals: g }] = await Promise.all([
-        api.listFavorites(),
-        api.getGoals(),
-      ]);
-      setFavorites(favs);
-      setRecent(rec);
-      setGoals(g);
-      loadStrip(stripEnding(date, todayStr())).catch(() => {});
-      loadTrends(trendRange).catch(() => {});
     } catch {
       // A failed background refresh must not replace the data already on screen.
     } finally {
       setRefreshing(false);
     }
-  }, [date, loadDay, loadStrip, loadTrends, trendRange, writeParams]);
+  }, [tab, date, loadDay, loadStrip, loadTrends, trendRange, writeParams]);
 
   useEffect(() => {
     if (!ready) return;
@@ -549,6 +570,11 @@ function Dashboard() {
   }
 
   const mcpUrl = apiKey ? `${origin}/api/mcp?key=${apiKey}` : "";
+  const displayedMcpUrl = urlRevealed && mcpUrl
+    ? mcpUrl
+    : mcpUrl
+      ? `${origin}/api/mcp?key=••••••••`
+      : "…";
 
   // `<a download>` gave no signal of any kind when it failed — and it can fail
   // for several reasons that look identical from the outside: an expired
@@ -594,6 +620,7 @@ function Dashboard() {
       toast("Connector URL copied");
       setTimeout(() => setUrlCopied(false), 2000);
     } catch {
+      setUrlRevealed(true);
       toast("Could not copy — select the URL above and copy it manually", "error");
     }
   }
@@ -1096,13 +1123,13 @@ function Dashboard() {
 
           <GoalsCard goals={goals} onGoalsChange={setGoals} />
 
-          <div className="mt-2">
+          <Panel title="Calculate goals" hint="TDEE estimate" defaultOpen={false}>
             <TdeeCard
               goals={goals}
               latestWeight={weightLogs.length ? weightLogs[weightLogs.length - 1].weight : null}
               onGoalsChange={setGoals}
             />
-          </div>
+          </Panel>
 
           {/* The assistant is a front door, not a footnote: this used to be the
               last section on the screen, below Export. It sits above the archival
@@ -1114,10 +1141,20 @@ function Dashboard() {
               nutrition label and Claude saves it to the catalog below, where Add
               food can log it by weight without another photo.
             </p>
+            <p className="mt-1 text-2xs text-ink-faint">
+              Anyone with this URL can read and change your diet data.
+            </p>
             <div className="mt-2 flex items-center gap-1.5">
-              <code className="num flex-1 truncate rounded px-2 py-1.5 text-2xs text-ink-dim" style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}>
-                {mcpUrl || "…"}
+              <code className="num min-w-0 flex-1 truncate rounded px-2 py-1.5 text-2xs text-ink-dim" style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}>
+                {displayedMcpUrl}
               </code>
+              <button
+                onClick={() => setUrlRevealed((shown) => !shown)}
+                disabled={!mcpUrl}
+                className="btn btn-ghost shrink-0"
+              >
+                {urlRevealed ? "Hide" : "Reveal"}
+              </button>
               <button onClick={copyUrl} disabled={!mcpUrl} className="btn btn-primary shrink-0">
                 {urlCopied ? "✓" : "Copy"}
               </button>

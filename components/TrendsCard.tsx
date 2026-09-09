@@ -233,6 +233,11 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
   const buckets =
     metric === "weight" ? [] : bucketize(trends.nutrition, grain, metric === "calories" ? "calories" : "protein");
   const chartData = buckets.map((b) => ({ label: b.start, value: b.value }));
+  const hasTrend = series.length >= 2;
+  const trendLabel =
+    metric === "weight"
+      ? `Weight trend across ${series.length} readings, from ${shortDate(trends.weight[0]?.date ?? trends.from)} to ${shortDate(trends.weight[trends.weight.length - 1]?.date ?? trends.to)}`
+      : `${metric === "calories" ? "Calories" : "Protein"} trend across ${logged.length} logged days, from ${shortDate(trends.from)} to ${shortDate(trends.to)}`;
 
   // Every day in the window is exactly one of three things.
   const inRange = calGoal ? logged.filter((d) => d.calories <= calGoal).length : 0;
@@ -267,6 +272,7 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
             weightSeries.length >= 2 ? (
               <LineChart
                 data={trends.weight.map((d) => ({ value: d.value }))}
+                ariaLabel={trendLabel}
                 color="var(--accent)"
               />
             ) : (
@@ -274,14 +280,19 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
                 Log at least 2 weight entries to see the trend
               </p>
             )
-          ) : (
+          ) : hasTrend ? (
             <BarChart
               data={chartData}
+              ariaLabel={trendLabel}
               color="var(--accent)"
               // Only calories carries a goal to read the bars against. Without
               // one the chart is a shape rather than a measurement.
               reference={metric === "calories" ? calGoal : null}
             />
+          ) : (
+            <p className="pt-10 text-center text-xs text-ink-faint">
+              Log food on one more day to see the trend
+            </p>
           )}
         </div>
 
@@ -289,7 +300,7 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
             time at all, which is the failure a long range introduces. The bars
             span the whole window; the line spans only the days that have a
             reading, so each names its own ends. */}
-        {(metric === "weight" ? trends.weight.length >= 2 : chartData.length > 1) && (
+        {hasTrend && (
           <div className="mt-1 flex justify-between text-2xs text-ink-faint">
             <span className="num">
               {shortDate(metric === "weight" ? trends.weight[0].date : trends.from)}
@@ -302,7 +313,7 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
           </div>
         )}
 
-        {series.length > 0 && (
+        {hasTrend && (
           <div
             className="mt-2 grid grid-cols-3 gap-2 border-t pt-2"
             style={{ borderColor: "var(--line-soft)" }}

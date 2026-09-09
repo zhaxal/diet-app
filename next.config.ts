@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/api-docs/scalar.js": [
+      "./node_modules/@scalar/api-reference/dist/browser/standalone.js",
+    ],
+  },
   async headers() {
     return [
       {

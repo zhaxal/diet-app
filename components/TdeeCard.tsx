@@ -38,7 +38,13 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
   const ageN = Number(age);
   const heightCm = lb ? Number(height) * 2.54 : Number(height);
   const weightKg = lb ? Number(weightInput) * 0.453592 : Number(weightInput);
-  const valid = ageN > 0 && heightCm > 0 && weightKg > 0;
+  const valid =
+    ageN >= 1 &&
+    ageN <= currentYear - 1900 &&
+    heightCm >= 50 &&
+    heightCm <= 300 &&
+    weightKg > 0 &&
+    weightKg <= 1000;
 
   let target = 0;
   let protein = 0, fat = 0, carbs = 0;
@@ -50,6 +56,7 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
     fat = Math.round((0.25 * target) / 9);
     carbs = Math.max(0, Math.round((target - protein * 4 - fat * 9) / 4));
   }
+  const estimable = valid && target > 0;
 
   async function apply() {
     setSaving(true);
@@ -79,11 +86,10 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
   const selectWrap = "mt-0.5";
 
   return (
-    <section className="panel p-3">
-      <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">TDEE calculator</h2>
-      <p className="mt-1 text-2xs text-ink-faint">Mifflin–St Jeor maintenance estimate.</p>
+    <div>
+      <p className="text-2xs text-ink-faint">Mifflin–St Jeor maintenance estimate.</p>
 
-      <div className="mt-2 grid grid-cols-3 gap-1.5">
+      <div className="mt-2 grid grid-cols-2 gap-1.5 min-[400px]:grid-cols-3">
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Sex</span>
           <Select value={sex} onChange={(e) => setSex(e.target.value as "male" | "female")} wrapClassName={selectWrap}>
@@ -93,15 +99,15 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
         </label>
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Age</span>
-          <input type="number" min={1} value={age} onChange={(e) => setAge(e.target.value)} className={inputCls} />
+          <input type="number" min={1} max={currentYear - 1900} value={age} onChange={(e) => setAge(e.target.value)} className={inputCls} />
         </label>
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Height ({lb ? "in" : "cm"})</span>
-          <input type="number" min={1} value={height} onChange={(e) => setHeight(e.target.value)} className={inputCls} />
+          <input type="number" min={lb ? 20 : 50} max={lb ? 118 : 300} value={height} onChange={(e) => setHeight(e.target.value)} className={inputCls} />
         </label>
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Weight ({goals.weightUnit})</span>
-          <input type="number" min={1} value={weightInput} onChange={(e) => setWeightInput(e.target.value)} className={inputCls} />
+          <input type="number" min={1} max={lb ? 2204 : 1000} step="0.1" value={weightInput} onChange={(e) => setWeightInput(e.target.value)} className={inputCls} />
         </label>
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Activity</span>
@@ -119,7 +125,7 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
         </label>
       </div>
 
-      {valid ? (
+      {estimable ? (
         <div className="mt-2.5 rounded border p-3 text-center" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
           <div className="num text-3xl font-bold text-ink">{target}<span className="ml-1 text-2xs uppercase tracking-wider text-ink-faint">kcal/day</span></div>
           <div className="num mt-1 text-2xs text-ink-dim">P {protein}g · C {carbs}g · F {fat}g</div>
@@ -128,8 +134,12 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
           </button>
         </div>
       ) : (
-        <p className="mt-2.5 text-center text-2xs text-ink-faint">Fill in age, height, and weight to calculate.</p>
+        <p className="mt-2.5 text-center text-2xs text-ink-faint">
+          {valid
+            ? "These values do not produce a usable estimate."
+            : "Fill in age, height, and weight to calculate."}
+        </p>
       )}
-    </section>
+    </div>
   );
 }

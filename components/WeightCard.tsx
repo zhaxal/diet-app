@@ -61,9 +61,11 @@ export default function WeightCard({ logs, weightUnit, onLogsChange }: Props) {
   const delta = latest && first ? Math.round((latest.weight - first.weight) * 10) / 10 : 0;
 
   const form = (
-    <form onSubmit={logWeight} className="mt-2 flex gap-1.5">
+    <form onSubmit={logWeight} className="mt-2 flex items-end gap-1.5">
       <label className="min-w-0 flex-1">
-        <span className="sr-only">Today&apos;s weight in {weightUnit}</span>
+        <span className="block text-2xs uppercase tracking-wider text-ink-faint">
+          Today&apos;s weight ({weightUnit})
+        </span>
         <input
           type="number"
           step="0.1"
@@ -71,8 +73,8 @@ export default function WeightCard({ logs, weightUnit, onLogsChange }: Props) {
           max={1000}
           value={weight}
           onChange={(e) => setWeight(e.target.value)}
-          placeholder={`Today's weight (${weightUnit})`}
-          className="field num w-full"
+          placeholder="0.0"
+          className="field num mt-0.5 w-full"
         />
       </label>
       <button type="submit" disabled={saving || !weight} className="btn btn-primary shrink-0">
@@ -84,7 +86,7 @@ export default function WeightCard({ logs, weightUnit, onLogsChange }: Props) {
   if (logs.length === 0) {
     return (
       <section className="panel p-3">
-        <span className="text-2xs uppercase tracking-wider text-ink-faint">Weight</span>
+        <span className="text-2xs uppercase tracking-wider text-ink-faint">Latest reading</span>
         <p className="mt-1.5 text-sm text-ink-dim">No readings yet.</p>
         <p className="mt-1 text-xs text-ink-faint">
           Two or more build the trend line, and feed the TDEE estimate in Settings.
@@ -97,7 +99,7 @@ export default function WeightCard({ logs, weightUnit, onLogsChange }: Props) {
   return (
     <section className="panel p-3">
       <div className="flex items-baseline justify-between">
-        <span className="text-2xs uppercase tracking-wider text-ink-faint">Weight</span>
+        <span className="text-2xs uppercase tracking-wider text-ink-faint">Latest reading</span>
         {logs.length >= 2 && (
           // Deliberately not green-down / amber-up: the app does not know, and
           // must not imply, which direction is the user's goal. Colour in this
@@ -116,7 +118,11 @@ export default function WeightCard({ logs, weightUnit, onLogsChange }: Props) {
 
       {chartData.length >= 2 && (
         <div className="mt-2 h-24 overflow-hidden">
-          <LineChart data={chartData} color="var(--accent)" />
+          <LineChart
+            data={chartData}
+            ariaLabel={`Weight trend across ${chartData.length} readings, from ${first.weight} to ${latest.weight} ${weightUnit}`}
+            color="var(--accent)"
+          />
         </div>
       )}
 

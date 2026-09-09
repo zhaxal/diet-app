@@ -51,18 +51,18 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
       <h2 className="mb-2 text-2xs font-semibold uppercase tracking-wider text-ink-dim">
         Daily goals
       </h2>
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="grid grid-cols-2 gap-1.5 min-[380px]:grid-cols-4">
         {(
           [
-            ["kcal", "dailyCalories"],
-            ["protein", "dailyProtein"],
-            ["carbs", "dailyCarbs"],
-            ["fat", "dailyFat"],
-            ["fiber", "dailyFiber"],
-            ["sugar", "dailySugar"],
-            ["Sodium mg", "dailySodium"],
-          ] as [string, keyof typeof form][]
-        ).map(([label, key]) => (
+            ["kcal", "dailyCalories", 100000],
+            ["protein", "dailyProtein", 1000000],
+            ["carbs", "dailyCarbs", 1000000],
+            ["fat", "dailyFat", 1000000],
+            ["fiber", "dailyFiber", 1000000],
+            ["sugar", "dailySugar", 1000000],
+            ["Sodium mg", "dailySodium", 1000000],
+          ] as [string, keyof typeof form, number][]
+        ).map(([label, key, max]) => (
           <label key={key} className="block">
             <span className="text-2xs uppercase tracking-wider text-ink-faint">
               {label}
@@ -70,6 +70,7 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
             <input
               type="number"
               min={0}
+              max={max}
               value={form[key]}
               onChange={(e) => setForm({ ...form, [key]: e.target.value })}
               placeholder="—"
@@ -78,7 +79,9 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
           </label>
         ))}
         <label className="block">
-          <span className="text-2xs uppercase tracking-wider text-ink-faint">Weight unit</span>
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">
+            <span className="sr-only">Weight </span>Unit
+          </span>
           <Select
             value={form.weightUnit}
             onChange={(e) => setForm({ ...form, weightUnit: e.target.value as "kg" | "lb" })}

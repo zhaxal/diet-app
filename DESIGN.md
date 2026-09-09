@@ -46,6 +46,12 @@ typography:
     fontWeight: 400
     lineHeight: "0.875rem"
     letterSpacing: "0.05em"
+  label-touch:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
+    fontSize: "0.75rem"
+    fontWeight: 400
+    lineHeight: "1rem"
+    letterSpacing: "0.05em"
   data:
     fontFamily: "ui-monospace, SFMono-Regular, SF Mono, Menlo, Cascadia Mono, Segoe UI Mono, Consolas, Liberation Mono, monospace"
     fontSize: "0.875rem"
@@ -186,7 +192,7 @@ years as it does today.
 - Monospace tabular numerals for every measured quantity; system sans for everything else
 - 1px hairline borders and tonal panel layering as the only separation devices
 - One amber signal colour, with green and red reserved strictly for goal state
-- 11px uppercase 0.05em labels as the universal annotation voice
+- 11px uppercase labels on desktop, lifted to 12px on phones for glance readability
 - Flat by default; shadow permitted only on elements that overlay the page
 - A 672px maximum column, tuned for one-handed portrait use with a fixed bottom nav
 
@@ -273,7 +279,8 @@ kind of thing you are looking at, which is why it must not be diluted.
 - **Body** (sans, 400, 0.875rem, line-height 1.25rem): Food names, input values, prose. The
   only size at which real sentences are set.
 - **Label** (sans, 400, 0.6875rem, 0.05em, uppercase, faint ink): The annotation layer —
-  metric names, units, entry counts, hints, "over" / "left".
+  metric names, units, entry counts, hints, "over" / "left". It lifts to 0.75rem with a
+  1rem line height on coarse pointers and viewports up to 480px.
 - **Field (touch)** (sans, 400, 16px): Every form control on a coarse pointer. Not a design
   choice — the iOS zoom floor. See The Touch Floor below.
 - **Data** (mono, 600, 0.875rem, tabular): Inline measured values — an entry's calories, its
@@ -294,9 +301,10 @@ left the page magnified. `maximum-scale=1` would suppress it only by disabling p
 this app deliberately keeps. The desktop is unaffected and stays at 14px. Fields get taller on a
 phone, which also lifts them off the 32–34px they used to sit at, under the 44px a thumb needs.
 
-**The Small Caps Rule.** Every label in the system is the same object: 0.6875rem, uppercase,
-0.05em tracking, faint ink. Labels do not vary in size, weight, or colour between panels.
-Their uniformity is what lets the eye skip them and land on the figures.
+**The Small Caps Rule.** Every label in the system is the same object: uppercase, 0.05em
+tracking, faint ink, 0.6875rem on desktop and 0.75rem on phones. Labels do not vary in weight
+or colour between panels. Their uniformity is what lets the eye skip them and land on the
+figures; the phone lift keeps them readable while the user and device are moving.
 
 **The No Column Rule.** Right-aligned figures with tabular numerals do the aligning; the system
 never adds a border, a background, or extra tracking to make a column line up.
@@ -330,6 +338,9 @@ same 8px separation: coverage (days logged, average calories, weight delta) → 
 with its goal rule, two date ticks and min/median/max → goal adherence, one cell per day in
 range/over/unlogged → the average day, using the same seven meters Today uses → the meal split.
 It reports what the range *was*; it does not project, streak, or congratulate.
+Every chart has a text alternative naming its metric, span, and reading count. A single logged
+day is reported as insufficient evidence for a trend; the chart, axis, and distribution stats
+appear together once there are at least two readings.
 
 The window is 7, 30 or 90 days, or the whole record. Two of those panels change shape rather
 than shrink, because a year does not fit in the space a week does:
@@ -343,12 +354,20 @@ than shrink, because a year does not fit in the space a week does:
   recent week, with a legend — so every day keeps a cell you can actually see. A 365-cell row
   is a third of a pixel per day, which is a texture, not a measurement.
 
-The column retains its 672px maximum. Below 400px, Today uses two nutrient columns;
-above it, three. Add food uses two form columns below 360px. Meter labels stack above their figures below 560px. Food rows wrap the
+The column retains its 672px maximum. Below 400px, Today uses two nutrient columns and the TDEE
+form uses two columns; above it, three. Daily Goals uses two columns below 380px and four above.
+Add food uses two form columns below 360px. Meter labels stack above their figures below 560px. Food rows wrap the
 name and keep portion, time, and provenance on a separate metadata line so amounts stay
 visible. On coarse pointers and viewports up to 480px, controls have real 44px minimum
-heights, buttons have 44px minimum widths, and input text stays at least 16px. Glyph hit
+heights, buttons have 44px minimum widths, input text stays at least 16px, and the shared
+annotation label lifts to 12px. Glyph hit
 areas never overlap neighboring controls. The week strip scrolls if seven targets cannot fit.
+
+Settings keeps Daily Goals open because it is the destination of every “Set a goal” action.
+The optional TDEE estimate and product catalog use collapsed panels. The Claude connector URL
+is a bearer credential: its key is masked by default, Copy does not reveal it, and Reveal is a
+deliberate adjacent action. The panel states that anyone holding the URL can read and change the
+account’s diet data.
 
 **Safe areas.** `viewport-fit: cover` extends the web view into all four insets, so `body` pads
 all four with `env(safe-area-inset-*)`. Only the bottom one was padded originally, which put the
@@ -456,8 +475,9 @@ controls and toggles are square-cornered like everything else.
 - **Size:** 0.875rem, raised to **16px under `@media (pointer: coarse)`** — see The Touch Floor.
   A control sized in a fixed-width box must be measured at 16px, not 14px, or it truncates on the
   device the app is actually used on.
-- **Label:** a persistent 11px uppercase label sits above the field. A placeholder is a hint,
-  never the label — it disappears exactly when the value most needs identifying.
+- **Label:** a persistent uppercase label sits above the field, 11px on desktop and 12px on
+  phones. A placeholder is a hint, never the label — it disappears exactly when the value
+  most needs identifying.
 - **Disabled:** 50% opacity and `not-allowed`. The colour does not change.
 - **Native chrome:** the browser draws a spinner, a select arrow and a calendar button in its
   own language — three metaphors at three weights, two of which stay light in dark mode. All
@@ -621,7 +641,8 @@ overwrite it.
   value, and consume it via the Tailwind alias (`text-ink-faint`) or `var(--token)`.
 - **Do** apply `.num` to every measured quantity, and right-align it. A figure that is not
   tabular monospace is a bug.
-- **Do** set labels at 0.6875rem uppercase with 0.05em tracking in `--ink-faint`, always.
+- **Do** set labels at 0.6875rem uppercase with 0.05em tracking in `--ink-faint`, and lift the
+  shared label utility to 0.75rem on coarse pointers and viewports up to 480px.
 - **Do** separate regions with a single 1px `--line` border and, where a region should recede,
   a shift to `--panel-2`.
 - **Do** keep the accent for in-range progress, the active nav tab, focus borders, and inline
@@ -648,8 +669,8 @@ overwrite it.
   so a tap meant for "log this favorite" could land on "delete it". Use `.glyph-btn`: real
   padding on a real flex box, which cannot overlap a sibling.
 - **Don't** rely on a `placeholder` as a field's only label. It disappears the moment the field
-  is populated, which is exactly when the value most needs identifying. Persistent 11px
-  uppercase labels above the field, as in `GoalsCard`, `EntryRow` and the Add form.
+  is populated, which is exactly when the value most needs identifying. Persistent uppercase
+  labels above the field, as in `GoalsCard`, `WeightCard`, `EntryRow` and the Add form.
 - **Don't** render a goal rail, a chart, or an average when the underlying figure is unset or
   unlogged. An empty track reads as "you have eaten nothing", not "no goal set"; four zeroed
   averages read as a measurement rather than an absence. Say what is missing, and link to where

@@ -44,14 +44,63 @@ export default function BarcodeScanner({
   onDetected: (barcode: string) => void;
   onClose: () => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const onCloseRef = useRef(onClose);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  onCloseRef.current = onClose;
 
   const stop = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+  }, []);
+
+  // Treat the full-screen scanner like the modal it is: move focus inside,
+  // keep keyboard navigation inside, support Escape, and return focus after it
+  // closes. The camera lifecycle stays in the separate effect below.
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const priorOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = priorOverflow;
+      previous?.focus();
+    };
   }, []);
 
   useEffect(() => {
@@ -118,6 +167,7 @@ export default function BarcodeScanner({
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-50 flex flex-col"
       style={{ background: "color-mix(in srgb, var(--bg) 92%, transparent)" }}
       role="dialog"
@@ -131,7 +181,7 @@ export default function BarcodeScanner({
         <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
           Scan a barcode
         </span>
-        <button onClick={onClose} className="glyph-btn text-ink-faint hover:text-ink" aria-label="Close scanner">
+        <button ref={closeButtonRef} onClick={onClose} className="glyph-btn text-ink-faint hover:text-ink" aria-label="Close scanner">
           <X size={16} strokeWidth={1.75} />
         </button>
       </div>

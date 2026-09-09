@@ -40,8 +40,8 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
         </h1>
         <p className="mt-1 text-xs text-ink-dim">
           {isLogin
-            ? "Log in to track your meals."
-            : "Start tracking calories and macros."}
+            ? "Review your day or keep logging."
+            : "Track food here and through your assistant in one daily record."}
         </p>
 
         <form onSubmit={onSubmit} className="mt-4 space-y-2">
@@ -114,14 +114,14 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           {isLogin ? (
             <>
               No account?{" "}
-              <Link href="/register" className="text-accent hover:underline">
+              <Link href="/register" className="-mx-1.5 px-1.5 text-accent hover:underline">
                 Sign up
               </Link>
             </>
           ) : (
             <>
               Already have an account?{" "}
-              <Link href="/login" className="text-accent hover:underline">
+              <Link href="/login" className="-mx-1.5 px-1.5 text-accent hover:underline">
                 Log in
               </Link>
             </>

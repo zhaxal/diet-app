@@ -65,7 +65,7 @@
         "displayName": "Faint Ink",
         "canonical": "#636c7a",
         "dark": "#7d8797",
-        "purpose": "The annotation layer: labels, units, counts, placeholders. Must clear 4.5:1 on bg, panel and panel-2 at 11px; the earlier #8891a0 / #5b6473 pair measured 3.18/2.97/2.74 light and 3.07/2.90/3.28 dark and failed everywhere.",
+        "purpose": "The annotation layer: labels, units, counts, placeholders. Must clear 4.5:1 on bg, panel and panel-2 at 11px desktop and 12px touch; the earlier #8891a0 / #5b6473 pair measured 3.18/2.97/2.74 light and 3.07/2.90/3.28 dark and failed everywhere.",
         "tonalRamp": ["oklch(21% 0.021 250)", "oklch(31% 0.022 250)", "oklch(41% 0.023 250)", "oklch(52% 0.024 250)", "oklch(63% 0.023 250)", "oklch(76% 0.019 250)", "oklch(88% 0.014 250)", "oklch(96% 0.008 250)"]
       },
       "accent": {
@@ -114,7 +114,8 @@
       "headline": { "displayName": "Headline", "purpose": "Tab titles. A location marker, not a banner — deliberately only 0.875rem." },
       "title": { "displayName": "Title", "purpose": "Panel headers and meal-group headers." },
       "body": { "displayName": "Body", "purpose": "Food names, input values, prose. The only size real sentences are set at." },
-      "label": { "displayName": "Label", "purpose": "The annotation layer: metric names, units, counts, hints. Uniform everywhere." },
+      "label": { "displayName": "Label", "purpose": "The annotation layer: metric names, units, counts, hints. 0.6875rem on desktop and 0.75rem on phones." },
+      "label-touch": { "displayName": "Touch Label", "purpose": "The shared label scale on coarse pointers and viewports up to 480px: 0.75rem with 1rem line height." },
       "data": { "displayName": "Data", "purpose": "Inline measured values. Mono + tabular; the .num class. Never used for prose." }
     },
     "shadows": [
@@ -148,14 +149,19 @@
         "purpose": "Two composer columns below this width; four above."
       },
       {
+        "name": "goals-columns",
+        "value": "380px",
+        "purpose": "Daily Goals uses two columns below this width; four above."
+      },
+      {
         "name": "nutrient-columns",
         "value": "400px",
-        "purpose": "Today uses two nutrient columns below this width; three above."
+        "purpose": "Today nutrient meters and the TDEE form use two columns below this width; three above."
       },
       {
         "name": "phone-controls",
         "value": "480px",
-        "purpose": "44px control boxes and 16px fields below this width, or for any coarse pointer."
+        "purpose": "44px control boxes, 16px fields and 12px labels below this width, or for any coarse pointer."
       },
       {
         "name": "meter-labels",
@@ -266,7 +272,7 @@
       "Monospace tabular numerals for every measured quantity; system sans for everything else",
       "1px hairline borders and tonal panel layering as the only separation devices",
       "One amber signal colour, with green and red reserved strictly for goal state",
-      "11px uppercase 0.05em labels as the universal annotation voice",
+      "11px uppercase labels on desktop, lifted to 12px on phones for glance readability",
       "Flat by default; shadow permitted only on elements that overlay the page",
       "A 672px maximum column, tuned for one-handed portrait use with a fixed bottom nav"
     ],
@@ -275,7 +281,7 @@
       { "name": "The Three-State Number Rule", "body": "A figure is neutral ink by default, green only when it reports remaining headroom, and red only when it has passed its target. There is no fourth colour for numbers, and no colour that means \"good job\".", "section": "colors" },
       { "name": "The Two-Value Rule", "body": "Every colour is defined once in :root and once in .dark, both in app/globals.css. No component may hardcode a hex, and no component may branch on theme — if a value needs to differ between themes, it becomes a token.", "section": "colors" },
       { "name": "The Measurement Rule", "body": "Monospace and tabular figures are reserved for quantities that were measured or recorded. Prose never takes mono, and a number never takes sans. This split is what makes the numerals mean something — if everything were mono, nothing would read as data. Apply it with the .num class, never with an ad-hoc font-family.", "section": "typography" },
-      { "name": "The Small Caps Rule", "body": "Every label in the system is the same object: 0.6875rem, uppercase, 0.05em tracking, faint ink. Labels do not vary in size, weight, or colour between panels. Their uniformity is what lets the eye skip them and land on the figures.", "section": "typography" },
+      { "name": "The Small Caps Rule", "body": "Every label in the system is uppercase with 0.05em tracking and faint ink: 0.6875rem on desktop, 0.75rem on coarse pointers and viewports up to 480px. Labels do not vary in weight or colour between panels.", "section": "typography" },
       { "name": "The No Column Rule", "body": "Right-aligned figures with tabular numerals do the aligning; the system never adds a border, a background, or extra tracking to make a column line up.", "section": "typography" },
       { "name": "The One Column Rule", "body": "There is exactly one content column at every viewport. Extra horizontal space becomes margin, never a second column or a sidebar. Anything that needs horizontal room scrolls inside its own row (.no-scrollbar), as the favourite and recent chips already do.", "section": "layout" },
       { "name": "The Reachable Nav Rule", "body": "Primary navigation stays fixed at the bottom within thumb reach, and no primary action may live in a top bar.", "section": "layout" },
@@ -286,7 +292,7 @@
     "dos": [
       "Do put every colour in app/globals.css as a token with both a :root and a .dark value, and consume it via the Tailwind alias (text-ink-faint) or var(--token).",
       "Do apply .num to every measured quantity, and right-align it. A figure that is not tabular monospace is a bug.",
-      "Do set labels at 0.6875rem uppercase with 0.05em tracking in --ink-faint, always.",
+      "Do set labels at 0.6875rem uppercase with 0.05em tracking in --ink-faint, lifting the shared label utility to 0.75rem on coarse pointers and viewports up to 480px.",
       "Do separate regions with a single 1px --line border and, where a region should recede, a shift to --panel-2.",
       "Do keep the accent for in-range progress, the active nav tab, focus borders, and inline creating actions — and nothing else.",
       "Do let a progress fill turn --over red the moment its value passes its goal, in both the meter and the calorie bar.",
