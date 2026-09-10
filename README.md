@@ -1,8 +1,9 @@
 # 🥗 Diet Tracker
 
 A simple, API-first calorie & macro tracker built with **Next.js 16**, **Prisma**,
-and **SQLite**. It has a small web UI for logging meals and a fully documented
-**OpenAPI** REST API so an assistant like Claude can create entries for you.
+and **SQLite**. It has a sleek web UI for logging meals and a fully documented
+**OpenAPI** REST API + **Model Context Protocol (MCP)** server so AI assistants
+(Claude, Cursor, Windsurf, ChatGPT, etc.) can log entries and manage products for you.
 
 ## Features
 
@@ -121,11 +122,12 @@ Writes are never queued. Offline, a save fails immediately with "You are offline
 — nothing was saved", because a silent replay would collide with whatever the
 assistant did to the same day in the meantime.
 
-## The API (how Claude logs entries)
+## AI Integration & The API (how assistants log entries)
 
-Auth is JWT-based. A client logs in once, gets a token, and sends it as a
-`Bearer` token on every request. Interactive docs live at
-<http://localhost:3000/api-docs>; the raw spec is at `/api/openapi.json`.
+You can connect any AI assistant (Claude, Cursor, Windsurf, ChatGPT, etc.) using:
+1. **Model Context Protocol (MCP)**: Copy your connector URL from Settings (`/api/mcp?key=<your-key>`). The server supports automatic barcode lookup with auto-saving (`lookup_barcode`), nutrition label OCR saving (`save_product`), single meal logging (`log_meal`), and batch multi-item meal logging (`log_meal_items`).
+2. **REST API**: Auth is JWT-based. Interactive Scalar docs live at <http://localhost:3000/api-docs>; the raw spec is at `/api/openapi.json`.
+3. **Cross-Browser Barcode & Photo Scanning**: Native `BarcodeDetector` on Chrome/Android with pure WASM ZXing polyfill for Safari and iOS, photo capture fallback, and direct catalog + Open Food Facts resolution.
 
 ### Endpoints
 
@@ -141,6 +143,7 @@ Auth is JWT-based. A client logs in once, gets a token, and sends it as a
 | PATCH  | `/api/entries/{id}`   | Update an entry                      |
 | DELETE | `/api/entries/{id}`   | Delete an entry                      |
 | GET    | `/api/summary?date=YYYY-MM-DD` | Daily totals per meal + grand total |
+| POST   | `/api/mcp`            | Model Context Protocol JSON-RPC      |
 
 ### Example: log a meal via the API
 
@@ -160,9 +163,7 @@ curl -s "localhost:3000/api/summary?date=$(date +%F)" \
   -H "authorization: Bearer $TOKEN"
 ```
 
-To let Claude do this, give it the base URL and a token from step 1 (or point a
-custom connector at `/api/openapi.json`), and it can create and review entries
-for you.
+To let your AI assistant do this, connect it to the MCP endpoint or pass it your API key.
 
 ## Data model
 

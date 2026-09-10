@@ -10,7 +10,7 @@ if (!JWT_SECRET) {
 }
 
 // Long-lived tokens so a single login is practical for programmatic clients
-// (e.g. Claude posting entries via the API).
+// (e.g. AI assistants posting entries via MCP or the API).
 const TOKEN_TTL = "30d";
 export const AUTH_COOKIE = "diet_token";
 

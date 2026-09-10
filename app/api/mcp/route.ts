@@ -50,6 +50,25 @@ function resolveConsumedAt(value: string | undefined, tz: string): Date {
 
 // ── Tool argument schemas ─────────────────────────────────────────────────
 
+const mealItemSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    calories: num(100000).optional(),
+    protein: optNum(),
+    carbs: optNum(),
+    fat: optNum(),
+    fiber: optNum(),
+    sugar: optNum(),
+    sodium: optNum(),
+    productId: z.string().min(1).optional(),
+    quantity: num(100000).optional(),
+    unit: z.enum(QUANTITY_UNITS).optional(),
+    grams: num(100000).optional(),
+  })
+  .refine((a) => a.productId != null || (a.name != null && a.calories != null), {
+    message: "Provide either productId (+ quantity) or both name and calories",
+  });
+
 const logMealSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
@@ -72,6 +91,12 @@ const logMealSchema = z
     message:
       "Provide either productId (+ grams) or both name and calories",
   });
+
+const logMealItemsSchema = z.object({
+  mealType: z.enum(MEALS),
+  consumedAt: z.string().min(1).optional(),
+  items: z.array(mealItemSchema).min(1).max(30),
+});
 
 const productArgsSchema = z.object({
   name: z.string().min(1).max(200),
@@ -132,6 +157,8 @@ const favoriteArgsSchema = z.object({
   mealType: z.enum(MEALS).optional(),
 });
 
+const barcodeArgSchema = z.object({ barcode: z.string().min(1).max(64) });
+
 const ARG_SCHEMAS: Record<string, z.ZodTypeAny> = {
   log_meal: logMealSchema,
   get_summary: dateArgSchema,
@@ -145,6 +172,8 @@ const ARG_SCHEMAS: Record<string, z.ZodTypeAny> = {
   save_product: productArgsSchema,
   search_products: searchArgSchema,
   delete_product: idArgSchema,
+  lookup_barcode: barcodeArgSchema,
+  log_meal_items: logMealItemsSchema,
 };
 
 const nutrientProps = {
@@ -158,9 +187,24 @@ const nutrientProps = {
 
 const TOOLS = [
   {
+    name: "lookup_barcode",
+    description:
+      "Look up a food product by its barcode digits (EAN/UPC). Automatically checks the user's saved product catalog first. If not found locally, it queries Open Food Facts and AUTOMATICALLY saves the discovered product into the user's permanent catalog. ALWAYS call this when a barcode is visible in a photo or provided by the user.",
+    inputSchema: {
+      type: "object",
+      required: ["barcode"],
+      properties: {
+        barcode: {
+          type: "string",
+          description: "EAN or UPC barcode digits (6 to 14 numeric digits)",
+        },
+      },
+    },
+  },
+  {
     name: "save_product",
     description:
-      "Save a product's nutrition label to the user's permanent catalog, with values per 100g/100ml. ALWAYS call this when you read a nutrition or macro table from a photo — it means the user never has to photograph that product again. Re-saving the same barcode (or same name+brand) updates the existing entry instead of duplicating it. After saving, use log_meal with the returned productId and the grams eaten.",
+      "Save a product's nutrition label to the user's permanent catalog, with values per 100g/100ml. ALWAYS call this when you scan or read a nutrition table or macro table from a photo or text — this saves the product permanently to the user's library so they never have to photograph it again. Re-saving the same barcode (or same name+brand) updates the existing entry instead of duplicating it. After saving, use log_meal with the returned productId and quantity eaten.",
     inputSchema: {
       type: "object",
       required: ["name", "calories"],
@@ -203,7 +247,7 @@ const TOOLS = [
   {
     name: "log_meal",
     description:
-      "Log a food entry. Preferred: pass productId (from save_product/search_products) plus quantity and unit — the macros are then computed from the stored label, so you do not need to do any arithmetic. Otherwise pass name and calories directly, estimating macros from the food name.",
+      "Log a food entry to a meal (breakfast, lunch, dinner, snack). PREFERRED: pass productId (from save_product, lookup_barcode, or search_products) plus quantity and unit — macros are computed automatically from the stored label. If the food has a nutrition label or barcode, ALWAYS save it via save_product or lookup_barcode before logging! Otherwise pass name and calories directly.",
     inputSchema: {
       type: "object",
       required: ["mealType"],
@@ -221,6 +265,34 @@ const TOOLS = [
         ...nutrientProps,
         mealType: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack"] },
         consumedAt: { type: "string", description: "ISO 8601 timestamp, or YYYY-MM-DD for a whole day. Defaults to now." },
+      },
+    },
+  },
+  {
+    name: "log_meal_items",
+    description:
+      "Log MULTIPLE food items to a meal (breakfast, lunch, dinner, snack) in a single tool call. ALWAYS use this when the user describes a full plate, combo, or multi-item meal (e.g. 150g chicken breast + 200g rice + 10g olive oil). Each item can reference a saved productId with quantity & unit, or provide name, calories, and macros directly.",
+    inputSchema: {
+      type: "object",
+      required: ["mealType", "items"],
+      properties: {
+        mealType: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack"] },
+        consumedAt: { type: "string", description: "ISO 8601 timestamp or YYYY-MM-DD. Defaults to now." },
+        items: {
+          type: "array",
+          description: "List of foods eaten in this meal",
+          items: {
+            type: "object",
+            properties: {
+              productId: { type: "string", description: "Saved product ID if from catalog" },
+              quantity: { type: "number", minimum: 0, description: "Amount eaten in unit" },
+              unit: { type: "string", enum: [...QUANTITY_UNITS], description: "g, oz, ml, floz, serving" },
+              name: { type: "string", description: "Food name (when not logging from productId)" },
+              calories: { type: "integer", minimum: 0, description: "kcal (when not logging from productId)" },
+              ...nutrientProps,
+            },
+          },
+        },
       },
     },
   },
@@ -320,6 +392,68 @@ function rpcError(id: unknown, code: number, message: string) {
 
 const MACRO_KEYS = ["protein", "carbs", "fat", "fiber", "sugar", "sodium"] as const;
 
+async function resolveMealItemEntry(
+  a: z.infer<typeof mealItemSchema>,
+  userId: string,
+): Promise<{ entryData: Record<string, unknown>; provenance: string }> {
+  let entryData: Record<string, unknown>;
+  let provenance = "";
+
+  if (a.productId) {
+    const p = await prisma.product.findFirst({
+      where: { id: a.productId, userId },
+    });
+    if (!p) throw new Error(`Product ${a.productId} not found`);
+
+    const basis = p.basis as Basis;
+    const serving =
+      p.servingSize != null ? { size: p.servingSize, unit: p.servingUnit as ServingUnit } : null;
+
+    const askedUnit: QuantityUnit =
+      a.unit ??
+      (a.quantity != null || a.grams != null
+        ? baseUnitFor(basis)
+        : serving
+          ? "serving"
+          : baseUnitFor(basis));
+    const asked = a.quantity ?? a.grams ?? (askedUnit === "serving" ? 1 : 100);
+
+    const base = toBase(asked, askedUnit, basis, serving);
+    if (base === null) {
+      throw new Error(
+        `Cannot log ${formatQuantity(asked, askedUnit)} of "${p.name}", which is measured per ${p.basis}. ` +
+          `Use ${baseUnitFor(basis)}${serving ? " or serving" : ""}.`,
+      );
+    }
+    const f = base / 100;
+    entryData = {
+      name: p.brand ? `${p.name} (${p.brand})` : p.name,
+      calories: Math.round(p.calories * f),
+      protein: Math.round(p.protein * f * 10) / 10,
+      carbs: Math.round(p.carbs * f * 10) / 10,
+      fat: Math.round(p.fat * f * 10) / 10,
+      fiber: Math.round(p.fiber * f * 10) / 10,
+      sugar: Math.round(p.sugar * f * 10) / 10,
+      sodium: Math.round(p.sodium * f),
+      productId: p.id,
+      quantity: asked,
+      quantityUnit: askedUnit,
+    };
+    provenance =
+      ` — ${formatQuantity(asked, askedUnit)}` +
+      (askedUnit === "serving" ? ` (${base}${baseUnitFor(basis)})` : "") +
+      " of saved product";
+  } else {
+    entryData = {
+      name: a.name!,
+      calories: Math.round(a.calories!),
+      ...Object.fromEntries(MACRO_KEYS.map((k) => [k, a[k] ?? 0])),
+    };
+  }
+
+  return { entryData, provenance };
+}
+
 async function callTool(
   name: string,
   rawArgs: Record<string, unknown>,
@@ -340,6 +474,114 @@ async function callTool(
   }
 
   switch (name) {
+    case "lookup_barcode": {
+      const { barcode } = parsed.data as z.infer<typeof barcodeArgSchema>;
+      const code = barcode.trim();
+      if (!/^\d{6,14}$/.test(code)) {
+        throw new Error(`Invalid barcode format: "${code}". Expected 6 to 14 numeric digits.`);
+      }
+
+      // 1. Check user's saved product catalog first
+      const existing = await prisma.product.findFirst({
+        where: { userId, barcode: code },
+      });
+
+      if (existing) {
+        return (
+          `Found saved product in catalog:\n` +
+          `• Name: ${existing.name}${existing.brand ? ` (${existing.brand})` : ""}\n` +
+          `• Barcode: ${existing.barcode}\n` +
+          `• Basis: per ${existing.basis}\n` +
+          `• Calories: ${existing.calories} kcal\n` +
+          `• Macros: P ${existing.protein}g · C ${existing.carbs}g · F ${existing.fat}g (Fiber: ${existing.fiber}g, Sugar: ${existing.sugar}g, Sodium: ${existing.sodium}mg)\n` +
+          `${existing.servingSize ? `• Serving size: ${existing.servingSize}${unitLabel(existing.servingUnit as ServingUnit)}\n` : ""}` +
+          `• productId: ${existing.id}\n` +
+          `Already in catalog! You can log it immediately with log_meal { productId: "${existing.id}", quantity, unit, mealType }.`
+        );
+      }
+
+      // 2. Query Open Food Facts
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6000);
+      try {
+        const res = await fetch(
+          `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json` +
+            "?fields=product_name,brands,quantity,serving_quantity,serving_size,nutriments",
+          {
+            headers: { "User-Agent": "DietTracker/1.0 (self-hosted personal app)" },
+            signal: controller.signal,
+          },
+        );
+
+        if (!res.ok) {
+          return `Barcode ${code} not found on Open Food Facts. Please ask the user for a photo of the nutrition label, read the values, and call 'save_product' to save it.`;
+        }
+
+        const data = (await res.json()) as {
+          status?: number;
+          product?: {
+            product_name?: string;
+            brands?: string;
+            quantity?: string;
+            serving_quantity?: number | string;
+            nutriments?: Record<string, number | string | undefined>;
+          };
+        };
+
+        if (data.status !== 1 || !data.product) {
+          return `Barcode ${code} not found in catalog or Open Food Facts. Please ask the user for a photo of the nutrition label, read the values, and call 'save_product' to save it.`;
+        }
+
+        const p = data.product;
+        const n = p.nutriments ?? {};
+        const isDrink = /\b\d+\s*(ml|l|cl)\b/i.test(p.quantity ?? "");
+        const parseNum = (v: unknown) => {
+          const numVal = typeof v === "string" ? parseFloat(v) : (v as number);
+          return Number.isFinite(numVal) ? numVal : 0;
+        };
+        const sSize = parseNum(p.serving_quantity);
+
+        const saved = await prisma.product.create({
+          data: {
+            userId,
+            name: (p.product_name || "").trim() || `Barcode ${code}`,
+            brand: (p.brands || "").split(",")[0]?.trim() || null,
+            barcode: code,
+            basis: isDrink ? "100ml" : "100g",
+            calories: Math.round(parseNum(n["energy-kcal_100g"])),
+            protein: Math.round(parseNum(n["proteins_100g"]) * 10) / 10,
+            carbs: Math.round(parseNum(n["carbohydrates_100g"]) * 10) / 10,
+            fat: Math.round(parseNum(n["fat_100g"]) * 10) / 10,
+            fiber: Math.round(parseNum(n["fiber_100g"]) * 10) / 10,
+            sugar: Math.round(parseNum(n["sugars_100g"]) * 10) / 10,
+            sodium: Math.round(parseNum(n["sodium_100g"]) * 1000),
+            servingSize: sSize > 0 ? sSize : null,
+            servingUnit: sSize > 0 ? (isDrink ? "ml" : "g") : null,
+            source: "openfoodfacts",
+          },
+        });
+
+        return (
+          `Found on Open Food Facts and AUTOMATICALLY SAVED to your product catalog!\n` +
+          `• Name: ${saved.name}${saved.brand ? ` (${saved.brand})` : ""}\n` +
+          `• Barcode: ${saved.barcode}\n` +
+          `• Basis: per ${saved.basis}\n` +
+          `• Calories: ${saved.calories} kcal\n` +
+          `• Macros: P ${saved.protein}g · C ${saved.carbs}g · F ${saved.fat}g (Fiber: ${saved.fiber}g, Sugar: ${saved.sugar}g, Sodium: ${saved.sodium}mg)\n` +
+          `${saved.servingSize ? `• Serving size: ${saved.servingSize}${unitLabel(saved.servingUnit as ServingUnit)}\n` : ""}` +
+          `• productId: ${saved.id}\n` +
+          `Saved permanently. You can log it immediately with log_meal { productId: "${saved.id}", quantity, unit, mealType }.`
+        );
+      } catch {
+        return (
+          `Barcode lookup for ${code} timed out or could not reach Open Food Facts. ` +
+          `Please provide or read the nutrition label and call 'save_product' to save it manually.`
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
     case "save_product": {
       const a = parsed.data as z.infer<typeof productArgsSchema>;
       const data = {
@@ -423,67 +665,7 @@ async function callTool(
     case "log_meal": {
       const a = parsed.data as z.infer<typeof logMealSchema>;
       const consumedAt = resolveConsumedAt(a.consumedAt, tz);
-
-      let entryData: Record<string, unknown>;
-      let provenance = "";
-
-      if (a.productId) {
-        const p = await prisma.product.findFirst({
-          where: { id: a.productId, userId },
-        });
-        if (!p) throw new Error(`Product ${a.productId} not found`);
-
-        // What the caller asked for, resolved into the product's own base unit
-        // (grams for a 100g product, millilitres for a 100ml one). Defaults to
-        // one serving when the label defines it, else 100 of the base unit.
-        const basis = p.basis as Basis;
-        const serving =
-          p.servingSize != null ? { size: p.servingSize, unit: p.servingUnit as ServingUnit } : null;
-        // An explicit unit wins. Failing that, a bare `quantity` — and the
-        // deprecated `grams`, which always meant the base unit — are read in the
-        // base unit. Only when no amount is given at all does a declared serving
-        // become the default, because that is the sane "one of these" reading.
-        const askedUnit: QuantityUnit =
-          a.unit ??
-          (a.quantity != null || a.grams != null
-            ? baseUnitFor(basis)
-            : serving
-              ? "serving"
-              : baseUnitFor(basis));
-        const asked = a.quantity ?? a.grams ?? (askedUnit === "serving" ? 1 : 100);
-
-        const base = toBase(asked, askedUnit, basis, serving);
-        if (base === null) {
-          throw new Error(
-            `Cannot log ${formatQuantity(asked, askedUnit)} of "${p.name}", which is measured per ${p.basis}. ` +
-              `Use ${baseUnitFor(basis)}${serving ? " or serving" : ""}.`,
-          );
-        }
-        const f = base / 100;
-        entryData = {
-          name: p.brand ? `${p.name} (${p.brand})` : p.name,
-          calories: Math.round(p.calories * f),
-          protein: Math.round(p.protein * f * 10) / 10,
-          carbs: Math.round(p.carbs * f * 10) / 10,
-          fat: Math.round(p.fat * f * 10) / 10,
-          fiber: Math.round(p.fiber * f * 10) / 10,
-          sugar: Math.round(p.sugar * f * 10) / 10,
-          sodium: Math.round(p.sodium * f),
-          productId: p.id,
-          quantity: asked,
-          quantityUnit: askedUnit,
-        };
-        provenance =
-          ` — ${formatQuantity(asked, askedUnit)}` +
-          (askedUnit === "serving" ? ` (${base}${baseUnitFor(basis)})` : "") +
-          " of saved product";
-      } else {
-        entryData = {
-          name: a.name!,
-          calories: Math.round(a.calories!),
-          ...Object.fromEntries(MACRO_KEYS.map((k) => [k, a[k]])),
-        };
-      }
+      const { entryData, provenance } = await resolveMealItemEntry(a, userId);
 
       const entry = await prisma.foodEntry.create({
         // Stamped so the screen can show which front door wrote the row.
@@ -495,6 +677,49 @@ async function callTool(
         `Logged "${entry.name}"${provenance} — ${entry.calories} kcal` +
         ` · P ${entry.protein}g · C ${entry.carbs}g · F ${entry.fat}g` +
         ` (${entry.mealType} on ${localDateInTz(entry.consumedAt, tz)}, id: ${entry.id})`
+      );
+    }
+
+    case "log_meal_items": {
+      const a = parsed.data as z.infer<typeof logMealItemsSchema>;
+      const consumedAt = resolveConsumedAt(a.consumedAt, tz);
+
+      const resolved = await Promise.all(
+        a.items.map((item) => resolveMealItemEntry(item, userId)),
+      );
+
+      const createdEntries = await Promise.all(
+        resolved.map(({ entryData }) =>
+          prisma.foodEntry.create({
+            data: { userId, ...entryData, source: "mcp", mealType: a.mealType, consumedAt } as never,
+          }),
+        ),
+      );
+
+      const totals = createdEntries.reduce(
+        (acc, e) => ({
+          calories: acc.calories + e.calories,
+          protein: Math.round((acc.protein + e.protein) * 10) / 10,
+          carbs: Math.round((acc.carbs + e.carbs) * 10) / 10,
+          fat: Math.round((acc.fat + e.fat) * 10) / 10,
+          fiber: Math.round((acc.fiber + e.fiber) * 10) / 10,
+          sugar: Math.round((acc.sugar + e.sugar) * 10) / 10,
+          sodium: Math.round(acc.sodium + e.sodium),
+        }),
+        { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0 },
+      );
+
+      const itemsSummary = createdEntries
+        .map(
+          (e, idx) =>
+            `  • "${e.name}"${resolved[idx].provenance}: ${e.calories} kcal · P ${e.protein}g · C ${e.carbs}g · F ${e.fat}g (id: ${e.id})`,
+        )
+        .join("\n");
+
+      return (
+        `Logged ${createdEntries.length} items to ${a.mealType} on ${localDateInTz(consumedAt, tz)}:\n` +
+        itemsSummary +
+        `\nMeal total: ${totals.calories} kcal · P ${totals.protein}g · C ${totals.carbs}g · F ${totals.fat}g`
       );
     }
 
@@ -634,6 +859,245 @@ async function callTool(
   }
 }
 
+const RESOURCES = [
+  {
+    uri: "diet://today/summary",
+    name: "Today's Nutrition Summary",
+    description: "Daily calorie & macro totals for today, compared against daily goals",
+    mimeType: "application/json",
+  },
+  {
+    uri: "diet://today/entries",
+    name: "Today's Food Entries",
+    description: "All meals and food entries logged for today in chronological order",
+    mimeType: "application/json",
+  },
+  {
+    uri: "diet://catalog/products",
+    name: "Saved Product Catalog",
+    description: "User's permanent library of scanned nutrition labels and barcodes",
+    mimeType: "application/json",
+  },
+  {
+    uri: "diet://user/goals",
+    name: "Nutrition Goals & Profile",
+    description: "Daily calorie and macro targets, weight unit, and timezone",
+    mimeType: "application/json",
+  },
+  {
+    uri: "diet://weight/recent",
+    name: "Recent Weight Logs",
+    description: "Recent body weight entries (last 30 days)",
+    mimeType: "application/json",
+  },
+];
+
+async function readResource(
+  uri: string,
+  userId: string,
+  tz: string,
+): Promise<{ uri: string; mimeType: string; text: string }> {
+  switch (uri) {
+    case "diet://today/summary": {
+      const today = todayInTz(tz);
+      const { start, end } = dayBoundsInTz(today, tz);
+      const [entries, user] = await Promise.all([
+        prisma.foodEntry.findMany({ where: { userId, consumedAt: { gte: start, lt: end } } }),
+        prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            dailyCalories: true,
+            dailyProtein: true,
+            dailyCarbs: true,
+            dailyFat: true,
+            dailyFiber: true,
+            dailySugar: true,
+            dailySodium: true,
+            timezone: true,
+            weightUnit: true,
+          },
+        }),
+      ]);
+
+      const totals = entries.reduce(
+        (acc, e) => ({
+          calories: acc.calories + e.calories,
+          protein: Math.round((acc.protein + e.protein) * 10) / 10,
+          carbs: Math.round((acc.carbs + e.carbs) * 10) / 10,
+          fat: Math.round((acc.fat + e.fat) * 10) / 10,
+          fiber: Math.round((acc.fiber + e.fiber) * 10) / 10,
+          sugar: Math.round((acc.sugar + e.sugar) * 10) / 10,
+          sodium: Math.round(acc.sodium + e.sodium),
+          count: acc.count + 1,
+        }),
+        { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0, count: 0 },
+      );
+
+      return {
+        uri,
+        mimeType: "application/json",
+        text: JSON.stringify(
+          {
+            date: today,
+            timezone: tz,
+            totals,
+            goals: {
+              calories: user?.dailyCalories ?? null,
+              protein: user?.dailyProtein ?? null,
+              carbs: user?.dailyCarbs ?? null,
+              fat: user?.dailyFat ?? null,
+              fiber: user?.dailyFiber ?? null,
+              sugar: user?.dailySugar ?? null,
+              sodium: user?.dailySodium ?? null,
+            },
+            remaining: user?.dailyCalories
+              ? {
+                  calories: Math.max(0, user.dailyCalories - totals.calories),
+                  protein: user.dailyProtein ? Math.max(0, user.dailyProtein - totals.protein) : null,
+                  carbs: user.dailyCarbs ? Math.max(0, user.dailyCarbs - totals.carbs) : null,
+                  fat: user.dailyFat ? Math.max(0, user.dailyFat - totals.fat) : null,
+                }
+              : null,
+          },
+          null,
+          2,
+        ),
+      };
+    }
+
+    case "diet://today/entries": {
+      const today = todayInTz(tz);
+      const { start, end } = dayBoundsInTz(today, tz);
+      const entries = await prisma.foodEntry.findMany({
+        where: { userId, consumedAt: { gte: start, lt: end } },
+        orderBy: { consumedAt: "asc" },
+      });
+
+      return {
+        uri,
+        mimeType: "application/json",
+        text: JSON.stringify(
+          {
+            date: today,
+            count: entries.length,
+            entries: entries.map((e) => ({
+              id: e.id,
+              name: e.name,
+              mealType: e.mealType,
+              calories: e.calories,
+              protein: e.protein,
+              carbs: e.carbs,
+              fat: e.fat,
+              fiber: e.fiber,
+              sugar: e.sugar,
+              sodium: e.sodium,
+              quantity: e.quantity,
+              quantityUnit: e.quantityUnit,
+              productId: e.productId,
+              source: e.source,
+              consumedAt: e.consumedAt.toISOString(),
+            })),
+          },
+          null,
+          2,
+        ),
+      };
+    }
+
+    case "diet://catalog/products": {
+      const products = await prisma.product.findMany({
+        where: { userId },
+        orderBy: { updatedAt: "desc" },
+        take: 100,
+      });
+
+      return {
+        uri,
+        mimeType: "application/json",
+        text: JSON.stringify(
+          {
+            total: products.length,
+            products: products.map((p) => ({
+              id: p.id,
+              name: p.name,
+              brand: p.brand,
+              barcode: p.barcode,
+              basis: p.basis,
+              calories: p.calories,
+              protein: p.protein,
+              carbs: p.carbs,
+              fat: p.fat,
+              fiber: p.fiber,
+              sugar: p.sugar,
+              sodium: p.sodium,
+              servingSize: p.servingSize,
+              servingUnit: p.servingUnit,
+              source: p.source,
+            })),
+          },
+          null,
+          2,
+        ),
+      };
+    }
+
+    case "diet://user/goals": {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          dailyCalories: true,
+          dailyProtein: true,
+          dailyCarbs: true,
+          dailyFat: true,
+          dailyFiber: true,
+          dailySugar: true,
+          dailySodium: true,
+          weightUnit: true,
+          timezone: true,
+          sex: true,
+          birthYear: true,
+          heightCm: true,
+        },
+      });
+
+      return {
+        uri,
+        mimeType: "application/json",
+        text: JSON.stringify(user ?? {}, null, 2),
+      };
+    }
+
+    case "diet://weight/recent": {
+      const logs = await prisma.weightLog.findMany({
+        where: { userId },
+        orderBy: { loggedAt: "desc" },
+        take: 30,
+      });
+
+      return {
+        uri,
+        mimeType: "application/json",
+        text: JSON.stringify(
+          {
+            count: logs.length,
+            logs: logs.map((l) => ({
+              id: l.id,
+              weightKg: l.weight,
+              unit: l.unit,
+              loggedAt: l.loggedAt.toISOString(),
+            })),
+          },
+          null,
+          2,
+        ),
+      };
+    }
+
+    default:
+      throw new Error(`Unknown resource URI: ${uri}`);
+  }
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -664,7 +1128,7 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 204, headers: CORS });
   }
 
-  // initialize and tools/list need no auth — Claude.ai discovers tools before
+  // initialize and tools/list need no auth — MCP clients discover tools before
   // the user has a chance to configure the Authorization header.
   if (method === "initialize") {
     const clientVersion =
@@ -675,8 +1139,42 @@ export async function POST(req: NextRequest) {
         id: id ?? null,
         result: {
           protocolVersion: clientVersion,
-          capabilities: { tools: {} },
+          capabilities: { tools: {}, resources: {} },
           serverInfo: { name: "diet-tracker", version: "1.0.0" },
+          instructions: `Diet Tracker MCP Server — Instructions for AI Assistants:
+
+1. AUTOMATICALLY SAVE SCANNED NUTRITION TABLES & LABELS:
+- Whenever the user photos, shares, or provides a nutrition facts table or product label:
+  -> ALWAYS call 'save_product' to save it to their permanent catalog first!
+  -> Provide the values per 100g or 100ml basis. Include barcode, brand, and serving size whenever visible.
+  -> Do NOT just log a one-off meal entry. Saving the product ensures it is permanently saved in the user's library and available across all devices.
+  -> After saving, if the user consumed a portion, call 'log_meal' with the returned 'productId' and the quantity eaten.
+
+2. BARCODE SCANNING & LOOKUP:
+- When a barcode is visible in a photo or provided as digits:
+  -> Call 'lookup_barcode' immediately.
+  -> If found on Open Food Facts, 'lookup_barcode' automatically saves the product into the user's catalog and returns its productId.
+  -> If the barcode is not found on Open Food Facts, read the nutrition table from the photo/user and call 'save_product' including the 'barcode' field.
+
+3. LOGGING MEALS:
+- For MULTI-ITEM MEALS (full plate, combo, multiple dishes, e.g. 150g chicken breast + 200g rice + 10g olive oil):
+  -> ALWAYS call 'log_meal_items' to log all items in ONE tool call!
+- For single items, call 'log_meal'.
+- Whenever possible, log using 'productId' + 'quantity' + 'unit' (e.g. quantity: 150, unit: "g") with 'mealType'. The server calculates the exact macros automatically from the saved product.
+- If logging homemade, restaurant, or unpackaged food without a product label, provide 'name', 'calories', and estimated macros directly.
+
+4. USER FEEDBACK:
+- After saving a product and/or logging, give the user a clear, friendly confirmation stating:
+  a) The product name and that it was saved to their permanent catalog.
+  b) The meal type, quantity eaten, and resulting calories + macros.
+
+5. REAL-TIME CONTEXT RESOURCES:
+- You have direct read access to real-time diet resources:
+  • diet://today/summary — today's calories, macros, goals, and remaining budget
+  • diet://today/entries — all meals and items logged today
+  • diet://catalog/products — the user's permanent catalog of saved products
+  • diet://user/goals — daily targets (calories, protein, carbs, fat, fiber, etc.)
+  • diet://weight/recent — body weight logs from the last 30 days`,
         },
       },
       { headers: CORS },
@@ -690,9 +1188,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // tools/call requires an API key — accepted via ?key= query param or
-  // Authorization: Bearer header (query param is easier with Claude.ai connectors).
-  if (method === "tools/call") {
+  if (method === "resources/list") {
+    return NextResponse.json(
+      { jsonrpc: "2.0", id: id ?? null, result: { resources: RESOURCES } },
+      { headers: CORS },
+    );
+  }
+
+  // tools/call and resources/read require an API key — accepted via ?key= query param or
+  // Authorization: Bearer header.
+  if (method === "tools/call" || method === "resources/read") {
     const keyFromQuery = req.nextUrl.searchParams.get("key");
     const authHeader = req.headers.get("authorization");
     const rawKey =
@@ -727,6 +1232,32 @@ export async function POST(req: NextRequest) {
         },
         { headers: CORS },
       );
+    }
+
+    if (method === "resources/read") {
+      const { uri } = (params ?? {}) as { uri?: string };
+      if (!uri) {
+        return rpcError(id, -32602, "Missing uri parameter for resources/read");
+      }
+      try {
+        const content = await readResource(uri, userId, userTz);
+        return NextResponse.json(
+          { jsonrpc: "2.0", id: id ?? null, result: { contents: [content] } },
+          { headers: CORS },
+        );
+      } catch (e) {
+        return NextResponse.json(
+          {
+            jsonrpc: "2.0",
+            id: id ?? null,
+            error: {
+              code: -32002,
+              message: e instanceof Error ? e.message : "Resource read failed",
+            },
+          },
+          { headers: CORS },
+        );
+      }
     }
 
     const { name, arguments: args = {} } = (params ?? {}) as {
@@ -771,7 +1302,12 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   return NextResponse.json(
-    { name: "diet-tracker", version: "1.0.0", protocol: "MCP 2024-11-05" },
+    {
+      name: "diet-tracker",
+      version: "1.0.0",
+      protocol: "MCP 2024-11-05",
+      description: "Diet Tracker MCP Server for AI assistants (Claude, Cursor, Windsurf, ChatGPT, etc.)",
+    },
     { headers: CORS },
   );
 }

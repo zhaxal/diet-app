@@ -20,6 +20,7 @@
     "@prisma/client": "^6.2.1",
     "@scalar/api-reference": "^1.68.0",
     "@scalar/nextjs-api-reference": "^0.4.106",
+    "barcode-detector": "^3.2.2",
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^1.35.0",

@@ -117,7 +117,7 @@ export default function ProductsCard() {
           {!loaded ? "Loading…" : q
             ? `Nothing matches “${q}”.`
             : loaded
-              ? "No labels saved yet. Scan a barcode in Add food, or photograph a nutrition label and ask Claude to save it — it only has to read the label once."
+              ? "No labels saved yet. Scan a barcode in Add food, or photograph a nutrition label and ask your AI assistant to save it — it only has to read the label once."
               : "Loading…"}
         </p>)
       ) : (

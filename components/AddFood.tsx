@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ScanBarcode } from "lucide-react";
+import { ScanBarcode, Star, X } from "lucide-react";
 import {
   api,
   type Favorite,
@@ -75,9 +75,8 @@ interface Props {
   onRemoveCopied: (key: string) => void;
   onLogged: () => void;
   onFavoritesChanged: () => void;
-  /** A query handed over from Quick add, which only searches what you already eat. */
-  seedQuery: string;
-  onSeedConsumed: () => void;
+  seedQuery?: string;
+  onSeedConsumed?: () => void;
 }
 
 const MACRO_FIELDS = [
@@ -119,7 +118,7 @@ export default function AddFood({
   onRemoveCopied,
   onLogged,
   onFavoritesChanged,
-  seedQuery,
+  seedQuery = "",
   onSeedConsumed,
 }: Props) {
   const toast = useToast();
@@ -175,7 +174,7 @@ export default function AddFood({
     if (!seedQuery) return;
     setQ(seedQuery);
     searchRef.current?.focus();
-    onSeedConsumed();
+    onSeedConsumed?.();
   }, [seedQuery, onSeedConsumed]);
 
   const query = q.trim();
@@ -541,6 +540,40 @@ export default function AddFood({
     }
   }
 
+  async function deleteFav(id: string, name: string) {
+    const doomed = favorites.find((f) => f.id === id);
+    try {
+      await api.deleteFavorite(id);
+      onFavoritesChanged();
+      toast(
+        `Removed ${name}`,
+        "info",
+        doomed
+          ? {
+              label: "Undo",
+              onAct: () => {
+                return api
+                  .saveFavorite({
+                    name: doomed.name,
+                    calories: doomed.calories,
+                    protein: doomed.protein,
+                    carbs: doomed.carbs,
+                    fat: doomed.fat,
+                    fiber: doomed.fiber,
+                    sugar: doomed.sugar,
+                    sodium: doomed.sodium,
+                    mealType: doomed.mealType as Meal | undefined,
+                  })
+                  .then(() => onFavoritesChanged());
+              },
+            }
+          : undefined,
+      );
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not remove favorite", "error");
+    }
+  }
+
   // A label is per 100 of something. It can only be derived when the form knows
   // how much its numbers describe — which is why this used to be wrong: the old
   // control saved whatever was typed as a per-100g product even when the
@@ -608,9 +641,8 @@ export default function AddFood({
           aria-label="Search foods"
           className="field flex-1"
         />
-        {/* Chrome and Android only — Safari has no BarcodeDetector — so the
-            control is absent rather than present and broken where it cannot
-            work. Photographing the label for Claude remains the path there. */}
+        {/* Cross-browser barcode scanner: native BarcodeDetector on Chrome/Android,
+            pure ZXing polyfill on Safari/iOS, plus photo capture and manual fallback */}
         {canScan && (
           <button
             type="button"
@@ -734,6 +766,46 @@ export default function AddFood({
                   aria-label={`Remove ${c.name} from copied`}
                 >
                   ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Favorites tray, visible when not searching so your staple foods are 1 tap away */}
+      {!query && favorites.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+            Favorites
+          </p>
+          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+            {favorites.map((f) => (
+              <div
+                key={f.id}
+                className="flex shrink-0 items-stretch gap-1 rounded border border-line bg-panel-2 py-1 pl-2.5 pr-1"
+              >
+                <button
+                  type="button"
+                  onClick={() => pickEaten(f, true)}
+                  className="text-left"
+                >
+                  <div className="flex items-center gap-1 text-xs font-medium text-accent">
+                    <Star size={11} className="shrink-0 fill-accent" strokeWidth={1.75} aria-hidden="true" />
+                    <span>{f.name}</span>
+                    <span className="num text-accent">{f.calories}</span>
+                  </div>
+                  <div className="num text-2xs text-ink-faint">
+                    {f.mealType ? `${f.mealType} · 1 portion` : "1 portion"}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteFav(f.id, f.name)}
+                  className="glyph-btn ml-1 border-l border-line text-ink-faint hover:text-over"
+                  aria-label={`Remove ${f.name} from favorites`}
+                >
+                  <X size={12} strokeWidth={1.75} />
                 </button>
               </div>
             ))}

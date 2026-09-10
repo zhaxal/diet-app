@@ -14,10 +14,11 @@ standing in a kitchen, sitting at a table, one hand occupied. Sessions are secon
 long for capture and a minute or two for review. The desktop browser is a secondary,
 occasional context (settings, API key, longer corrections).
 
-**Second first-class user: an assistant acting on the owner's behalf.** Claude reaches
-the same data through the MCP tool surface and the REST API — including reading a
-photographed nutrition label and logging from it. Anything the UI can do to a day's
-log, the assistant can do too, and both paths write to the same records.
+**Second first-class user: an assistant acting on the owner's behalf.** Any AI assistant
+(Claude, Cursor, Windsurf, ChatGPT, etc.) reaches the same data through the MCP tool
+surface and the REST API — including reading a photographed nutrition label, scanning
+barcodes, and logging from them. Anything the UI can do to a day's log, the assistant
+can do too, and both paths write to the same records.
 
 **Confirmed direction: personal now, a handful of invited people later.** Accounts,
 per-user isolation, and registration are already real; the product is built so a small
@@ -82,10 +83,7 @@ easy to see, verify, and correct.
   or the whole record from the first entry ever logged.
 - Quantities carry a unit: g/oz against a per-100g product, ml/fl oz against a per-100ml one, or
   `serving` when the label declares one. Incompatible pairings are refused, never guessed at.
-- Barcode capture in the browser via the native `BarcodeDetector`, falling back to Open Food
-  Facts when the code is not already in the catalog. Chrome/Android only — Safari has no such
-  API, so the control is hidden there and photographing the label for the assistant remains the
-  path.
+- Barcode capture in the browser via native `BarcodeDetector` (Chrome/Android) with WASM ZXing polyfill for Safari/iOS, photo upload fallback, and manual digit entry, looking up first in the user's catalog and falling back to Open Food Facts.
 - TDEE inputs (sex, birth year, height) and per-nutrient daily goals.
 - Copy any entry, or a whole meal, onto a device-local tray, then re-log it from Add food at a
   different amount and in a different unit. The tray is a clipboard, not a record: it lives in
@@ -120,7 +118,7 @@ easy to see, verify, and correct.
 ## Brand Commitments
 
 Name: **Diet Tracker** (`short_name` "Diet"). Existing self-description:
-"Track calories and macros. API-first, Claude-friendly."
+"Track calories and macros. API-first, MCP & AI-ready."
 
 **No binding visual commitment was made.** The current near-monochrome
 "instrument panel" language in `app/globals.css` — hairline borders, square panels,

@@ -38,7 +38,6 @@ import { Meter } from "@/components/Meter";
 import BottomNav, { type Tab } from "@/components/BottomNav";
 import ThemeToggle from "@/components/ThemeToggle";
 import GoalsCard from "@/components/GoalsCard";
-import QuickAdd from "@/components/QuickAdd";
 import EntryRow from "@/components/EntryRow";
 import WeightCard from "@/components/WeightCard";
 import TrendsCard from "@/components/TrendsCard";
@@ -140,6 +139,7 @@ function Dashboard() {
   const [urlCopied, setUrlCopied] = useState(false);
   const [urlRevealed, setUrlRevealed] = useState(false);
   const [origin, setOrigin] = useState("");
+  const [clientSnippet, setClientSnippet] = useState<"cursor" | "claude-desktop" | "claude-cli" | "windsurf">("cursor");
 
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -164,11 +164,8 @@ function Dashboard() {
 
   // The copy tray. Device state, not a record - see lib/copied.ts.
   const [copied, setCopied] = useState<CopiedItem[]>([]);
-  // A query handed up from Quick add, which only knows what you already eat.
-  const [addFoodSeed, setAddFoodSeed] = useState("");
-
   const [meal, setMeal] = useState<Meal>(mealForNow);
-  const [showAdd, setShowAdd] = useState(false);
+  const [showAdd, setShowAdd] = useState(true);
   const [exporting, setExporting] = useState<"json" | "csv" | null>(null);
   const [lastLoaded, setLastLoaded] = useState<number | null>(null);
   const lastLoadedRef = useRef<number | null>(null);
@@ -401,7 +398,7 @@ function Dashboard() {
 
   // An installed PWA is not remounted when it comes back from the background, so
   // without this the screen keeps showing whatever it loaded hours ago — including
-  // a day that Claude has since written to. Revalidate whenever we become visible,
+  // a day that an AI assistant has since written to. Revalidate whenever we become visible,
   // and roll the date forward if we slept through midnight while sitting on today.
   const revalidate = useCallback(async () => {
     setRefreshing(true);
@@ -625,6 +622,16 @@ function Dashboard() {
     }
   }
 
+  async function copySnippet(text: string, clientName: string) {
+    try {
+      if (!navigator.clipboard) throw new Error("no clipboard");
+      await navigator.clipboard.writeText(text);
+      toast(`Copied ${clientName} configuration`, "success");
+    } catch {
+      toast("Could not copy — please copy manually", "error");
+    }
+  }
+
   async function regenerateKey() {
     if (!confirm("Regenerate key? The old connector URL will stop working immediately.")) return;
     try {
@@ -684,7 +691,7 @@ function Dashboard() {
   const calOver = calLeft < 0;
 
   return (
-    <div className="mx-auto max-w-2xl px-3 pb-24 pt-3">
+    <div className="mx-auto max-w-2xl px-3 pb-32 pt-3">
       {/* ── Today ─────────────────────────────────────── */}
       {tab === "today" && (
         <>
@@ -775,7 +782,7 @@ function Dashboard() {
             >
               <span className="text-2xs text-ink-dim">
                 Offline — showing the reading from{" "}
-                <span className="num">{clockTime(staleSince)}</span>. Claude may
+                <span className="num">{clockTime(staleSince)}</span>. An assistant may
                 have logged since.
               </span>
               <button
@@ -942,26 +949,8 @@ function Dashboard() {
             })}
           </div>
 
-          {/* Quick add */}
-          {(favorites.length > 0 || recent.length > 0) && (
-            <section className="panel mt-2 p-3">
-              <QuickAdd
-                favorites={favorites}
-                recent={recent}
-                selectedMeal={meal}
-                selectedDate={date}
-                onLogged={() => loadDay(date)}
-                onFavoriteDeleted={(id) => setFavorites((f) => f.filter((x) => x.id !== id))}
-                onSearchAll={(query) => {
-                  setAddFoodSeed(query);
-                  setShowAdd(true);
-                }}
-              />
-            </section>
-          )}
-
           {/* Add food — the one place an entry is composed, whether it comes
-              from the copy tray, a saved label, something eaten before, Open
+              from the copy tray, favorites, a saved label, something eaten before, Open
               Food Facts, or nothing but the numbers on a wrapper. */}
           <Panel
             title="Add food"
@@ -983,8 +972,6 @@ function Dashboard() {
               onFavoritesChanged={() =>
                 api.listFavorites().then(({ favorites: favs }) => setFavorites(favs)).catch(() => {})
               }
-              seedQuery={addFoodSeed}
-              onSeedConsumed={() => setAddFoodSeed("")}
             />
           </Panel>
 
@@ -1010,7 +997,7 @@ function Dashboard() {
                       onClick={() => goTab("settings")}
                       className="text-ink-faint hover:text-ink"
                     >
-                      or let Claude log it for you
+                      or let an AI assistant log it for you
                     </button>
                   )}
                 </div>
@@ -1135,11 +1122,9 @@ function Dashboard() {
               last section on the screen, below Export. It sits above the archival
               controls now, and below Goals, which is where "Set a goal" lands. */}
           <section className="panel mt-2 p-3">
-            <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">Claude connector</h2>
+            <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">AI Assistant / MCP connector</h2>
             <p className="mt-1 text-2xs text-ink-faint">
-              Claude.ai → Settings → Connectors → Add custom connector. Photograph a
-              nutrition label and Claude saves it to the catalog below, where Add
-              food can log it by weight without another photo.
+              Connect any Model Context Protocol (MCP) client — Claude (Web & Desktop), Cursor, Windsurf, Claude Code, ChatGPT, etc. Photograph a nutrition label or scan a barcode and your AI assistant saves it to the catalog automatically, where you can log it anytime by weight or portion.
             </p>
             <p className="mt-1 text-2xs text-ink-faint">
               Anyone with this URL can read and change your diet data.
@@ -1159,6 +1144,93 @@ function Dashboard() {
                 {urlCopied ? "✓" : "Copy"}
               </button>
             </div>
+
+            {/* Quick Client Setup Snippets */}
+            <div className="mt-3 rounded border p-2" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+              <div className="flex items-center justify-between border-b pb-1.5" style={{ borderColor: "var(--line)" }}>
+                <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+                  Client configurations
+                </span>
+                <span className="num text-2xs text-ink-faint">JSON-RPC / HTTP</span>
+              </div>
+              <div className="no-scrollbar mt-1.5 flex gap-1 overflow-x-auto pb-0.5">
+                {(
+                  [
+                    { id: "cursor", label: "Cursor" },
+                    { id: "claude-desktop", label: "Claude Desktop" },
+                    { id: "claude-cli", label: "Claude Code" },
+                    { id: "windsurf", label: "Windsurf" },
+                  ] as const
+                ).map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setClientSnippet(c.id)}
+                    className="rounded px-2.5 py-1 text-2xs font-medium transition-colors min-h-[28px] shrink-0"
+                    style={{
+                      background: clientSnippet === c.id ? "var(--ink)" : "transparent",
+                      color: clientSnippet === c.id ? "var(--panel)" : "var(--ink-dim)",
+                    }}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-2">
+                <p className="text-2xs text-ink-faint">
+                  {clientSnippet === "cursor" && "Paste into .cursor/mcp.json (or Cursor Settings → MCP):"}
+                  {clientSnippet === "claude-desktop" && "Paste into claude_desktop_config.json:"}
+                  {clientSnippet === "claude-cli" && "Run in terminal:"}
+                  {clientSnippet === "windsurf" && "Paste into ~/.codeium/windsurf/mcp_config.json:"}
+                </p>
+                <div className="mt-1 flex items-start gap-1.5">
+                  <pre
+                    className="font-mono max-h-32 flex-1 overflow-x-auto rounded p-2 text-2xs text-ink-dim"
+                    style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
+                  >
+                    {clientSnippet === "cursor" && JSON.stringify({ mcpServers: { "diet-tracker": { url: mcpUrl || "https://your-domain/api/mcp?key=YOUR_KEY" } } }, null, 2)}
+                    {clientSnippet === "claude-desktop" && JSON.stringify({ mcpServers: { "diet-tracker": { url: mcpUrl || "https://your-domain/api/mcp?key=YOUR_KEY" } } }, null, 2)}
+                    {clientSnippet === "claude-cli" && `claude mcp add --transport http diet-tracker "${mcpUrl || "https://your-domain/api/mcp?key=YOUR_KEY"}"`}
+                    {clientSnippet === "windsurf" && JSON.stringify({ mcpServers: { "diet-tracker": { serverUrl: mcpUrl || "https://your-domain/api/mcp?key=YOUR_KEY" } } }, null, 2)}
+                  </pre>
+                  <button
+                    onClick={() => {
+                      const text =
+                        clientSnippet === "cursor"
+                          ? JSON.stringify({ mcpServers: { "diet-tracker": { url: mcpUrl } } }, null, 2)
+                          : clientSnippet === "claude-desktop"
+                            ? JSON.stringify({ mcpServers: { "diet-tracker": { url: mcpUrl } } }, null, 2)
+                            : clientSnippet === "claude-cli"
+                              ? `claude mcp add --transport http diet-tracker "${mcpUrl}"`
+                              : JSON.stringify({ mcpServers: { "diet-tracker": { serverUrl: mcpUrl } } }, null, 2);
+                      const label =
+                        clientSnippet === "cursor"
+                          ? "Cursor"
+                          : clientSnippet === "claude-desktop"
+                            ? "Claude Desktop"
+                            : clientSnippet === "claude-cli"
+                              ? "Claude Code"
+                              : "Windsurf";
+                      copySnippet(text, label);
+                    }}
+                    disabled={!mcpUrl}
+                    className="btn btn-ghost shrink-0 text-2xs"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* MCP Capabilities Hint */}
+            <div className="mt-2 text-2xs text-ink-faint">
+              <span>Includes </span>
+              <strong className="font-semibold text-ink-dim">13 tools</strong>
+              <span> (barcode lookup, nutrition OCR, auto-saving) &amp; </span>
+              <strong className="font-semibold text-ink-dim">5 live resources</strong>
+              <span> (@today/summary, @today/entries, @catalog/products).</span>
+            </div>
+
             <div className="mt-2 flex items-center justify-between text-2xs">
               <span className="text-ink-faint">
                 Timezone <span className="num text-ink-dim">{goals.timezone}</span>

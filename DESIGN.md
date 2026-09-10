@@ -275,7 +275,7 @@ kind of thing you are looking at, which is why it must not be diluted.
 - **Headline** (sans, 600, 0.875rem, 0.1em, uppercase): Tab titles — "Trends", "Weight",
   "Settings". Deliberately small: a heading here is a location marker, not a banner.
 - **Title** (sans, 600, 0.6875rem, 0.05em, uppercase): Every panel header and meal-group
-  header ("Add food", "breakfast", "Claude connector").
+  header ("Add food", "breakfast", "AI Assistant / MCP connector").
 - **Body** (sans, 400, 0.875rem, line-height 1.25rem): Food names, input values, prose. The
   only size at which real sentences are set.
 - **Label** (sans, 400, 0.6875rem, 0.05em, uppercase, faint ink): The annotation layer —
@@ -364,7 +364,7 @@ annotation label lifts to 12px. Glyph hit
 areas never overlap neighboring controls. The week strip scrolls if seven targets cannot fit.
 
 Settings keeps Daily Goals open because it is the destination of every “Set a goal” action.
-The optional TDEE estimate and product catalog use collapsed panels. The Claude connector URL
+The optional TDEE estimate and product catalog use collapsed panels. The MCP connector URL
 is a bearer credential: its key is masked by default, Copy does not reveal it, and Reveal is a
 deliberate adjacent action. The panel states that anyone holding the URL can read and change the
 account’s diet data.

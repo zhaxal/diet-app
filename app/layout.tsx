@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Diet Tracker",
-  description: "Track calories and macros. API-first, Claude-friendly.",
+  description: "Track calories and macros. API-first, MCP & AI-ready.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

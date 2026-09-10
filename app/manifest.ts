@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Diet Tracker",
     short_name: "Diet",
-    description: "Track calories and macros. API-first, Claude-friendly.",
+    description: "Track calories and macros. API-first, MCP & AI-ready.",
     start_url: "/",
     display: "standalone",
     background_color: "#090c11",
