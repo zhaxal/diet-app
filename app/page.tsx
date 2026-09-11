@@ -140,7 +140,7 @@ function Dashboard() {
   // The copy tray. Device state, not a record - see lib/copied.ts.
   const [copied, setCopied] = useState<CopiedItem[]>([]);
   const [meal, setMeal] = useState<Meal>(mealForNow);
-  const [showAdd, setShowAdd] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
   const [exporting, setExporting] = useState<"json" | "csv" | null>(null);
   const [lastLoaded, setLastLoaded] = useState<number | null>(null);
   const lastLoadedRef = useRef<number | null>(null);

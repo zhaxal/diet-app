@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy } from "lucide-react";
+import { Copy, Pencil } from "lucide-react";
 import { api, type FoodEntry } from "@/lib/api-client";
 import { clockTime } from "@/lib/time-client";
 import { comparableUnits, formatQuantity, unitLabel, type QuantityUnit } from "@/lib/units";
@@ -288,17 +288,25 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
     <li className="entry-row group flex items-center gap-2 px-3 py-2">
       <button
         onClick={beginEdit}
-        className="entry-identity min-w-0 flex-1 text-left text-sm text-ink hover:text-accent"
-        title="Edit"
+        className="entry-identity min-w-0 flex-1 text-left text-sm text-ink hover:text-accent flex items-center justify-between gap-2"
+        title="Edit entry"
       >
-        <span className="block break-words">{entry.name}</span>
-        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-2xs text-ink-faint">
-          {entry.quantity != null && <span className="num text-ink-dim">
-            {formatQuantity(entry.quantity, entry.quantityUnit ?? "g")}
-          </span>}
-          <span className="num">{clockTime(entry.consumedAt)}</span>
-          {entry.source === "mcp" && <span title="Logged by the assistant">ai</span>}
-        </span>
+        <div className="min-w-0">
+          <span className="block break-words">{entry.name}</span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-2xs text-ink-faint">
+            {entry.quantity != null && <span className="num text-ink-dim">
+              {formatQuantity(entry.quantity, entry.quantityUnit ?? "g")}
+            </span>}
+            <span className="num">{clockTime(entry.consumedAt)}</span>
+            {entry.source === "mcp" && <span title="Logged by the assistant">ai</span>}
+          </span>
+        </div>
+        <Pencil
+          size={12}
+          strokeWidth={1.75}
+          className="shrink-0 text-ink-faint opacity-40 group-hover:opacity-100 group-hover:text-accent transition-opacity pointer-events-none"
+          aria-hidden="true"
+        />
       </button>
 
       <span className="num shrink-0 text-right text-sm font-semibold text-ink">
@@ -308,23 +316,27 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
           again here. Eating the same thing rarely means eating the same amount,
           and a duplicate that lands before you can say otherwise is a figure
           you then have to correct. */}
-      <button
-        onClick={() => onCopy(entry)}
-        className="glyph-btn shrink-0 text-ink-faint transition-colors hover:text-ink"
-        aria-label={`Copy ${entry.name} to add food`}
-        title="Copy to Add food"
-      >
-        <Copy size={13} strokeWidth={1.75} aria-hidden="true" />
-      </button>
-      {/* Always visible — this was opacity-0 until group-hover, i.e. permanently
-          invisible on a touch device while remaining tappable. */}
-      <button
-        onClick={() => onDelete(entry.id)}
-        className="glyph-btn shrink-0 text-2xs text-ink-faint transition-colors hover:text-over"
-        aria-label={`Delete ${entry.name}`}
-      >
-        ✕
-      </button>
+      <div className="flex items-center shrink-0">
+        <button
+          onClick={() => onCopy(entry)}
+          className="glyph-btn shrink-0 text-ink-faint transition-colors hover:text-ink"
+          aria-label={`Copy ${entry.name} to add food`}
+          title="Copy to Add food"
+        >
+          <Copy size={13} strokeWidth={1.75} aria-hidden="true" />
+        </button>
+        {/* Hairline separation between safe copy and destructive delete to prevent tap collisions */}
+        <span className="w-px h-3.5 bg-line shrink-0 mx-0.5" aria-hidden="true" />
+        {/* Always visible — this was opacity-0 until group-hover, i.e. permanently
+            invisible on a touch device while remaining tappable. */}
+        <button
+          onClick={() => onDelete(entry.id)}
+          className="glyph-btn shrink-0 text-2xs text-ink-faint transition-colors hover:text-over"
+          aria-label={`Delete ${entry.name}`}
+        >
+          ✕
+        </button>
+      </div>
     </li>
   );
 }

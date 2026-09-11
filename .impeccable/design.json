@@ -96,7 +96,7 @@
         "role": "secondary",
         "displayName": "Over Red",
         "canonical": "#b91c1c",
-        "dark": "#f87171",
+        "dark": "#ef5350",
         "purpose": "Past-target figures and fills, and destructive affordances on hover.",
         "tonalRamp": ["oklch(20% 0.060 27)", "oklch(30% 0.100 27)", "oklch(40% 0.140 27)", "oklch(51% 0.175 27)", "oklch(63% 0.180 27)", "oklch(74% 0.155 27)", "oklch(86% 0.100 27)", "oklch(95% 0.040 27)"]
       },
