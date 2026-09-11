@@ -20,11 +20,22 @@ export function consumedAtFor(date: string): string {
 }
 
 /** "14:32" in the viewer's own locale. */
-export function clockTime(value: string | number | Date): string {
+export function clockTime(value: string | number | Date = new Date()): string {
   return new Date(value).toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/** The seven days ending on `end`, for the header strip. */
+export function weekEnding(end: string): string[] {
+  const [y, m, d] = end.split("-").map(Number);
+  const out: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const dt = new Date(Date.UTC(y, m - 1, d - i));
+    out.push(dt.toISOString().slice(0, 10));
+  }
+  return out;
 }
 
 /**

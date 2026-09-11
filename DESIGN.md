@@ -531,7 +531,7 @@ bumping `VERSION` in `public/sw.js` — the icons are cache-first and are not co
 
 ### Navigation
 - **Bottom nav:** Three fixed tabs, each a 22px lucide glyph over a 0.6875rem label —
-  `CalendarDays` (a day is the unit, and the week strip above it is a calendar), `Dumbbell`
+  `Utensils` (the diet and daily food log), `Dumbbell`
   (the gym and workout tracker), and `Settings2` (sliders, echoing the meter
   tracks that make up most of what it opens). The three silhouettes — frame, barbell,
   sliders — are distinct enough to scan before the labels are read. The active tab is amber at

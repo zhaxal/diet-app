@@ -33,7 +33,6 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<"portion" | "values">("values");
   const initialForm = () => ({
     name: entry.name,
     calories: entry.calories.toString(),
@@ -49,29 +48,44 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
   });
   const [form, setForm] = useState(initialForm);
   const hasOriginalAmount = entry.quantity != null && entry.quantity > 0;
+  const [showNutrients, setShowNutrients] = useState(false);
+  const [customNutrients, setCustomNutrients] = useState(false);
+
   const portion = resizePortion(entry, Number(form.quantity), form.quantityUnit);
-  const shownValues = mode === "portion" && portion ? macroStrings(portion) : form;
+  const shownValues = customNutrients || !portion ? form : macroStrings(portion);
 
   function beginEdit() {
     setForm(initialForm());
-    setMode(hasOriginalAmount ? "portion" : "values");
+    setShowNutrients(!hasOriginalAmount);
+    setCustomNutrients(!hasOriginalAmount);
     setEditing(true);
   }
 
-  function changeMode(next: "portion" | "values") {
-    if (next === "values" && portion) setForm((current) => ({ ...current, ...macroStrings(portion) }));
-    setMode(next);
+  function handleNutrientChange(key: string, value: string) {
+    setCustomNutrients(true);
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleNutrients() {
+    if (!showNutrients) {
+      if (portion && !customNutrients) {
+        setForm((current) => ({ ...current, ...macroStrings(portion) }));
+      }
+      setShowNutrients(true);
+    } else {
+      setShowNutrients(false);
+    }
   }
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    if (mode === "portion" && !portion) return;
+    if (!customNutrients && hasOriginalAmount && !portion) return;
     setSaving(true);
     try {
       const amount = Number(form.quantity);
       const hasAmount = form.quantity.trim() !== "" && Number.isFinite(amount) && amount > 0;
       const { entry: updated } = await api.updateEntry(entry.id, {
-        name: form.name,
+        name: form.name.trim(),
         calories: Number(shownValues.calories),
         protein: Number(shownValues.protein),
         carbs: Number(shownValues.carbs),
@@ -80,8 +94,6 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
         sugar: Number(shownValues.sugar),
         sodium: Number(shownValues.sodium),
         mealType: form.mealType as FoodEntry["mealType"],
-        // The amount is corrected here too, and clearing the field removes the
-        // claim rather than leaving a stale one attached to new figures.
         quantity: hasAmount ? amount : null,
         quantityUnit: hasAmount ? form.quantityUnit : null,
       });
@@ -96,111 +108,177 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
   }
 
   if (editing) {
-    // A row logged in millilitres is corrected in millilitres. Offering grams
-    // for it would invite a unit change that silently reinterprets the figure.
     const units = comparableUnits((entry.quantityUnit ?? "g") as QuantityUnit);
+    const amountNum = Number(form.quantity);
+    const amountInvalid =
+      hasOriginalAmount && !customNutrients && (!Number.isFinite(amountNum) || amountNum <= 0);
+
     return (
-      <li className="px-3 py-2" style={{ background: "var(--panel-2)" }}>
-        <form onSubmit={save} className="grid grid-cols-2 gap-1.5 min-[400px]:grid-cols-4">
-          <input
-            required
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="field col-span-full"
-            aria-label="Food name"
-          />
-          {hasOriginalAmount && (
-            <div className="col-span-full flex rounded border border-line" role="group" aria-label="How to edit this entry">
-              {([ ["portion", "Change portion"], ["values", "Correct values"] ] as const).map(([value, label]) => (
-                <button key={value} type="button" aria-pressed={mode === value}
-                  onClick={() => changeMode(value)}
-                  className={`btn flex-1 ${mode === value ? "btn-primary" : "text-ink-dim"}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-          <p className="col-span-full text-xs text-ink-dim">
-            {mode === "portion"
-              ? `Nutrition scales from the saved ${formatQuantity(entry.quantity!, entry.quantityUnit ?? "g")} portion. Preview the totals below before saving.`
-              : "Enter the totals for the whole entry. Changing the amount here leaves these values unchanged."}
-          </p>
-          {/* Labels persist above the field. A placeholder disappears the moment
-              the field is populated, and these are always populated — leaving
-              seven identical boxes of digits at the exact moment the user is
-              being asked to verify them. */}
-          {NUMERIC_FIELDS.map(({ key, label, max }) => (
-            <label key={key} className="block">
+      <li className="px-3 py-2.5 border-y border-line" style={{ background: "var(--panel-2)" }}>
+        <form onSubmit={save} className="space-y-2">
+          {/* Food name */}
+          <div>
+            <label className="block text-2xs uppercase tracking-wider text-ink-faint">Food</label>
+            <input
+              required
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="field mt-0.5 w-full font-medium"
+              aria-label="Food name"
+            />
+          </div>
+
+          {/* Amount, Unit, Meal row */}
+          <div className="grid grid-cols-2 gap-1.5 min-[400px]:grid-cols-4 items-end">
+            <label className="block min-[400px]:col-span-2">
               <span className="block text-2xs uppercase tracking-wider text-ink-faint">
-                {label}
+                Amount
               </span>
               <input
                 type="number"
-                min={0}
-                max={max}
+                min={hasOriginalAmount && !customNutrients ? 0.000001 : 0}
+                required={hasOriginalAmount && !customNutrients}
                 step="any"
-                required
-                readOnly={mode === "portion"}
-                value={shownValues[key]}
-                onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                value={form.quantity}
+                onChange={(e) => setForm({ ...form, quantity: e.target.value })}
                 className="field num mt-0.5 w-full text-right"
               />
             </label>
-          ))}
-          <label className="block">
-            <span className="block text-2xs uppercase tracking-wider text-ink-faint">
-              Amount
-            </span>
-            <input
-              type="number"
-              min={mode === "portion" ? 0.000001 : 0}
-              required={mode === "portion"}
-              step="any"
-              value={form.quantity}
-              onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-              className="field num mt-0.5 w-full text-right"
-            />
-          </label>
-          {units.length > 1 ? (
+
+            {units.length > 1 ? (
+              <Select
+                value={form.quantityUnit}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    quantity: restateAmount(form.quantity, form.quantityUnit, e.target.value as QuantityUnit),
+                    quantityUnit: e.target.value as QuantityUnit,
+                  })
+                }
+                aria-label="Amount unit"
+                wrapClassName="self-end"
+              >
+                {units.map((u) => (
+                  <option key={u} value={u}>
+                    {unitLabel(u)}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <div className="self-end pb-2 text-2xs uppercase tracking-wider text-ink-faint">
+                {unitLabel(form.quantityUnit)}
+              </div>
+            )}
+
             <Select
-              value={form.quantityUnit}
-              onChange={(e) =>
-                setForm({ ...form,
-                  quantity: restateAmount(form.quantity, form.quantityUnit, e.target.value as QuantityUnit),
-                  quantityUnit: e.target.value as QuantityUnit })
-              }
-              aria-label="Amount unit"
+              value={form.mealType}
+              onChange={(e) => setForm({ ...form, mealType: e.target.value as FoodEntry["mealType"] })}
+              aria-label="Meal"
+              className="capitalize"
               wrapClassName="self-end"
             >
-              {units.map((u) => (
-                <option key={u} value={u}>
-                  {unitLabel(u)}
+              {MEALS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
                 </option>
               ))}
             </Select>
-          ) : (
-            <div className="self-end pb-1.5 text-2xs uppercase tracking-wider text-ink-faint">
-              {unitLabel(form.quantityUnit)}
+          </div>
+
+          {/* Live macro preview readout */}
+          <div
+            className="flex items-baseline justify-between rounded border px-2.5 py-1.5 text-2xs"
+            style={{ borderColor: "var(--line)", background: "var(--panel)" }}
+          >
+            <div className="num flex items-baseline gap-2">
+              <span className="text-sm font-semibold text-ink">
+                {shownValues.calories || 0}
+              </span>
+              <span className="text-ink-faint">kcal</span>
+              <span className="text-ink-dim ml-1">
+                P{shownValues.protein || 0} C{shownValues.carbs || 0} F{shownValues.fat || 0}
+              </span>
+            </div>
+            {hasOriginalAmount && !customNutrients && (
+              <span className="text-ink-faint">
+                scales with portion
+              </span>
+            )}
+            {customNutrients && (
+              <span className="text-accent uppercase tracking-wider font-semibold">
+                custom values
+              </span>
+            )}
+          </div>
+
+          {/* Progressive disclosure: Raw nutrients */}
+          <div className="flex items-center justify-between pt-0.5">
+            <button
+              type="button"
+              onClick={toggleNutrients}
+              className="text-2xs text-ink-faint hover:text-ink font-medium"
+            >
+              {showNutrients ? "− Hide detailed nutrients" : "+ Edit raw nutrients"}
+            </button>
+            {hasOriginalAmount && customNutrients && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomNutrients(false);
+                  if (portion) setForm((curr) => ({ ...curr, ...macroStrings(portion) }));
+                }}
+                className="text-2xs text-accent hover:underline"
+              >
+                Reset to portion scale
+              </button>
+            )}
+          </div>
+
+          {showNutrients && (
+            <div className="grid grid-cols-2 gap-1.5 min-[400px]:grid-cols-4 pt-1 border-t border-line">
+              {NUMERIC_FIELDS.map(({ key, label, max }) => (
+                <label key={key} className="block">
+                  <span className="block text-2xs uppercase tracking-wider text-ink-faint">
+                    {label}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={max}
+                    step="any"
+                    required
+                    value={shownValues[key]}
+                    onChange={(e) => handleNutrientChange(key, e.target.value)}
+                    className="field num mt-0.5 w-full text-right"
+                  />
+                </label>
+              ))}
             </div>
           )}
-          <Select
-            value={form.mealType}
-            onChange={(e) => setForm({ ...form, mealType: e.target.value as FoodEntry["mealType"] })}
-            aria-label="Meal"
-            className="capitalize"
-            wrapClassName="col-span-2 self-end"
-          >
-            {MEALS.map((m) => <option key={m} value={m}>{m}</option>)}
-          </Select>
-          {mode === "portion" && !portion && (
-            <p className="col-span-full text-xs text-over" role="status">Enter a positive amount to preview and save.</p>
+
+          {amountInvalid && (
+            <p className="text-xs text-over" role="status">
+              Enter a positive amount to preview and save.
+            </p>
           )}
-          <button type="submit" disabled={saving || (mode === "portion" && !portion)} className="btn btn-primary col-span-1 min-[400px]:col-span-2">
-            {saving ? "Saving…" : "Save"}
-          </button>
-          <button type="button" onClick={() => setEditing(false)} className="btn btn-ghost col-span-1 min-[400px]:col-span-2">
-            Cancel
-          </button>
+
+          {/* Action buttons */}
+          <div className="flex gap-2 pt-1">
+            <button
+              type="submit"
+              disabled={saving || Boolean(amountInvalid)}
+              className="btn btn-primary flex-1 py-2 text-center"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="btn btn-ghost flex-1 py-2 text-center"
+            >
+              Cancel
+            </button>
+          </div>
         </form>
       </li>
     );

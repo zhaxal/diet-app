@@ -451,6 +451,7 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
  */
 function Adherence({ days, goal }: { days: TrendDay[]; goal: number }) {
   const scroller = useRef<HTMLDivElement | null>(null);
+  const [inspectDay, setInspectDay] = useState<TrendDay | null>(null);
   const folded = days.length > 31;
 
   // The most recent week is the one worth seeing first.
@@ -470,17 +471,63 @@ function Adherence({ days, goal }: { days: TrendDay[]; goal: number }) {
   const over = days.filter((d) => d.count > 0 && d.calories > goal).length;
   const label = `${inRange} days in range, ${over} over, ${days.length - inRange - over} never logged`;
 
+  const inspector = inspectDay && (
+    <div
+      className="mt-2 flex items-center justify-between rounded border px-2 py-1 text-2xs"
+      style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
+    >
+      <span className="num font-semibold text-ink">{inspectDay.date}</span>
+      <span className="num text-ink-dim">
+        {inspectDay.count === 0 ? (
+          <span className="text-ink-faint">Nothing logged</span>
+        ) : (
+          <>
+            {Math.round(inspectDay.calories)} / {goal} kcal{" "}
+            <span
+              className="font-semibold uppercase tracking-wider"
+              style={{
+                color: inspectDay.calories > goal ? "var(--over)" : "var(--accent)",
+              }}
+            >
+              · {inspectDay.calories > goal ? "over" : "in range"}
+            </span>
+          </>
+        )}
+      </span>
+      <button
+        type="button"
+        onClick={() => setInspectDay(null)}
+        className="text-ink-faint hover:text-ink -mr-0.5 px-1 font-mono text-xs leading-none"
+        aria-label="Dismiss inspection"
+      >
+        ×
+      </button>
+    </div>
+  );
+
   if (!folded) {
     return (
-      <div className="mt-2 flex gap-px" role="img" aria-label={label}>
-        {days.map((d) => (
-          <div
-            key={d.date}
-            title={title(d)}
-            className="h-7 flex-1"
-            style={{ background: fill(state(d)) }}
-          />
-        ))}
+      <div className="mt-2">
+        <div className="flex gap-px" role="region" aria-label={label}>
+          {days.map((d) => {
+            const isSelected = inspectDay?.date === d.date;
+            return (
+              <button
+                key={d.date}
+                type="button"
+                onClick={() => setInspectDay((cur) => (cur?.date === d.date ? null : d))}
+                title={title(d)}
+                aria-label={title(d)}
+                aria-pressed={isSelected}
+                className={`h-7 flex-1 transition-opacity ${
+                  isSelected ? "ring-1 ring-ink opacity-100" : "hover:opacity-85"
+                }`}
+                style={{ background: fill(state(d)) }}
+              />
+            );
+          })}
+        </div>
+        {inspector}
       </div>
     );
   }
@@ -506,7 +553,7 @@ function Adherence({ days, goal }: { days: TrendDay[]; goal: number }) {
             </span>
           ))}
         </div>
-        <div ref={scroller} className="no-scrollbar overflow-x-auto" role="img" aria-label={label}>
+        <div ref={scroller} className="no-scrollbar overflow-x-auto" role="region" aria-label={label}>
           <div
             className="grid gap-px"
             style={{
@@ -518,17 +565,27 @@ function Adherence({ days, goal }: { days: TrendDay[]; goal: number }) {
             {Array.from({ length: lead }, (_, i) => (
               <div key={`pad${i}`} className="h-2 w-2" />
             ))}
-            {days.map((d) => (
-              <div
-                key={d.date}
-                title={title(d)}
-                className="h-2 w-2"
-                style={{ background: fill(state(d)) }}
-              />
-            ))}
+            {days.map((d) => {
+              const isSelected = inspectDay?.date === d.date;
+              return (
+                <button
+                  key={d.date}
+                  type="button"
+                  onClick={() => setInspectDay((cur) => (cur?.date === d.date ? null : d))}
+                  title={title(d)}
+                  aria-label={title(d)}
+                  aria-pressed={isSelected}
+                  className={`h-2 w-2 transition-transform ${
+                    isSelected ? "ring-1 ring-ink scale-125 z-10" : ""
+                  }`}
+                  style={{ background: fill(state(d)) }}
+                />
+              );
+            })}
           </div>
         </div>
       </div>
+      {inspector}
       <div className="mt-1.5 flex items-center gap-3 text-2xs text-ink-faint">
         {[
           { c: "var(--accent)", t: "in range" },
