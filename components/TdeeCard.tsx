@@ -1,14 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { api, type Goals } from "@/lib/api-client";
+import { type Goals } from "@/lib/api-client";
 import Select from "./Select";
-import { useToast } from "./Toast";
+
+export interface CalculatedGoals {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  sex: "male" | "female";
+  birthYear: number;
+  heightCm: number;
+}
 
 interface Props {
   goals: Goals;
-  latestWeight: number | null; // in the user's weightUnit
-  onGoalsChange: (g: Goals) => void;
+  latestWeight: number | null; // in user's weightUnit
+  onApply: (calc: CalculatedGoals) => void;
 }
 
 const ACTIVITY: { label: string; factor: number }[] = [
@@ -20,8 +29,7 @@ const ACTIVITY: { label: string; factor: number }[] = [
 ];
 const GOAL_DELTA: Record<string, number> = { lose: -500, maintain: 0, gain: 300 };
 
-export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) {
-  const toast = useToast();
+export default function TdeeCard({ goals, latestWeight, onApply }: Props) {
   const lb = goals.weightUnit === "lb";
   const currentYear = new Date().getFullYear();
 
@@ -33,7 +41,6 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
   const [weightInput, setWeightInput] = useState(latestWeight ? String(latestWeight) : "");
   const [factor, setFactor] = useState(1.375);
   const [goalDir, setGoalDir] = useState<"lose" | "maintain" | "gain">("maintain");
-  const [saving, setSaving] = useState(false);
 
   const ageN = Number(age);
   const heightCm = lb ? Number(height) * 2.54 : Number(height);
@@ -47,7 +54,9 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
     weightKg <= 1000;
 
   let target = 0;
-  let protein = 0, fat = 0, carbs = 0;
+  let protein = 0,
+    fat = 0,
+    carbs = 0;
   if (valid) {
     const bmr = 10 * weightKg + 6.25 * heightCm - 5 * ageN + (sex === "male" ? 5 : -161);
     const maintenance = bmr * factor;
@@ -58,66 +67,103 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
   }
   const estimable = valid && target > 0;
 
-  async function apply() {
-    setSaving(true);
-    try {
-      const { goals: updated } = await api.saveGoals({
-        dailyCalories: target,
-        dailyProtein: protein,
-        dailyCarbs: carbs,
-        dailyFat: fat,
-        sex,
-        birthYear: currentYear - ageN,
-        heightCm: Math.round(heightCm),
-      });
-      onGoalsChange(updated);
-      toast("Goals updated from TDEE");
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Failed to apply", "error");
-    } finally {
-      setSaving(false);
-    }
+  function handleApply() {
+    if (!estimable) return;
+    onApply({
+      calories: target,
+      protein,
+      carbs,
+      fat,
+      sex,
+      birthYear: currentYear - ageN,
+      heightCm: Math.round(heightCm),
+    });
   }
 
-  // `.num` is for measured quantities. "Male", "Sedentary" and "Maintain" are
-  // prose, and setting prose in monospace is the one thing the type system's
-  // measurement rule forbids.
   const inputCls = "field num mt-0.5 w-full";
   const selectWrap = "mt-0.5";
 
   return (
     <div>
-      <p className="text-2xs text-ink-faint">Mifflin–St Jeor maintenance estimate.</p>
+      <p className="text-2xs text-ink-faint">Mifflin–St Jeor maintenance estimate based on body stats.</p>
 
       <div className="mt-2 grid grid-cols-2 gap-1.5 min-[400px]:grid-cols-3">
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Sex</span>
-          <Select value={sex} onChange={(e) => setSex(e.target.value as "male" | "female")} wrapClassName={selectWrap}>
+          <Select
+            value={sex}
+            onChange={(e) => setSex(e.target.value as "male" | "female")}
+            wrapClassName={selectWrap}
+          >
             <option value="male">Male</option>
             <option value="female">Female</option>
           </Select>
         </label>
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Age</span>
-          <input type="number" min={1} max={currentYear - 1900} value={age} onChange={(e) => setAge(e.target.value)} className={inputCls} />
+          <input
+            type="number"
+            min={1}
+            max={currentYear - 1900}
+            value={age}
+            onChange={(e) => setAge(e.target.value)}
+            placeholder="years"
+            className={inputCls}
+          />
         </label>
         <label className="block">
-          <span className="text-2xs uppercase tracking-wider text-ink-faint">Height ({lb ? "in" : "cm"})</span>
-          <input type="number" min={lb ? 20 : 50} max={lb ? 118 : 300} value={height} onChange={(e) => setHeight(e.target.value)} className={inputCls} />
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">
+            Height ({lb ? "in" : "cm"})
+          </span>
+          <input
+            type="number"
+            min={lb ? 20 : 50}
+            max={lb ? 118 : 300}
+            value={height}
+            onChange={(e) => setHeight(e.target.value)}
+            placeholder={lb ? "in" : "cm"}
+            className={inputCls}
+          />
         </label>
         <label className="block">
-          <span className="text-2xs uppercase tracking-wider text-ink-faint">Weight ({goals.weightUnit})</span>
-          <input type="number" min={1} max={lb ? 2204 : 1000} step="0.1" value={weightInput} onChange={(e) => setWeightInput(e.target.value)} className={inputCls} />
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">
+            Weight ({goals.weightUnit})
+            {latestWeight && Number(weightInput) === latestWeight ? (
+              <span className="ml-1 text-ink-dim">· scale</span>
+            ) : null}
+          </span>
+          <input
+            type="number"
+            min={1}
+            max={lb ? 2204 : 1000}
+            step="0.1"
+            value={weightInput}
+            onChange={(e) => setWeightInput(e.target.value)}
+            placeholder="0.0"
+            className={inputCls}
+          />
         </label>
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Activity</span>
-          <Select value={factor} onChange={(e) => setFactor(Number(e.target.value))} wrapClassName={selectWrap}>
-            {ACTIVITY.map((a) => <option key={a.factor} value={a.factor}>{a.label}</option>)}
+          <Select
+            value={factor}
+            onChange={(e) => setFactor(Number(e.target.value))}
+            wrapClassName={selectWrap}
+          >
+            {ACTIVITY.map((a) => (
+              <option key={a.factor} value={a.factor}>
+                {a.label}
+              </option>
+            ))}
           </Select>
         </label>
         <label className="block">
           <span className="text-2xs uppercase tracking-wider text-ink-faint">Goal</span>
-          <Select value={goalDir} onChange={(e) => setGoalDir(e.target.value as "lose" | "maintain" | "gain")} wrapClassName={selectWrap}>
+          <Select
+            value={goalDir}
+            onChange={(e) => setGoalDir(e.target.value as "lose" | "maintain" | "gain")}
+            wrapClassName={selectWrap}
+          >
             <option value="lose">Lose (−500)</option>
             <option value="maintain">Maintain</option>
             <option value="gain">Gain (+300)</option>
@@ -126,11 +172,25 @@ export default function TdeeCard({ goals, latestWeight, onGoalsChange }: Props) 
       </div>
 
       {estimable ? (
-        <div className="mt-2.5 rounded border p-3 text-center" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
-          <div className="num text-3xl font-bold text-ink">{target}<span className="ml-1 text-2xs uppercase tracking-wider text-ink-faint">kcal/day</span></div>
-          <div className="num mt-1 text-2xs text-ink-dim">P {protein}g · C {carbs}g · F {fat}g</div>
-          <button onClick={apply} disabled={saving} className="btn btn-primary mt-2.5 w-full">
-            {saving ? "Applying…" : "Apply as goals"}
+        <div
+          className="mt-2.5 rounded border p-3 text-center"
+          style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
+        >
+          <div className="num text-3xl font-bold text-ink">
+            {target}
+            <span className="ml-1 text-2xs uppercase tracking-wider text-ink-faint">
+              kcal/day
+            </span>
+          </div>
+          <div className="num mt-1 text-2xs text-ink-dim">
+            P {protein}g · C {carbs}g · F {fat}g
+          </div>
+          <button
+            type="button"
+            onClick={handleApply}
+            className="btn btn-primary mt-2.5 w-full"
+          >
+            Apply to daily goals
           </button>
         </div>
       ) : (

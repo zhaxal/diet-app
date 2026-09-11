@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Calendar, Plus, Dumbbell } from "lucide-react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
-import { prettyDate } from "@/lib/time-client";
+import { prettyDate, shiftDate } from "@/lib/time-client";
 
 interface WorkoutSessionItem {
   id: string;
@@ -20,6 +19,16 @@ interface WorkoutNavigatorProps {
   refreshTrigger?: number;
 }
 
+// 7 days ending on end
+function weekEnding(end: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => shiftDate(end, i - 6));
+}
+
+// Ensure strip contains selected date
+function stripEnding(selected: string, today: string): string {
+  return selected > shiftDate(today, -6) ? today : selected;
+}
+
 export default function WorkoutNavigator({
   currentDate,
   onSelectDate,
@@ -27,11 +36,9 @@ export default function WorkoutNavigator({
   refreshTrigger = 0,
 }: WorkoutNavigatorProps) {
   const [sessions, setSessions] = useState<WorkoutSessionItem[]>([]);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     api
       .getWorkoutDates()
       .then((res) => {
@@ -39,185 +46,106 @@ export default function WorkoutNavigator({
           setSessions(res.sessions);
         }
       })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .catch(() => {});
 
     return () => {
       cancelled = true;
     };
   }, [refreshTrigger]);
 
-  // Unique sorted dates with workouts (newest first)
-  const sessionDates = useMemo(() => {
-    return Array.from(new Set(sessions.map((s) => s.date))).sort((a, b) =>
-      b.localeCompare(a),
-    );
-  }, [sessions]);
-
-  // Find previous session (chronologically earlier than currentDate)
-  const prevSessionDate = useMemo(() => {
-    const older = sessionDates.filter((d) => d < currentDate);
-    return older.length > 0 ? older[0] : null;
-  }, [sessionDates, currentDate]);
-
-  // Find next session (chronologically later than currentDate)
-  const nextSessionDate = useMemo(() => {
-    const newer = sessionDates.filter((d) => d > currentDate);
-    return newer.length > 0 ? newer[newer.length - 1] : null;
-  }, [sessionDates, currentDate]);
-
   const activeSession = sessions.find((s) => s.date === currentDate);
   const isToday = currentDate === todayDate;
+  const stripEnd = stripEnding(currentDate, todayDate);
+  const weekDays = weekEnding(stripEnd);
 
   return (
-    <nav aria-label="Workout session navigation" className="space-y-2 mb-3">
-      {/* Top Stepper Bar: Prev Session | Current Date & Title | Next Session */}
-      <div
-        className="panel flex items-center justify-between p-2 text-xs"
-        style={{ background: "var(--panel)" }}
-      >
-        <button
-          type="button"
-          onClick={() => prevSessionDate && onSelectDate(prevSessionDate)}
-          disabled={!prevSessionDate}
-          className="min-h-[36px] flex items-center gap-1 px-2.5 py-1 rounded text-ink-dim hover:text-ink disabled:opacity-30 disabled:pointer-events-none transition-colors"
-          style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}
-          aria-label={prevSessionDate ? `Jump to previous workout on ${prevSessionDate}` : "No earlier workout"}
-        >
-          <ChevronLeft size={14} aria-hidden="true" />
-          <span className="text-2xs font-semibold uppercase tracking-wider hidden sm:inline">
-            Prev
+    <nav aria-label="Workout session navigation" className="mb-2">
+      {/* 7-Day Week Strip matching Today tab */}
+      <div className="panel flex overflow-x-auto" aria-label="Workout week">
+        {weekDays.map((d) => {
+          const active = d === currentDate;
+          const dt = new Date(`${d}T00:00:00`);
+          const session = sessions.find((s) => s.date === d);
+          const hasWorkout = Boolean(session);
+
+          return (
+            <button
+              key={d}
+              type="button"
+              onClick={() => onSelectDate(d)}
+              aria-pressed={active}
+              aria-label={`${prettyDate(d)}${
+                session ? `, ${session.title} (${session.setsCount} sets)` : ", no workout"
+              }`}
+              className="flex-1 border-r pt-1.5 text-center last:border-r-0 transition-colors"
+              style={{
+                borderColor: "var(--line)",
+                background: active ? "var(--ink)" : "transparent",
+                color: active ? "var(--panel)" : "var(--ink-dim)",
+              }}
+            >
+              <div className="text-2xs uppercase tracking-wider opacity-70">
+                {dt.toLocaleDateString(undefined, { weekday: "narrow" })}
+              </div>
+              <div className="num text-sm font-semibold">{d.slice(8)}</div>
+
+              {/* 2px accent indicator bar for training days */}
+              <div
+                className="mx-1.5 mb-1.5 mt-1 h-[2px] overflow-hidden"
+                style={{
+                  background: active
+                    ? "color-mix(in srgb, var(--panel) 25%, transparent)"
+                    : "var(--line-soft)",
+                }}
+              >
+                {hasWorkout ? (
+                  <div
+                    className="h-full w-full"
+                    style={{
+                      background: active ? "var(--panel)" : "var(--accent)",
+                    }}
+                  />
+                ) : (
+                  <div className="h-full w-full bg-transparent" />
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Date Bar: Identical layout and rhythm to Today tab */}
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span className="num text-2xs uppercase tracking-wider text-ink-faint shrink-0">
+            {prettyDate(currentDate)}
           </span>
-        </button>
-
-        {/* Center: Date, Title, and Picker */}
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="text-center min-w-0">
-            <div className="flex items-center justify-center gap-1.5">
-              <span className="num text-xs font-bold text-ink truncate">
-                {currentDate}
-              </span>
-              {isToday && (
-                <span
-                  className="text-2xs font-semibold uppercase tracking-wider px-1 rounded shrink-0"
-                  style={{
-                    color: "var(--accent)",
-                    background: "color-mix(in srgb, var(--accent) 12%, transparent)",
-                  }}
-                >
-                  Today
-                </span>
-              )}
-            </div>
-            <div className="text-2xs text-ink-faint truncate max-w-[160px] sm:max-w-[220px]">
-              {activeSession ? activeSession.title : "No session logged"}
-            </div>
-          </div>
-
-          <label
-            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded text-ink-dim hover:text-ink cursor-pointer transition-colors relative"
-            title="Pick a specific date"
-          >
-            <span className="sr-only">Pick date</span>
-            <Calendar size={14} aria-hidden="true" />
-            <input
-              type="date"
-              value={currentDate}
-              max={todayDate}
-              onChange={(e) => e.target.value && onSelectDate(e.target.value)}
-              className="absolute inset-0 opacity-0 cursor-pointer"
-            />
-          </label>
+          {activeSession && (
+            <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim truncate">
+              · {activeSession.title}
+            </span>
+          )}
         </div>
 
-        {/* Right Stepper: Next Session or Today */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2 shrink-0">
           {!isToday && (
             <button
               type="button"
               onClick={() => onSelectDate(todayDate)}
-              className="min-h-[36px] px-2 rounded text-2xs font-semibold uppercase tracking-wider text-accent hover:underline hidden sm:inline-block"
+              className="text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
             >
               Today
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={() => nextSessionDate && onSelectDate(nextSessionDate)}
-            disabled={!nextSessionDate}
-            className="min-h-[36px] flex items-center gap-1 px-2.5 py-1 rounded text-ink-dim hover:text-ink disabled:opacity-30 disabled:pointer-events-none transition-colors"
-            style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}
-            aria-label={nextSessionDate ? `Jump to next workout on ${nextSessionDate}` : "No newer workout"}
-          >
-            <span className="text-2xs font-semibold uppercase tracking-wider hidden sm:inline">
-              Next
-            </span>
-            <ChevronRight size={14} aria-hidden="true" />
-          </button>
+          <input
+            type="date"
+            value={currentDate}
+            max={todayDate}
+            aria-label="Pick workout date"
+            onChange={(e) => e.target.value && onSelectDate(e.target.value)}
+            className="field num py-1 px-2 text-base sm:text-2xs"
+          />
         </div>
-      </div>
-
-      {/* Recent Sessions Quick Rail */}
-      <div
-        aria-label="Recent workout sessions"
-        className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-2xs"
-      >
-        {/* Shortcut to Log Today */}
-        <button
-          type="button"
-          onClick={() => onSelectDate(todayDate)}
-          className={`min-h-[30px] flex items-center gap-1 px-2.5 py-1 rounded border shrink-0 transition-colors ${
-            isToday
-              ? "bg-ink text-panel font-semibold border-ink"
-              : "text-ink-dim hover:text-ink"
-          }`}
-          style={
-            !isToday
-              ? { background: "var(--panel-2)", borderColor: "var(--line)" }
-              : undefined
-          }
-        >
-          <Plus size={11} aria-hidden="true" />
-          <span>Today</span>
-        </button>
-
-        {/* Past logged workouts list */}
-        {sessions.slice(0, 8).map((session) => {
-          const isSelected = session.date === currentDate;
-          const dt = new Date(`${session.date}T00:00:00`);
-          const monthDay = dt.toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-          });
-
-          return (
-            <button
-              key={session.id}
-              type="button"
-              onClick={() => onSelectDate(session.date)}
-              aria-pressed={isSelected}
-              className={`min-h-[30px] flex items-center gap-1.5 px-2.5 py-1 rounded border shrink-0 transition-colors ${
-                isSelected
-                  ? "bg-ink text-panel font-semibold border-ink"
-                  : "text-ink-dim hover:text-ink"
-              }`}
-              style={
-                !isSelected
-                  ? { background: "var(--panel-2)", borderColor: "var(--line)" }
-                  : undefined
-              }
-            >
-              <Dumbbell size={10} className={isSelected ? "text-panel" : "text-ink-faint"} aria-hidden="true" />
-              <span className="num font-medium">{monthDay}</span>
-              <span className="truncate max-w-[90px] opacity-80">
-                {session.title}
-              </span>
-            </button>
-          );
-        })}
       </div>
     </nav>
   );

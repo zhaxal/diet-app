@@ -120,6 +120,46 @@ test("workout database pipeline: creates exercises, logs sets, and computes prog
   assert.equal(fullHistory.sessions[0].topWeight, 80);
   assert.equal(fullHistory.sessions[1].topWeight, 85);
 
+  // 4. Test Workout Deletion & Cascade
+  const deleteTargetWorkout = await prisma.workout.create({
+    data: {
+      userId: user.id,
+      date: new Date("2026-09-10T12:00:00.000Z"),
+      title: "To Delete",
+      rawNote: "Squat\n- 100kg x 5\n",
+      source: "ui",
+    },
+  });
+  const weDelete = await prisma.workoutExercise.create({
+    data: {
+      workoutId: deleteTargetWorkout.id,
+      exerciseId: exBench.id,
+      order: 0,
+    },
+  });
+  await prisma.workoutSet.create({
+    data: {
+      workoutExerciseId: weDelete.id,
+      setNumber: 1,
+      weight: 100,
+      unit: "kg",
+      reps: 5,
+    },
+  });
+
+  // Verify created
+  assert.equal(await prisma.workout.count({ where: { id: deleteTargetWorkout.id } }), 1);
+  assert.equal(await prisma.workoutExercise.count({ where: { workoutId: deleteTargetWorkout.id } }), 1);
+  assert.equal(await prisma.workoutSet.count({ where: { workoutExerciseId: weDelete.id } }), 1);
+
+  // Delete workout
+  await prisma.workout.delete({ where: { id: deleteTargetWorkout.id } });
+
+  // Verify cascaded deletion
+  assert.equal(await prisma.workout.count({ where: { id: deleteTargetWorkout.id } }), 0);
+  assert.equal(await prisma.workoutExercise.count({ where: { workoutId: deleteTargetWorkout.id } }), 0);
+  assert.equal(await prisma.workoutSet.count({ where: { workoutExerciseId: weDelete.id } }), 0);
+
   // Clean up
   await prisma.workout.deleteMany({ where: { userId: user.id } });
   await prisma.exercise.deleteMany({ where: { userId: user.id } });

@@ -1,8 +1,8 @@
 "use client";
 
-import { CalendarDays, ChartColumn, Dumbbell, Scale, Settings2, type LucideIcon } from "lucide-react";
+import { Utensils, Dumbbell, Settings2, type LucideIcon } from "lucide-react";
 
-export type Tab = "today" | "workout" | "trends" | "weight" | "settings";
+export type Tab = "food" | "workout" | "settings";
 
 /*
  * Lucide, bundled through npm rather than fetched from a CDN — the self-hosting
@@ -10,13 +10,10 @@ export type Tab = "today" | "workout" | "trends" | "weight" | "settings";
  * the container like any other module.
  */
 const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
-  // A day is the unit of this product, and the week strip above is a calendar.
-  { id: "today", label: "Today", Icon: CalendarDays },
+  // Primary diet, nutrition logging, contextual weight and trends
+  { id: "food", label: "Food", Icon: Utensils },
   // Dumbbell for the gym / workout tracker
   { id: "workout", label: "Workout", Icon: Dumbbell },
-  // Bars, because the tab's own chart is a bar chart.
-  { id: "trends", label: "Trends", Icon: ChartColumn },
-  { id: "weight", label: "Weight", Icon: Scale },
   // Sliders rather than a gear
   { id: "settings", label: "Settings", Icon: Settings2 },
 ];

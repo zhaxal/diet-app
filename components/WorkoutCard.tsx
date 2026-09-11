@@ -10,10 +10,11 @@ import {
   History,
   Sparkles,
   ChevronRight,
-  Download,
-  UploadCloud,
   Search,
   X,
+  Trash2,
+  Dumbbell,
+  AlertCircle,
 } from "lucide-react";
 import {
   api,
@@ -24,14 +25,17 @@ import {
   parseWorkoutNote,
   formatWorkoutNote,
   calculateSessionStats,
+  normalizeExerciseName,
 } from "@/lib/workout-parser";
 import {
   MUSCLE_GROUPS,
   type MuscleGroupFilter,
+  lookupMuscleGroup,
 } from "@/lib/default-exercises";
+import { WORKOUT_TEMPLATES } from "@/lib/workout-templates";
+import { prettyDate } from "@/lib/time-client";
 import RestTimer from "./RestTimer";
 import ExerciseHistoryModal from "./ExerciseHistoryModal";
-import WorkoutImportModal from "./WorkoutImportModal";
 
 interface WorkoutCardProps {
   date: string;
@@ -63,8 +67,10 @@ export default function WorkoutCard({
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<MuscleGroupFilter>("All");
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState<string>("");
   const [searchingExercises, setSearchingExercises] = useState<boolean>(false);
-  const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [completedSets, setCompletedSets] = useState<Record<string, boolean>>({});
+  const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
+  const [deleting, setDeleting] = useState<boolean>(false);
+  const [lastSessionInfo, setLastSessionInfo] = useState<{ date: string; title: string } | null>(null);
 
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -87,9 +93,32 @@ export default function WorkoutCard({
     }
   }, [completedKey]);
 
+  // Load previous session metadata for quick "Copy from last session"
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getWorkoutDates()
+      .then((res) => {
+        if (!cancelled && res.sessions && res.sessions.length > 0) {
+          const previous = res.sessions.find((s) => s.date < date);
+          if (previous) {
+            setLastSessionInfo({ date: previous.date, title: previous.title });
+          } else {
+            setLastSessionInfo(null);
+          }
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [date]);
+
   // Load workout from server or local draft
   const loadWorkout = useCallback(() => {
     setLoading(true);
+    setConfirmDelete(false);
     api
       .getWorkout(date)
       .then((res) => {
@@ -163,6 +192,7 @@ export default function WorkoutCard({
   // Save workout to backend
   const persistWorkout = useCallback(
     async (noteToSave: string, titleToSave: string) => {
+      if (!noteToSave.trim()) return;
       setSaveStatus("saving");
       try {
         const res = await api.saveWorkout({
@@ -190,7 +220,6 @@ export default function WorkoutCard({
     setRawNote(newText);
     setSaveStatus("unsaved");
 
-    // Save to local storage immediately
     try {
       localStorage.setItem(draftKey, JSON.stringify({ title, rawNote: newText }));
     } catch {}
@@ -212,6 +241,37 @@ export default function WorkoutCard({
     saveTimerRef.current = setTimeout(() => {
       persistWorkout(rawNote, newTitle);
     }, 1200);
+  };
+
+  // Delete Workout
+  const handleDeleteWorkout = async () => {
+    setDeleting(true);
+    try {
+      if (workout?.id) {
+        await api.deleteWorkout({ id: workout.id, date });
+      } else {
+        await api.deleteWorkout({ date });
+      }
+    } catch (err) {
+      console.warn("Server delete returned error or already gone", err);
+    }
+
+    try {
+      localStorage.removeItem(draftKey);
+      localStorage.removeItem(completedKey);
+    } catch {}
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+
+    setWorkout(null);
+    setTitle("Workout");
+    setRawNote("");
+    setCompletedSets({});
+    setSaveStatus("saved");
+    setConfirmDelete(false);
+    setDeleting(false);
+    onToast("Workout deleted");
+    onWorkoutSaved?.();
   };
 
   // Smart markdown Enter continuation for bullets
@@ -290,18 +350,10 @@ export default function WorkoutCard({
     onToast("Note formatted");
   };
 
-  // One-tap insert sample template note
-  const handleInsertSample = () => {
-    const sample = `# Push Day\n\nBench Press\n- 80${weightUnit} x 8\n- 80${weightUnit} x 8\n- 80${weightUnit} x 8\n\nIncline Dumbbell Press\n- 28${weightUnit} x 10\n- 28${weightUnit} x 10\n\nTricep Pushdown\n- 30${weightUnit} x 12\n- 30${weightUnit} x 12\n`;
-    handleNoteChange(sample);
-    setTitle("Push Day");
-    onToast("Inserted sample template");
-  };
-
   // Append exercise from autocomplete chip
   const handleInsertExercise = (exName: string) => {
     const addition = `\n\n${exName}\n- `;
-    const updated = rawNote ? rawNote + addition : `${exName}\n- `;
+    const updated = rawNote ? rawNote.trimEnd() + addition : `${exName}\n- `;
     handleNoteChange(updated);
     setShowAddMenu(false);
     if (textareaRef.current) {
@@ -309,30 +361,200 @@ export default function WorkoutCard({
     }
   };
 
+  // One-tap apply starter routine template
+  const handleApplyTemplate = (templateId: string) => {
+    const tmpl = WORKOUT_TEMPLATES.find((t) => t.id === templateId);
+    if (!tmpl) return;
+    const content = tmpl.rawNote(weightUnit);
+    setTitle(tmpl.name);
+    handleNoteChange(content);
+    onToast(`Loaded ${tmpl.name} template`);
+    setViewMode("note");
+  };
+
+  // One-tap copy last session
+  const handleCopyLastSession = async () => {
+    if (!lastSessionInfo) return;
+    setLoading(true);
+    try {
+      const res = await api.getWorkout(lastSessionInfo.date);
+      if (res.workout?.rawNote) {
+        setTitle(res.workout.title || "Workout");
+        handleNoteChange(res.workout.rawNote);
+        onToast(`Copied ${res.workout.title || "workout"} from ${lastSessionInfo.date}`);
+        setViewMode("note");
+      }
+    } catch {
+      onToast("Could not copy previous workout");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Quick "+ Set" action inside Cards Mode
+  const handleAddSetToExercise = (exerciseName: string, currentSets: Array<{ weight: number; reps: number; unit: string }>) => {
+    const lastSet = currentSets.length > 0 ? currentSets[currentSets.length - 1] : null;
+    const w = lastSet ? lastSet.weight : 0;
+    const r = lastSet ? lastSet.reps : 10;
+    const u = lastSet ? lastSet.unit : weightUnit;
+    const setLine = `- ${w}${u} x ${r}`;
+
+    const lines = rawNote.split("\n");
+    let exIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i].trim();
+      if (normalizeExerciseName(l) === normalizeExerciseName(exerciseName)) {
+        exIdx = i;
+        break;
+      }
+    }
+
+    if (exIdx !== -1) {
+      let insertIdx = exIdx + 1;
+      while (
+        insertIdx < lines.length &&
+        (lines[insertIdx].trim().startsWith("-") ||
+          lines[insertIdx].trim().startsWith("*") ||
+          lines[insertIdx].trim().length === 0)
+      ) {
+        if (
+          lines[insertIdx].trim().length === 0 &&
+          insertIdx + 1 < lines.length &&
+          !lines[insertIdx + 1].trim().startsWith("-") &&
+          !lines[insertIdx + 1].trim().startsWith("*")
+        ) {
+          break;
+        }
+        insertIdx++;
+      }
+      lines.splice(insertIdx, 0, setLine);
+      handleNoteChange(lines.join("\n"));
+    } else {
+      const updated = rawNote.trimEnd() ? `${rawNote.trimEnd()}\n\n${exerciseName}\n${setLine}` : `${exerciseName}\n${setLine}`;
+      handleNoteChange(updated);
+    }
+    onToast(`Added set to ${exerciseName}`);
+  };
+
   // Parse current exercises for live badge preview and session volume stats
   const parsedPreview = parseWorkoutNote(rawNote, weightUnit as "kg" | "lb");
   const sessionStats = calculateSessionStats(parsedPreview.exercises);
 
+  // Collect muscle groups targeted in this session
+  const sessionMuscles = Array.from(
+    new Set(
+      parsedPreview.exercises.map((ex) => lookupMuscleGroup(ex.normalized)),
+    ),
+  );
+
+  const hasContent = rawNote.trim().length > 0 || workout !== null;
+
+  // ── First-Class Empty State ──────────────────────────────
+  if (!loading && !hasContent) {
+    return (
+      <div
+        className="panel p-4 space-y-3 transition-colors"
+        style={{ background: "var(--panel)", borderColor: "var(--line)" }}
+      >
+        <div
+          className="flex items-baseline justify-between border-b pb-2"
+          style={{ borderColor: "var(--line-soft)" }}
+        >
+          <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+            No workout logged
+          </span>
+          <span className="text-2xs uppercase tracking-wider text-ink-faint">
+            {prettyDate(date).toLowerCase()}
+          </span>
+        </div>
+
+        {/* Routine Starters */}
+        <div className="space-y-2">
+          <span className="text-2xs font-semibold uppercase tracking-wider text-ink-faint block">
+            Choose a routine starter
+          </span>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            {WORKOUT_TEMPLATES.map((tmpl) => (
+              <button
+                key={tmpl.id}
+                type="button"
+                onClick={() => handleApplyTemplate(tmpl.id)}
+                className="p-2 rounded border text-left transition-colors hover:border-accent group"
+                style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
+              >
+                <div className="text-xs font-bold text-ink group-hover:text-accent transition-colors truncate">
+                  {tmpl.name}
+                </div>
+                <div className="text-2xs text-ink-faint truncate mt-0.5">
+                  {tmpl.subtitle}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Quick Copy from previous session */}
+          {lastSessionInfo && (
+            <button
+              type="button"
+              onClick={handleCopyLastSession}
+              className="w-full mt-2 p-2 rounded border flex items-center justify-between text-xs text-ink hover:border-accent transition-colors"
+              style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
+            >
+              <div className="flex items-center gap-2 truncate">
+                <Copy size={12} className="text-ink-faint shrink-0" aria-hidden="true" />
+                <span className="font-semibold truncate">
+                  Repeat last: {lastSessionInfo.title}
+                </span>
+                <span className="num text-2xs text-ink-faint">({lastSessionInfo.date})</span>
+              </div>
+              <span className="text-2xs font-semibold text-accent uppercase tracking-wider shrink-0 ml-2">
+                Copy
+              </span>
+            </button>
+          )}
+
+          <div className="pt-1 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setRawNote("Bench Press\n- ");
+                handleNoteChange("Bench Press\n- ");
+                setViewMode("note");
+              }}
+              className="btn btn-ghost text-xs text-ink-dim hover:text-ink inline-flex items-center gap-1.5"
+            >
+              <FileText size={12} aria-hidden="true" />
+              <span>Start blank workout note</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Active Workout View ─────────────────────────────────
   return (
     <div
       className="flex flex-col rounded border overflow-hidden transition-colors"
       style={{ background: "var(--panel)", borderColor: "var(--line)" }}
     >
-      {/* Top Bar: Title & Save State */}
+      {/* Top Bar: Title, Mode Switcher, Save State & Delete Action */}
       <div
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b px-3.5 py-2.5"
+        className="flex items-center justify-between gap-2 border-b px-3 py-2"
         style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
       >
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => handleTitleChange(e.target.value)}
-          placeholder="Workout name (e.g. Push Day)"
-          aria-label="Workout title"
-          className="flex-1 min-w-0 bg-transparent text-base sm:text-sm font-bold tracking-tight text-ink placeholder:text-ink-faint focus:outline-none"
-        />
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => handleTitleChange(e.target.value)}
+            placeholder="Workout name"
+            aria-label="Workout title"
+            className="flex-1 min-w-0 bg-transparent text-sm font-bold tracking-tight text-ink placeholder:text-ink-faint focus:outline-none truncate"
+          />
+        </div>
 
-        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Mode Switcher */}
           <div
             className="flex items-center rounded border p-0.5"
@@ -341,36 +563,36 @@ export default function WorkoutCard({
             <button
               type="button"
               onClick={() => setViewMode("note")}
-              aria-label="Obsidian Note Mode"
+              aria-label="Markdown Note Mode"
               aria-pressed={viewMode === "note"}
-              className={`min-h-[32px] flex items-center gap-1 rounded px-2.5 py-1 text-2xs transition-colors ${
+              className={`flex items-center gap-1 rounded px-2 py-0.5 text-2xs transition-colors ${
                 viewMode === "note"
                   ? "bg-ink text-panel font-medium"
                   : "text-ink-faint hover:text-ink"
               }`}
             >
-              <FileText size={12} aria-hidden="true" />
-              Note
+              <FileText size={11} aria-hidden="true" />
+              <span>Note</span>
             </button>
             <button
               type="button"
               onClick={() => setViewMode("cards")}
               aria-label="Interactive Cards Mode"
               aria-pressed={viewMode === "cards"}
-              className={`min-h-[32px] flex items-center gap-1 rounded px-2.5 py-1 text-2xs transition-colors ${
+              className={`flex items-center gap-1 rounded px-2 py-0.5 text-2xs transition-colors ${
                 viewMode === "cards"
                   ? "bg-ink text-panel font-medium"
                   : "text-ink-faint hover:text-ink"
               }`}
             >
-              <Layers size={12} aria-hidden="true" />
-              Cards
+              <Layers size={11} aria-hidden="true" />
+              <span>Cards</span>
             </button>
           </div>
 
           {/* Save Status badge */}
           <span
-            className="text-2xs font-medium uppercase tracking-wider px-2 py-0.5 rounded shrink-0 whitespace-nowrap"
+            className="text-2xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap"
             style={{
               color: saveStatus === "saved" ? "var(--ok)" : "var(--warn)",
               background:
@@ -381,65 +603,84 @@ export default function WorkoutCard({
           >
             {saveStatus === "saving" ? "saving…" : saveStatus === "saved" ? "saved" : "draft"}
           </span>
+
+          {/* Delete Workout Action */}
+          {confirmDelete ? (
+            <div className="flex items-center gap-1 shrink-0" role="group" aria-label="Confirm workout deletion">
+              <button
+                type="button"
+                onClick={handleDeleteWorkout}
+                disabled={deleting}
+                className="px-2 py-0.5 rounded text-2xs font-semibold text-over border border-over transition-colors"
+              >
+                {deleting ? "…" : "Confirm"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="px-2 py-0.5 rounded text-2xs text-ink-dim border border-line"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              aria-label="Delete this workout"
+              title="Delete this workout"
+              className="p-1 rounded text-ink-faint hover:text-over transition-colors"
+            >
+              <Trash2 size={13} aria-hidden="true" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Live Session Instrument Bar & Vault Actions */}
-      <div
-        className="flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-1.5 text-2xs"
-        style={{ borderColor: "var(--line)", background: "var(--panel)" }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1">
-            <span className="uppercase tracking-wider text-ink-faint">Vol</span>
-            <span className="num font-semibold text-ink">
-              {sessionStats.totalVolume.toLocaleString()}
+      {/* Session Instrument Metrics Bar */}
+      {parsedPreview.exercises.length > 0 && (
+        <div
+          className="flex items-center justify-between gap-2 border-b px-3 py-1.5 text-2xs"
+          style={{ borderColor: "var(--line)", background: "var(--panel)" }}
+        >
+          <div className="flex items-center gap-2 num text-ink-dim overflow-x-auto no-scrollbar">
+            <span>
+              <strong className="text-ink">{sessionStats.totalVolume.toLocaleString()}</strong> {weightUnit}
             </span>
-            <span className="text-ink-faint">{weightUnit}</span>
+            <span className="text-ink-faint/40">·</span>
+            <span>
+              <strong className="text-ink">{sessionStats.totalSets}</strong> sets
+            </span>
+            <span className="text-ink-faint/40">·</span>
+            <span>
+              <strong className="text-ink">{sessionStats.totalReps}</strong> reps
+            </span>
           </div>
-          <span className="text-ink-faint/30">|</span>
-          <div className="flex items-center gap-1">
-            <span className="uppercase tracking-wider text-ink-faint">Sets</span>
-            <span className="num font-semibold text-ink">{sessionStats.totalSets}</span>
-          </div>
-          <span className="text-ink-faint/30">|</span>
-          <div className="flex items-center gap-1">
-            <span className="uppercase tracking-wider text-ink-faint">Reps</span>
-            <span className="num font-semibold text-ink">{sessionStats.totalReps}</span>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowImportModal(true)}
-            aria-label="Import workouts from Markdown"
-            className="min-h-[32px] flex items-center gap-1.5 rounded border px-2.5 py-1 font-medium uppercase tracking-wider text-ink-dim hover:text-ink transition-colors"
-            style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
-          >
-            <UploadCloud size={12} aria-hidden="true" />
-            <span>Import</span>
-          </button>
-          <a
-            href="/api/workouts/export?format=markdown"
-            download={`workouts-vault-${date}.md`}
-            aria-label="Export workouts to Obsidian markdown"
-            className="min-h-[32px] flex items-center gap-1.5 rounded border px-2.5 py-1 font-medium uppercase tracking-wider text-ink-dim hover:text-ink transition-colors"
-            style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
-          >
-            <Download size={12} aria-hidden="true" />
-            <span>Export</span>
-          </a>
+          {/* Targeted muscle groups */}
+          {sessionMuscles.length > 0 && (
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar shrink-0">
+              {sessionMuscles.slice(0, 3).map((m) => (
+                <span
+                  key={m}
+                  className="px-1 py-0.5 rounded text-2xs uppercase tracking-wider font-mono text-ink-faint"
+                  style={{ background: "var(--panel-2)" }}
+                >
+                  {m}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Main Body */}
       {viewMode === "note" ? (
         <div className="flex flex-col flex-1 p-3 space-y-2.5">
-          {/* Exercise Recognized Chips & "Last Time" Badges */}
+          {/* Exercise Badges in single horizontal scroll strip */}
           {parsedPreview.exercises.length > 0 && (
             <div
-              className="flex flex-wrap gap-1.5 pb-2 border-b"
+              className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1.5 border-b"
               style={{ borderColor: "var(--line-soft)" }}
             >
               {parsedPreview.exercises.map((ex, idx) => {
@@ -459,16 +700,16 @@ export default function WorkoutCard({
                       }
                     }}
                     aria-label={`View history for ${ex.name}`}
-                    className="min-h-[32px] flex items-center gap-1.5 rounded px-2.5 py-1 text-2xs border text-left transition-colors hover:border-accent"
+                    className="flex items-center gap-1 rounded px-2 py-0.5 text-2xs border shrink-0 text-left transition-colors hover:border-accent"
                     style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
                   >
                     <span className="font-semibold text-ink">{ex.name}</span>
                     {stat?.lastPerformance && (
                       <span
-                        className="text-ink-dim border-l pl-1.5 font-mono"
+                        className="text-ink-dim border-l pl-1 font-mono text-2xs"
                         style={{ borderColor: "var(--line)" }}
                       >
-                        Last: {stat.lastPerformance}
+                        {stat.lastPerformance}
                       </span>
                     )}
                     {stat && stat.bestWeightKg > 0 && (
@@ -514,7 +755,7 @@ export default function WorkoutCard({
                   style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
                 >
                   <Plus size={12} aria-hidden="true" />
-                  Add Exercise
+                  <span>Add Exercise</span>
                 </button>
 
                 {showAddMenu && (
@@ -560,7 +801,7 @@ export default function WorkoutCard({
 
                       {/* Muscle Group Pills */}
                       <div
-                        className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto border-b scrollbar-none"
+                        className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto border-b no-scrollbar"
                         style={{ borderColor: "var(--line-soft)", background: "var(--panel)" }}
                       >
                         {MUSCLE_GROUPS.map((m) => {
@@ -613,18 +854,6 @@ export default function WorkoutCard({
                   </>
                 )}
               </div>
-
-              {!rawNote && (
-                <button
-                  type="button"
-                  onClick={handleInsertSample}
-                  className="min-h-[36px] flex items-center gap-1.5 rounded px-2.5 py-1 border font-medium text-ink-dim hover:text-ink transition-colors"
-                  style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
-                >
-                  <Copy size={12} aria-hidden="true" />
-                  Sample Template
-                </button>
-              )}
             </div>
 
             <button
@@ -634,7 +863,7 @@ export default function WorkoutCard({
               className="min-h-[36px] px-2 flex items-center gap-1 text-ink-faint hover:text-ink transition-colors"
             >
               <Sparkles size={12} aria-hidden="true" />
-              Format
+              <span>Format</span>
             </button>
           </div>
         </div>
@@ -678,12 +907,17 @@ export default function WorkoutCard({
                       )}
                     </div>
 
-                    {stat?.bestWeightKg ? (
-                      <span className="flex items-center gap-1 text-2xs text-accent font-semibold shrink-0 whitespace-nowrap">
-                        <span className="num uppercase tracking-wider">PR</span>
-                        <span className="num text-ink">{stat.bestWeightKg}{weightUnit}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-2xs uppercase tracking-wider font-mono opacity-60 text-ink">
+                        {lookupMuscleGroup(ex.normalized)}
                       </span>
-                    ) : null}
+                      {stat?.bestWeightKg ? (
+                        <span className="flex items-center gap-1 text-2xs text-accent font-semibold whitespace-nowrap">
+                          <span className="num uppercase tracking-wider">PR</span>
+                          <span className="num text-ink">{stat.bestWeightKg}{weightUnit}</span>
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
 
                   {/* Sets List */}
@@ -703,7 +937,7 @@ export default function WorkoutCard({
                               onClick={() => handleToggleSet(setKey)}
                               aria-label={`Mark set ${set.setNumber} complete`}
                               aria-pressed={isDone}
-                              className="min-h-[44px] min-w-[44px] -ml-2.5 flex items-center justify-center transition-colors"
+                              className="min-h-[40px] min-w-[40px] -ml-2 flex items-center justify-center transition-colors"
                             >
                               <span
                                 className={`flex items-center justify-center h-5 w-5 rounded border transition-colors ${
@@ -750,24 +984,33 @@ export default function WorkoutCard({
                       );
                     })}
                   </div>
+
+                  {/* Add Set Quick Button directly on Card */}
+                  <button
+                    type="button"
+                    onClick={() => handleAddSetToExercise(ex.name, ex.sets)}
+                    className="w-full py-1.5 px-3 flex items-center justify-center gap-1 text-2xs font-medium text-ink-dim hover:text-ink hover:bg-panel transition-colors border-t"
+                    style={{ borderColor: "var(--line-soft)" }}
+                  >
+                    <Plus size={11} aria-hidden="true" />
+                    <span>Add Set</span>
+                  </button>
                 </div>
               );
             })
           )}
 
-          {parsedPreview.exercises.length > 0 && (
-            <div className="pt-1 flex justify-start">
-              <button
-                type="button"
-                onClick={() => setViewMode("note")}
-                className="min-h-[36px] flex items-center gap-1.5 rounded px-3 py-1.5 border text-xs font-medium text-ink-dim hover:text-ink transition-colors"
-                style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
-              >
-                <Plus size={13} aria-hidden="true" />
-                Add More Exercises
-              </button>
-            </div>
-          )}
+          <div className="pt-1 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setViewMode("note")}
+              className="min-h-[36px] flex items-center gap-1.5 rounded px-3 py-1.5 border text-xs font-medium text-ink-dim hover:text-ink transition-colors"
+              style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
+            >
+              <FileText size={13} aria-hidden="true" />
+              <span>Edit Note</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -780,20 +1023,6 @@ export default function WorkoutCard({
           exerciseId={activeExerciseId}
           onClose={() => setActiveExerciseId(null)}
           unit={weightUnit}
-        />
-      )}
-
-      {/* Workout Import Modal */}
-      {showImportModal && (
-        <WorkoutImportModal
-          weightUnit={weightUnit}
-          onClose={() => setShowImportModal(false)}
-          onSuccess={(count) => {
-            onToast(`Successfully imported ${count} workout${count === 1 ? "" : "s"}`);
-            setShowImportModal(false);
-            loadWorkout();
-            onWorkoutSaved?.();
-          }}
         />
       )}
     </div>
