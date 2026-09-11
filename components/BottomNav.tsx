@@ -25,6 +25,7 @@ const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
 export default function BottomNav({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
   return (
     <nav
+      aria-label="Bottom navigation"
       className="fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur-lg"
       style={{
         borderColor: "var(--line)",

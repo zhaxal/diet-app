@@ -357,10 +357,23 @@ export const api = {
       method: "DELETE",
     }),
 
-  searchExercises: (q?: string) =>
-    request<{ exercises: Array<{ id: string; name: string; normalized: string; summary?: ExerciseStats }> }>(
-      `/api/exercises${q ? `?q=${encodeURIComponent(q)}` : ""}`,
-    ),
+  searchExercises: (q?: string, muscle?: string) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (muscle && muscle !== "All") params.set("muscle", muscle);
+    const qs = params.toString();
+    return request<{
+      exercises: Array<{
+        id: string;
+        name: string;
+        normalized: string;
+        muscleGroup?: string;
+        equipment?: string;
+        isCustom?: boolean;
+        summary?: ExerciseStats;
+      }>;
+    }>(`/api/exercises${qs ? `?${qs}` : ""}`);
+  },
 
   getExerciseHistory: (id: string) =>
     request<{
@@ -385,6 +398,66 @@ export const api = {
         }>;
       }>;
     }>(`/api/exercises/${encodeURIComponent(id)}/history`),
+
+  getWorkoutDates: () =>
+    request<{
+      sessions: Array<{
+        id: string;
+        date: string;
+        title: string;
+        setsCount: number;
+        volume: number;
+      }>;
+    }>("/api/workouts/dates"),
+
+  getWorkoutSummary: (days: number = 30) =>
+    request<{
+      summary: {
+        periodDays: number;
+        totalWorkouts: number;
+        totalVolume: number;
+        totalSets: number;
+        totalReps: number;
+        displayUnit: string;
+        muscleGroups: Record<string, { sets: number; percentage: number }>;
+        recentWorkouts: Array<{
+          id: string;
+          date: string;
+          title: string;
+          exercisesCount: number;
+          setsCount: number;
+          volume: number;
+        }>;
+      };
+    }>(`/api/workouts/summary?days=${days}`),
+
+  importWorkouts: (data: {
+    markdown?: string;
+    workouts?: Array<{ date: string; title?: string; note: string }>;
+    dryRun?: boolean;
+    overwrite?: boolean;
+  }) =>
+    request<{
+      ok?: boolean;
+      created?: number;
+      updated?: number;
+      total?: number;
+      dryRun?: boolean;
+      totalWorkouts?: number;
+      totalExercises?: number;
+      totalSets?: number;
+      workouts?: Array<{
+        date: string;
+        title: string;
+        rawNote: string;
+        exercisesCount: number;
+        setsCount: number;
+        exerciseNames: string[];
+      }>;
+    }>("/api/workouts/import", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };
 
 export interface ClientWorkoutSet {

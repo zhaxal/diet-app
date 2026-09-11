@@ -5,6 +5,9 @@ import {
   formatWorkoutNote,
   calculate1RM,
   normalizeExerciseName,
+  parseMultiWorkoutMarkdown,
+  generateObsidianExport,
+  calculateSessionStats,
 } from "../lib/workout-parser";
 
 test("parses standard Obsidian bullet format with title", () => {
@@ -161,3 +164,62 @@ test("formats parsed workout back to clean markdown", () => {
   assert.match(md, /- BW x 10/);
   assert.match(md, /- \+15kg x 5/);
 });
+
+test("parses multi-day Obsidian journal files and generates Obsidian vault export", () => {
+  const multiDayNote = `
+# 2026-09-08 Push Day
+Bench Press
+- 80kg x 8
+- 82.5kg x 8
+
+Incline DB
+- 28kg x 10
+
+---
+
+## 2026-09-10 · Pull Day
+Pullups
+- BW x 10
+- +10kg x 6
+
+Barbell Row
+- 70kg x 8
+`;
+
+  const parsed = parseMultiWorkoutMarkdown(multiDayNote, "kg");
+  assert.equal(parsed.length, 2);
+
+  assert.equal(parsed[0].date, "2026-09-08");
+  assert.equal(parsed[0].title, "Push Day");
+  assert.equal(parsed[0].parsed.exercises.length, 2);
+  assert.equal(parsed[0].parsed.exercises[0].name, "Bench Press");
+  assert.equal(parsed[0].parsed.exercises[0].sets.length, 2);
+
+  assert.equal(parsed[1].date, "2026-09-10");
+  assert.equal(parsed[1].title, "Pull Day");
+  assert.equal(parsed[1].parsed.exercises.length, 2);
+  assert.equal(parsed[1].parsed.exercises[0].name, "Pullups");
+
+  const exported = generateObsidianExport(
+    parsed.map((p) => ({ date: p.date, title: p.title, rawNote: p.rawNote })),
+  );
+  assert.match(exported, /# Workout Vault Export/);
+  assert.match(exported, /## 2026-09-10 · Pull Day/);
+  assert.match(exported, /## 2026-09-08 · Push Day/);
+});
+
+test("calculateSessionStats calculates volume, sets, and reps correctly excluding warmups", () => {
+  const note = `Bench Press
+- 40kg x 10 (warmup)
+- 80kg x 8
+- 80kg x 6
+`;
+  const parsed = parseWorkoutNote(note, "kg");
+  const stats = calculateSessionStats(parsed.exercises);
+  assert.equal(stats.totalSets, 2); // 1 warmup excluded
+  assert.equal(stats.totalReps, 14); // 8 + 6
+  assert.equal(stats.totalVolume, 80 * 8 + 80 * 6); // 640 + 480 = 1120
+  assert.equal(stats.exerciseCount, 1);
+});
+
+

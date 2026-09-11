@@ -91,7 +91,7 @@ export default function ExerciseHistoryModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
       style={{ background: "color-mix(in srgb, var(--ink) 65%, transparent)" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -102,12 +102,16 @@ export default function ExerciseHistoryModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="exercise-modal-title"
-        className="relative flex flex-col w-full max-w-lg max-h-[85vh] overflow-hidden rounded border"
-        style={{ background: "var(--panel)", borderColor: "var(--line)" }}
+        className="relative flex flex-col w-full max-w-lg max-h-[92dvh] sm:max-h-[85vh] overflow-hidden rounded-t sm:rounded border"
+        style={{
+          background: "var(--panel)",
+          borderColor: "var(--line)",
+          paddingBottom: "env(safe-area-inset-bottom)",
+        }}
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between border-b px-4 py-3"
+          className="flex items-center justify-between border-b px-3.5 py-2.5 sm:px-4 sm:py-3"
           style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
         >
           <div>
@@ -203,7 +207,7 @@ export default function ExerciseHistoryModal({
                       <button
                         type="button"
                         onClick={() => setMetric("weight")}
-                        className={`min-h-[28px] rounded px-2 text-2xs transition-colors ${
+                        className={`min-h-[32px] rounded px-2.5 text-2xs transition-colors ${
                           metric === "weight"
                             ? "bg-ink text-panel font-semibold"
                             : "text-ink-faint hover:text-ink"
@@ -214,7 +218,7 @@ export default function ExerciseHistoryModal({
                       <button
                         type="button"
                         onClick={() => setMetric("1rm")}
-                        className={`min-h-[28px] rounded px-2 text-2xs transition-colors ${
+                        className={`min-h-[32px] rounded px-2.5 text-2xs transition-colors ${
                           metric === "1rm"
                             ? "bg-ink text-panel font-semibold"
                             : "text-ink-faint hover:text-ink"

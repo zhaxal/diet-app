@@ -25,8 +25,19 @@ import {
   type ServingUnit,
   type WeightUnit,
 } from "@/lib/units";
-import { parseWorkoutNote, formatWorkoutNote, calculate1RM, normalizeExerciseName } from "@/lib/workout-parser";
-import { getExerciseSummary, getExerciseFullHistory } from "@/lib/workout-stats";
+import {
+  parseWorkoutNote,
+  formatWorkoutNote,
+  calculate1RM,
+  normalizeExerciseName,
+  parseMultiWorkoutMarkdown,
+  generateObsidianExport,
+} from "@/lib/workout-parser";
+import {
+  getExerciseSummary,
+  getExerciseFullHistory,
+  getWorkoutMacroSummary,
+} from "@/lib/workout-stats";
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 
@@ -179,6 +190,31 @@ const suggestNextWorkoutSchema = z.object({
   routine: z.string().optional().default("Push Day"),
 });
 
+const importWorkoutsSchema = z.object({
+  markdown: z.string().optional(),
+  workouts: z
+    .array(
+      z.object({
+        date: z.string().regex(DATE_ONLY),
+        title: z.string().max(200).optional(),
+        note: z.string().min(1),
+      }),
+    )
+    .optional(),
+  dryRun: z.boolean().optional().default(false),
+  overwrite: z.boolean().optional().default(true),
+});
+
+const exportWorkoutsSchema = z.object({
+  format: z.enum(["markdown", "json"]).optional().default("markdown"),
+  startDate: z.string().regex(DATE_ONLY).optional(),
+  endDate: z.string().regex(DATE_ONLY).optional(),
+});
+
+const workoutSummarySchema = z.object({
+  days: z.coerce.number().min(1).max(365).optional().default(30),
+});
+
 const ARG_SCHEMAS: Record<string, z.ZodTypeAny> = {
   log_meal: logMealSchema,
   get_summary: dateArgSchema,
@@ -198,6 +234,9 @@ const ARG_SCHEMAS: Record<string, z.ZodTypeAny> = {
   get_workout: getWorkoutSchema,
   get_exercise_history: exerciseHistorySchema,
   suggest_next_workout: suggestNextWorkoutSchema,
+  import_workouts: importWorkoutsSchema,
+  export_workouts: exportWorkoutsSchema,
+  get_workout_summary: workoutSummarySchema,
 };
 
 
@@ -449,6 +488,53 @@ const TOOLS = [
       type: "object",
       properties: {
         routine: { type: "string", description: "Routine title, e.g. 'Push Day', 'Pull Day', 'Legs'. Defaults to 'Push Day'." },
+      },
+    },
+  },
+  {
+    name: "import_workouts",
+    description: "Bulk import multiple workouts from Obsidian markdown text (e.g. journal with dated headings like '## 2026-09-08 Push Day') or a structured workouts array. Automatically extracts exercises, weights, and sets.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        markdown: { type: "string", description: "Multi-day Obsidian notes markdown string" },
+        workouts: {
+          type: "array",
+          description: "Structured array of workout objects",
+          items: {
+            type: "object",
+            required: ["date", "note"],
+            properties: {
+              date: { type: "string", description: "YYYY-MM-DD" },
+              title: { type: "string" },
+              note: { type: "string" },
+            },
+          },
+        },
+        dryRun: { type: "boolean", description: "If true, only parses and returns a preview without saving to database" },
+        overwrite: { type: "boolean", description: "If true (default), replaces existing workouts on the same dates" },
+      },
+    },
+  },
+  {
+    name: "export_workouts",
+    description: "Export all workouts in clean Obsidian markdown journal format (ready for an Obsidian vault) or structured JSON.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        format: { type: "string", enum: ["markdown", "json"], description: "Default is 'markdown'" },
+        startDate: { type: "string", description: "Optional start date filter (YYYY-MM-DD)" },
+        endDate: { type: "string", description: "Optional end date filter (YYYY-MM-DD)" },
+      },
+    },
+  },
+  {
+    name: "get_workout_summary",
+    description: "Get comprehensive gym performance analytics: total volume (kg/lb), sessions frequency, total sets & reps, muscle group set distribution (Chest, Back, Legs, etc.), and recent workout logs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", minimum: 1, maximum: 365, description: "Timeframe in days (default: 30)" },
       },
     },
   },
@@ -1145,6 +1231,218 @@ async function callTool(
         title: prev.title,
         exercises: suggestedExercises,
       });
+    }
+
+    case "import_workouts": {
+      const { markdown, workouts: rawWorkouts, dryRun, overwrite } = parsed.data as z.infer<typeof importWorkoutsSchema>;
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } });
+      const userUnit: WeightUnit = isWeightUnit(user?.weightUnit) ? (user!.weightUnit as WeightUnit) : "kg";
+
+      let itemsToImport: Array<{ date: string; title: string; rawNote: string }> = [];
+
+      if (markdown) {
+        const parsed = parseMultiWorkoutMarkdown(markdown, userUnit);
+        itemsToImport = parsed.map((p) => ({
+          date: p.date,
+          title: p.title,
+          rawNote: p.rawNote,
+        }));
+      } else if (rawWorkouts) {
+        itemsToImport = rawWorkouts.map((w) => ({
+          date: w.date,
+          title: w.title || "Workout",
+          rawNote: w.note,
+        }));
+      } else {
+        throw new Error("Must provide either markdown or workouts array");
+      }
+
+      if (itemsToImport.length === 0) {
+        return "No valid workouts found in input.";
+      }
+
+      if (dryRun) {
+        const previews = itemsToImport.map((item) => {
+          const parsed = parseWorkoutNote(item.rawNote, userUnit);
+          return `• ${item.date} (${parsed.title || item.title}): ${parsed.exercises.length} exercises, ${parsed.exercises.reduce((acc, e) => acc + e.sets.length, 0)} sets`;
+        });
+        return `[DRY RUN PREVIEW] Found ${itemsToImport.length} workouts:\n${previews.join("\n")}\n\nCall import_workouts with dryRun: false to commit.`;
+      }
+
+      const results = await prisma.$transaction(async (tx) => {
+        let createdCount = 0;
+        let updatedCount = 0;
+
+        for (const item of itemsToImport) {
+          const { start, end } = dayBoundsInTz(item.date, tz);
+          const workoutUtcDate = zonedWallToUtc(item.date, "12:00:00.000", tz);
+          const parsedWorkout = parseWorkoutNote(item.rawNote, userUnit);
+          const resolvedTitle =
+            parsedWorkout.title && parsedWorkout.title !== "Workout"
+              ? parsedWorkout.title
+              : item.title || "Workout";
+
+          let existing = await tx.workout.findFirst({
+            where: { userId, date: { gte: start, lt: end } },
+          });
+
+          if (!existing) {
+            existing = await tx.workout.create({
+              data: {
+                userId,
+                date: workoutUtcDate,
+                title: resolvedTitle,
+                rawNote: item.rawNote,
+                notes: parsedWorkout.notes,
+                source: "mcp-import",
+              },
+            });
+            createdCount++;
+          } else {
+            if (overwrite === false) continue;
+            await tx.workoutExercise.deleteMany({ where: { workoutId: existing.id } });
+            existing = await tx.workout.update({
+              where: { id: existing.id },
+              data: {
+                title: resolvedTitle,
+                rawNote: item.rawNote,
+                notes: parsedWorkout.notes,
+                source: "mcp-import",
+                updatedAt: new Date(),
+              },
+            });
+            updatedCount++;
+          }
+
+          for (let i = 0; i < parsedWorkout.exercises.length; i++) {
+            const parsedEx = parsedWorkout.exercises[i];
+            const exercise = await tx.exercise.upsert({
+              where: { userId_normalized: { userId, normalized: parsedEx.normalized } },
+              update: { name: parsedEx.name },
+              create: { userId, name: parsedEx.name, normalized: parsedEx.normalized },
+            });
+
+            const we = await tx.workoutExercise.create({
+              data: {
+                workoutId: existing.id,
+                exerciseId: exercise.id,
+                order: i,
+                notes: parsedEx.notes,
+              },
+            });
+
+            if (parsedEx.sets.length > 0) {
+              await tx.workoutSet.createMany({
+                data: parsedEx.sets.map((s) => ({
+                  workoutExerciseId: we.id,
+                  setNumber: s.setNumber,
+                  weight: toKg(s.weight, s.unit),
+                  unit: s.unit,
+                  reps: s.reps,
+                  isWarmup: s.isWarmup,
+                  isBodyweight: s.isBodyweight,
+                  rpe: s.rpe,
+                })),
+              });
+            }
+          }
+        }
+
+        return { createdCount, updatedCount };
+      });
+
+      return `Successfully imported ${results.createdCount + results.updatedCount} workouts (${results.createdCount} new, ${results.updatedCount} updated).`;
+    }
+
+    case "export_workouts": {
+      const { format, startDate, endDate } = parsed.data as z.infer<typeof exportWorkoutsSchema>;
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } });
+      const userUnit: WeightUnit = isWeightUnit(user?.weightUnit) ? (user!.weightUnit as WeightUnit) : "kg";
+
+      const dateFilter: Record<string, unknown> = {};
+      if (startDate) dateFilter.gte = new Date(`${startDate}T00:00:00.000Z`);
+      if (endDate) dateFilter.lte = new Date(`${endDate}T23:59:59.999Z`);
+
+      const workouts = await prisma.workout.findMany({
+        where: {
+          userId,
+          ...(Object.keys(dateFilter).length > 0 ? { date: dateFilter } : {}),
+        },
+        include: {
+          exercises: {
+            orderBy: { order: "asc" },
+            include: {
+              exercise: true,
+              sets: { orderBy: { setNumber: "asc" } },
+            },
+          },
+        },
+        orderBy: { date: "desc" },
+      });
+
+      if (workouts.length === 0) {
+        return "No workouts found to export.";
+      }
+
+      if (format === "markdown") {
+        return generateObsidianExport(
+          workouts.map((w) => ({
+            date: w.date.toISOString().slice(0, 10),
+            title: w.title,
+            rawNote: w.rawNote,
+          })),
+        );
+      }
+
+      return JSON.stringify(
+        workouts.map((w) => ({
+          date: w.date.toISOString().slice(0, 10),
+          title: w.title,
+          rawNote: w.rawNote,
+          exercises: w.exercises.map((we) => ({
+            name: we.exercise.name,
+            sets: we.sets.map((s) => ({
+              set: s.setNumber,
+              weight: fromKg(s.weight, userUnit),
+              unit: userUnit,
+              reps: s.reps,
+            })),
+          })),
+        })),
+        null,
+        2,
+      );
+    }
+
+    case "get_workout_summary": {
+      const { days } = parsed.data as z.infer<typeof workoutSummarySchema>;
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } });
+      const userUnit: WeightUnit = isWeightUnit(user?.weightUnit) ? (user!.weightUnit as WeightUnit) : "kg";
+
+      const summary = await getWorkoutMacroSummary(userId, days, userUnit);
+
+      const lines: string[] = [
+        `# Workout Analytics (Past ${days} Days)`,
+        `• Total Sessions: ${summary.totalWorkouts}`,
+        `• Total Tonnage Lifted: ${summary.totalVolume.toLocaleString()} ${userUnit}`,
+        `• Total Sets Logged: ${summary.totalSets} (avg ${summary.totalWorkouts > 0 ? Math.round(summary.totalSets / summary.totalWorkouts) : 0} sets/session)`,
+        `• Total Reps: ${summary.totalReps.toLocaleString()}`,
+        "",
+        "Muscle Group Distribution:",
+      ];
+
+      for (const [group, info] of Object.entries(summary.muscleGroups)) {
+        lines.push(`• ${group}: ${info.sets} sets (${info.percentage}%)`);
+      }
+
+      if (summary.recentWorkouts.length > 0) {
+        lines.push("", "Recent Sessions:");
+        for (const rw of summary.recentWorkouts.slice(0, 5)) {
+          lines.push(`• ${rw.date} · ${rw.title}: ${rw.exercisesCount} exercises, ${rw.setsCount} sets, ${rw.volume.toLocaleString()} ${userUnit}`);
+        }
+      }
+
+      return lines.join("\n");
     }
 
     default:

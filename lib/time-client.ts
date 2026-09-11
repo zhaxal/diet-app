@@ -38,3 +38,19 @@ export function agoLabel(value: string | number | Date): string {
   if (days < 14) return `${days}d`;
   return `${Math.floor(days / 7)}w`;
 }
+
+export function shiftDate(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+export function prettyDate(date: string): string {
+  const d = new Date(`${date}T00:00:00`);
+  if (date === todayStr()) return "Today";
+  if (date === shiftDate(todayStr(), -1)) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+

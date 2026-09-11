@@ -12,13 +12,11 @@ export async function GET(req: NextRequest) {
   const format = req.nextUrl.searchParams.get("format") === "csv" ? "csv" : "json";
   const stamp = new Date().toISOString().slice(0, 10);
 
-  const [entries, weightLogs, favorites, templates, products, profile] = await Promise.all([
+  const [entries, weightLogs, favorites, templates, products, profile, workouts, exercises] = await Promise.all([
     prisma.foodEntry.findMany({ where: { userId: user.id }, orderBy: { consumedAt: "asc" } }),
     prisma.weightLog.findMany({ where: { userId: user.id }, orderBy: { loggedAt: "asc" } }),
     prisma.favorite.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
     prisma.mealTemplate.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
-    // The product catalog is a first-class feature and was missing from every
-    // export: an "all of your data" file that omitted the labels you had saved.
     prisma.product.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
     prisma.user.findUnique({
       where: { id: user.id },
@@ -28,6 +26,20 @@ export async function GET(req: NextRequest) {
         weightUnit: true, timezone: true, sex: true, birthYear: true, heightCm: true,
       },
     }),
+    prisma.workout.findMany({
+      where: { userId: user.id },
+      include: {
+        exercises: {
+          orderBy: { order: "asc" },
+          include: {
+            exercise: true,
+            sets: { orderBy: { setNumber: "asc" } },
+          },
+        },
+      },
+      orderBy: { date: "asc" },
+    }),
+    prisma.exercise.findMany({ where: { userId: user.id }, orderBy: { name: "asc" } }),
   ]);
 
   const displayUnit: WeightUnit = isWeightUnit(user.weightUnit) ? user.weightUnit : "kg";
@@ -87,6 +99,31 @@ export async function GET(req: NextRequest) {
     })),
     favorites,
     products,
+    workouts: workouts.map((w) => ({
+      id: w.id,
+      date: w.date.toISOString().slice(0, 10),
+      title: w.title,
+      rawNote: w.rawNote,
+      exercises: w.exercises.map((we) => ({
+        name: we.exercise.name,
+        muscleGroup: we.exercise.muscleGroup,
+        sets: we.sets.map((s) => ({
+          setNumber: s.setNumber,
+          weight: fromKg(s.weight, displayUnit),
+          weightKg: s.weight,
+          unit: displayUnit,
+          reps: s.reps,
+          isWarmup: s.isWarmup,
+          isBodyweight: s.isBodyweight,
+        })),
+      })),
+    })),
+    exercises: exercises.map((ex) => ({
+      id: ex.id,
+      name: ex.name,
+      normalized: ex.normalized,
+      muscleGroup: ex.muscleGroup,
+    })),
     templates: templates.map((t) => {
       // One malformed row used to throw, taking the whole export down with a
       // 500 — the file you reach for precisely when something is wrong.

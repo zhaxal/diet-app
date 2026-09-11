@@ -15,7 +15,7 @@ import {
   type Trends,
   type TrendRange,
 } from "@/lib/api-client";
-import { clockTime, todayStr } from "@/lib/time-client";
+import { clockTime, todayStr, shiftDate, prettyDate } from "@/lib/time-client";
 import { createLatestRequest } from "@/lib/latest-request";
 import { clearFoodDrafts, clearFoodDraftsUnless } from "@/lib/food-draft";
 import {
@@ -45,24 +45,12 @@ import AddFood from "@/components/AddFood";
 import TdeeCard from "@/components/TdeeCard";
 import ProductsCard from "@/components/ProductsCard";
 import WorkoutCard from "@/components/WorkoutCard";
+import WorkoutNavigator from "@/components/WorkoutNavigator";
+import WorkoutSummaryCard from "@/components/WorkoutSummaryCard";
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 type Meal = (typeof MEALS)[number];
 
-function shiftDate(date: string, days: number) {
-  const d = new Date(`${date}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
-
-function prettyDate(date: string) {
-  const d = new Date(`${date}T00:00:00`);
-  if (date === todayStr()) return "Today";
-  if (date === shiftDate(todayStr(), -1)) return "Yesterday";
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-}
 
 // The meal a one-tap log lands in follows the clock, not a stale select. Whatever
 // this returns is shown on screen before anything is logged, never inferred silently.
@@ -135,6 +123,7 @@ function Dashboard() {
   );
   const goTab = useCallback((t: Tab) => writeParams({ tab: t }), [writeParams]);
   const setDate = useCallback((d: string) => writeParams({ d }), [writeParams]);
+  const [workoutRefreshKey, setWorkoutRefreshKey] = useState(0);
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [urlCopied, setUrlCopied] = useState(false);
@@ -819,7 +808,7 @@ function Dashboard() {
                   max={todayStr()}
                   aria-label="Show a different day"
                   onChange={(e) => setDate(e.target.value)}
-                  className="field num py-0.5 text-2xs"
+                  className="field num py-1 px-2 text-base sm:text-2xs"
                 />
               </div>
           </div>
@@ -873,7 +862,7 @@ function Dashboard() {
               )}
               {calGoal ? (
                 <span
-                  className="num ml-auto text-right text-sm font-semibold"
+                  className="num ml-auto text-right text-sm font-semibold shrink-0 whitespace-nowrap"
                   style={{ color: calOver ? "var(--over)" : "var(--ok)" }}
                 >
                   {Math.abs(calLeft).toLocaleString()}
@@ -1060,63 +1049,23 @@ function Dashboard() {
         <>
           <Header sub={prettyDate(date)}>Workout</Header>
 
-          <nav className="panel mb-2 flex overflow-x-auto" aria-label="Week">
-            {weekEnding(stripEnd).map((d) => {
-              const active = d === date;
-              const dt = new Date(`${d}T00:00:00`);
-              return (
-                <button
-                  key={d}
-                  onClick={() => setDate(d)}
-                  aria-pressed={active}
-                  aria-label={prettyDate(d)}
-                  className="flex-1 min-w-[44px] border-r py-2 text-center last:border-r-0 transition-colors"
-                  style={{
-                    borderColor: "var(--line)",
-                    background: active ? "var(--ink)" : "transparent",
-                    color: active ? "var(--panel)" : "var(--ink-dim)",
-                  }}
-                >
-                  <div className="text-2xs uppercase tracking-wider opacity-70">
-                    {dt.toLocaleDateString(undefined, { weekday: "narrow" })}
-                  </div>
-                  <div className="num text-sm font-semibold">{d.slice(8)}</div>
-                </button>
-              );
-            })}
-          </nav>
+          <WorkoutNavigator
+            currentDate={date}
+            onSelectDate={setDate}
+            todayDate={todayStr()}
+            refreshTrigger={workoutRefreshKey}
+          />
 
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <span className="num text-2xs uppercase tracking-wider text-ink-faint">
-              {prettyDate(date)}
-            </span>
-            <div className="flex items-center gap-2">
-              {date !== todayStr() && (
-                <button
-                  onClick={() => setDate(todayStr())}
-                  className="min-h-[32px] px-2 text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
-                >
-                  Today
-                </button>
-              )}
-              <input
-                type="date"
-                value={date}
-                max={todayStr()}
-                aria-label="Show a different day"
-                onChange={(e) => {
-                  if (e.target.value) setDate(e.target.value);
-                }}
-                className="rounded border px-1.5 py-0.5 font-mono text-2xs text-ink-dim"
-                style={{ borderColor: "var(--line)", background: "var(--panel)" }}
-              />
-            </div>
-          </div>
+          <WorkoutSummaryCard
+            weightUnit={goals.weightUnit || "kg"}
+            refreshTrigger={workoutRefreshKey}
+          />
 
           <WorkoutCard
             date={date}
             weightUnit={goals.weightUnit || "kg"}
             onToast={(m) => toast(m)}
+            onWorkoutSaved={() => setWorkoutRefreshKey((k) => k + 1)}
           />
         </>
       )}

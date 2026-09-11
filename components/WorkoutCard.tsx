@@ -10,6 +10,10 @@ import {
   History,
   Sparkles,
   ChevronRight,
+  Download,
+  UploadCloud,
+  Search,
+  X,
 } from "lucide-react";
 import {
   api,
@@ -19,19 +23,31 @@ import {
 import {
   parseWorkoutNote,
   formatWorkoutNote,
+  calculateSessionStats,
 } from "@/lib/workout-parser";
+import {
+  MUSCLE_GROUPS,
+  type MuscleGroupFilter,
+} from "@/lib/default-exercises";
 import RestTimer from "./RestTimer";
 import ExerciseHistoryModal from "./ExerciseHistoryModal";
+import WorkoutImportModal from "./WorkoutImportModal";
 
 interface WorkoutCardProps {
   date: string;
   weightUnit: string;
   onToast: (msg: string) => void;
+  onWorkoutSaved?: () => void;
 }
 
 type ViewMode = "note" | "cards";
 
-export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardProps) {
+export default function WorkoutCard({
+  date,
+  weightUnit,
+  onToast,
+  onWorkoutSaved,
+}: WorkoutCardProps) {
   const [workout, setWorkout] = useState<ClientWorkout | null>(null);
   const [title, setTitle] = useState<string>("Workout");
   const [rawNote, setRawNote] = useState<string>("");
@@ -40,8 +56,14 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
   const [viewMode, setViewMode] = useState<ViewMode>("note");
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
-  const [suggestedExercises, setSuggestedExercises] = useState<Array<{ id: string; name: string; normalized: string }>>([]);
+  const [suggestedExercises, setSuggestedExercises] = useState<
+    Array<{ id: string; name: string; normalized: string; muscleGroup?: string }>
+  >([]);
   const [showAddMenu, setShowAddMenu] = useState<boolean>(false);
+  const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<MuscleGroupFilter>("All");
+  const [exerciseSearchQuery, setExerciseSearchQuery] = useState<string>("");
+  const [searchingExercises, setSearchingExercises] = useState<boolean>(false);
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [completedSets, setCompletedSets] = useState<Record<string, boolean>>({});
 
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -65,15 +87,12 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
     }
   }, [completedKey]);
 
-  // Fetch workout on date change
-  useEffect(() => {
-    let cancelled = false;
+  // Load workout from server or local draft
+  const loadWorkout = useCallback(() => {
     setLoading(true);
-
     api
       .getWorkout(date)
       .then((res) => {
-        if (cancelled) return;
         if (res.workout) {
           setWorkout(res.workout);
           setTitle(res.workout.title);
@@ -104,23 +123,42 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
         setLoading(false);
       })
       .catch((err) => {
-        if (cancelled) return;
         console.error("Failed to load workout", err);
         setLoading(false);
       });
+  }, [date, draftKey]);
 
-    // Load suggested exercises for autocomplete
-    api.searchExercises().then((res) => {
-      if (!cancelled && res.exercises) {
-        setSuggestedExercises(res.exercises);
-      }
-    }).catch(() => {});
+  useEffect(() => {
+    loadWorkout();
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [loadWorkout]);
+
+  // Search/filter exercises when menu is opened or query/muscle changes
+  useEffect(() => {
+    if (!showAddMenu) return;
+    let cancelled = false;
+    setSearchingExercises(true);
+    const timer = setTimeout(() => {
+      api
+        .searchExercises(exerciseSearchQuery, selectedMuscleGroup)
+        .then((res) => {
+          if (!cancelled && res.exercises) {
+            setSuggestedExercises(res.exercises);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setSearchingExercises(false);
+        });
+    }, 120);
 
     return () => {
       cancelled = true;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      clearTimeout(timer);
     };
-  }, [date, draftKey]);
+  }, [showAddMenu, exerciseSearchQuery, selectedMuscleGroup]);
 
   // Save workout to backend
   const persistWorkout = useCallback(
@@ -137,13 +175,14 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
         setExerciseStats(res.exerciseStats || {});
         setSaveStatus("saved");
         localStorage.removeItem(draftKey);
+        onWorkoutSaved?.();
       } catch (err) {
         console.error("Failed to save workout", err);
         setSaveStatus("unsaved");
         onToast("Could not save workout to server — preserved in draft");
       }
     },
-    [date, draftKey, onToast],
+    [date, draftKey, onToast, onWorkoutSaved],
   );
 
   // Debounced auto-save on change
@@ -251,24 +290,12 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
     onToast("Note formatted");
   };
 
-  // One-tap copy last workout
-  const handleCopyLast = async () => {
-    try {
-      // Find previous workout
-      const res = await api.searchExercises();
-      if (!res.exercises || res.exercises.length === 0) {
-        onToast("No previous workouts found");
-        return;
-      }
-
-      // Pre-fill with common exercises
-      const sample = `# Push Day\n\nBench Press\n- 80${weightUnit} x 8\n- 80${weightUnit} x 8\n- 80${weightUnit} x 8\n\nIncline Dumbbell Press\n- 28${weightUnit} x 10\n- 28${weightUnit} x 10\n\nTricep Pushdown\n- 30${weightUnit} x 12\n- 30${weightUnit} x 12\n`;
-      handleNoteChange(sample);
-      setTitle("Push Day");
-      onToast("Copied template note");
-    } catch {
-      onToast("Could not copy last workout");
-    }
+  // One-tap insert sample template note
+  const handleInsertSample = () => {
+    const sample = `# Push Day\n\nBench Press\n- 80${weightUnit} x 8\n- 80${weightUnit} x 8\n- 80${weightUnit} x 8\n\nIncline Dumbbell Press\n- 28${weightUnit} x 10\n- 28${weightUnit} x 10\n\nTricep Pushdown\n- 30${weightUnit} x 12\n- 30${weightUnit} x 12\n`;
+    handleNoteChange(sample);
+    setTitle("Push Day");
+    onToast("Inserted sample template");
   };
 
   // Append exercise from autocomplete chip
@@ -282,8 +309,9 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
     }
   };
 
-  // Parse current exercises for live badge preview
+  // Parse current exercises for live badge preview and session volume stats
   const parsedPreview = parseWorkoutNote(rawNote, weightUnit as "kg" | "lb");
+  const sessionStats = calculateSessionStats(parsedPreview.exercises);
 
   return (
     <div
@@ -292,7 +320,7 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
     >
       {/* Top Bar: Title & Save State */}
       <div
-        className="flex items-center justify-between border-b px-3.5 py-2.5"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b px-3.5 py-2.5"
         style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
       >
         <input
@@ -301,10 +329,10 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
           onChange={(e) => handleTitleChange(e.target.value)}
           placeholder="Workout name (e.g. Push Day)"
           aria-label="Workout title"
-          className="flex-1 bg-transparent text-sm font-bold tracking-tight text-ink placeholder:text-ink-faint focus:outline-none"
+          className="flex-1 min-w-0 bg-transparent text-base sm:text-sm font-bold tracking-tight text-ink placeholder:text-ink-faint focus:outline-none"
         />
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
           {/* Mode Switcher */}
           <div
             className="flex items-center rounded border p-0.5"
@@ -342,7 +370,7 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
 
           {/* Save Status badge */}
           <span
-            className="text-2xs font-medium uppercase tracking-wider px-2 py-0.5 rounded"
+            className="text-2xs font-medium uppercase tracking-wider px-2 py-0.5 rounded shrink-0 whitespace-nowrap"
             style={{
               color: saveStatus === "saved" ? "var(--ok)" : "var(--warn)",
               background:
@@ -353,6 +381,55 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
           >
             {saveStatus === "saving" ? "saving…" : saveStatus === "saved" ? "saved" : "draft"}
           </span>
+        </div>
+      </div>
+
+      {/* Live Session Instrument Bar & Vault Actions */}
+      <div
+        className="flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-1.5 text-2xs"
+        style={{ borderColor: "var(--line)", background: "var(--panel)" }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            <span className="uppercase tracking-wider text-ink-faint">Vol</span>
+            <span className="num font-semibold text-ink">
+              {sessionStats.totalVolume.toLocaleString()}
+            </span>
+            <span className="text-ink-faint">{weightUnit}</span>
+          </div>
+          <span className="text-ink-faint/30">|</span>
+          <div className="flex items-center gap-1">
+            <span className="uppercase tracking-wider text-ink-faint">Sets</span>
+            <span className="num font-semibold text-ink">{sessionStats.totalSets}</span>
+          </div>
+          <span className="text-ink-faint/30">|</span>
+          <div className="flex items-center gap-1">
+            <span className="uppercase tracking-wider text-ink-faint">Reps</span>
+            <span className="num font-semibold text-ink">{sessionStats.totalReps}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowImportModal(true)}
+            aria-label="Import workouts from Markdown"
+            className="min-h-[32px] flex items-center gap-1.5 rounded border px-2.5 py-1 font-medium uppercase tracking-wider text-ink-dim hover:text-ink transition-colors"
+            style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
+          >
+            <UploadCloud size={12} aria-hidden="true" />
+            <span>Import</span>
+          </button>
+          <a
+            href="/api/workouts/export?format=markdown"
+            download={`workouts-vault-${date}.md`}
+            aria-label="Export workouts to Obsidian markdown"
+            className="min-h-[32px] flex items-center gap-1.5 rounded border px-2.5 py-1 font-medium uppercase tracking-wider text-ink-dim hover:text-ink transition-colors"
+            style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
+          >
+            <Download size={12} aria-hidden="true" />
+            <span>Export</span>
+          </a>
         </div>
       </div>
 
@@ -416,7 +493,7 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
               onKeyDown={handleKeyDown}
               placeholder="Bench Press&#10;- 80kg x 8&#10;- 80kg x 8&#10;- 85kg x 6&#10;&#10;Incline DB Press&#10;- 30kg x 10&#10;- 30kg x 8"
               aria-label="Workout note markdown"
-              className="w-full h-full resize-y rounded bg-transparent p-3 font-mono text-xs leading-relaxed text-ink placeholder:text-ink-faint/60 focus:outline-none"
+              className="w-full h-full resize-y rounded bg-transparent p-3 font-mono text-base sm:text-xs leading-relaxed text-ink placeholder:text-ink-faint/60 focus:outline-none"
               style={{
                 background: "var(--panel-2)",
                 border: "1px solid var(--line-soft)",
@@ -432,7 +509,7 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
                   type="button"
                   onClick={() => setShowAddMenu(!showAddMenu)}
                   aria-expanded={showAddMenu}
-                  aria-label="Add exercise from recent list"
+                  aria-label="Add exercise from database"
                   className="min-h-[36px] flex items-center gap-1.5 rounded px-2.5 py-1 border font-medium text-ink-dim hover:text-ink transition-colors"
                   style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
                 >
@@ -441,37 +518,106 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
                 </button>
 
                 {showAddMenu && (
-                  <div
-                    className="absolute left-0 bottom-10 z-30 w-56 rounded border max-h-48 overflow-y-auto"
-                    style={{ background: "var(--panel)", borderColor: "var(--line)" }}
-                  >
-                    <div className="p-2 text-2xs font-semibold uppercase tracking-wider text-ink-faint">
-                      Recent Exercises
-                    </div>
-                    {suggestedExercises.length > 0 ? (
-                      suggestedExercises.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => handleInsertExercise(s.name)}
-                          className="min-h-[36px] w-full text-left px-3 py-1.5 text-xs text-ink hover:bg-ink hover:text-panel transition-colors flex items-center"
-                        >
-                          {s.name}
-                        </button>
-                      ))
-                    ) : (
-                      <div className="p-3 text-2xs text-ink-faint">
-                        Type an exercise in your note to start tracking!
+                  <>
+                    <div
+                      className="fixed inset-0 z-20"
+                      onClick={() => {
+                        setShowAddMenu(false);
+                        setExerciseSearchQuery("");
+                      }}
+                      aria-hidden="true"
+                    />
+                    <div
+                      className="absolute left-0 bottom-10 z-30 w-[290px] sm:w-[330px] rounded border shadow-lg flex flex-col max-h-[340px] overflow-hidden"
+                      style={{ background: "var(--panel)", borderColor: "var(--line)" }}
+                    >
+                      {/* Search Bar */}
+                      <div
+                        className="p-2 border-b flex items-center gap-2"
+                        style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
+                      >
+                        <Search size={13} className="text-ink-faint shrink-0" aria-hidden="true" />
+                        <input
+                          type="text"
+                          value={exerciseSearchQuery}
+                          onChange={(e) => setExerciseSearchQuery(e.target.value)}
+                          placeholder="Search 65+ exercises..."
+                          aria-label="Search exercises"
+                          autoFocus
+                          className="flex-1 min-w-0 bg-transparent text-base sm:text-xs text-ink placeholder:text-ink-faint focus:outline-none"
+                        />
+                        {exerciseSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setExerciseSearchQuery("")}
+                            aria-label="Clear search"
+                            className="p-1 text-ink-faint hover:text-ink"
+                          >
+                            <X size={12} aria-hidden="true" />
+                          </button>
+                        )}
                       </div>
-                    )}
-                  </div>
+
+                      {/* Muscle Group Pills */}
+                      <div
+                        className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto border-b scrollbar-none"
+                        style={{ borderColor: "var(--line-soft)", background: "var(--panel)" }}
+                      >
+                        {MUSCLE_GROUPS.map((m) => {
+                          const active = selectedMuscleGroup === m;
+                          return (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => setSelectedMuscleGroup(m)}
+                              className={`px-2 py-0.5 rounded text-2xs uppercase tracking-wider shrink-0 transition-colors ${
+                                active
+                                  ? "bg-ink text-panel font-medium"
+                                  : "text-ink-dim hover:text-ink bg-panel-2 border border-line-soft"
+                              }`}
+                            >
+                              {m}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Exercises Scroll List */}
+                      <div className="overflow-y-auto divide-y max-h-56" style={{ borderColor: "var(--line-soft)" }}>
+                        {suggestedExercises.length > 0 ? (
+                          suggestedExercises.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => {
+                                handleInsertExercise(s.name);
+                                setExerciseSearchQuery("");
+                              }}
+                              className="min-h-[36px] w-full text-left px-3 py-2 text-xs text-ink hover:bg-ink hover:text-panel transition-colors flex items-center justify-between group"
+                            >
+                              <div className="truncate mr-2">
+                                <div className="font-medium truncate">{s.name}</div>
+                              </div>
+                              <span className="text-2xs uppercase tracking-wider opacity-60 shrink-0 font-mono">
+                                {s.muscleGroup || "Other"}
+                              </span>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="p-4 text-center text-2xs text-ink-faint">
+                            {searchingExercises ? "Searching catalog…" : "No matching exercises found."}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
 
               {!rawNote && (
                 <button
                   type="button"
-                  onClick={handleCopyLast}
+                  onClick={handleInsertSample}
                   className="min-h-[36px] flex items-center gap-1.5 rounded px-2.5 py-1 border font-medium text-ink-dim hover:text-ink transition-colors"
                   style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
                 >
@@ -533,7 +679,7 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
                     </div>
 
                     {stat?.bestWeightKg ? (
-                      <span className="flex items-center gap-1 text-2xs text-accent font-semibold">
+                      <span className="flex items-center gap-1 text-2xs text-accent font-semibold shrink-0 whitespace-nowrap">
                         <span className="num uppercase tracking-wider">PR</span>
                         <span className="num text-ink">{stat.bestWeightKg}{weightUnit}</span>
                       </span>
@@ -608,6 +754,20 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
               );
             })
           )}
+
+          {parsedPreview.exercises.length > 0 && (
+            <div className="pt-1 flex justify-start">
+              <button
+                type="button"
+                onClick={() => setViewMode("note")}
+                className="min-h-[36px] flex items-center gap-1.5 rounded px-3 py-1.5 border text-xs font-medium text-ink-dim hover:text-ink transition-colors"
+                style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
+              >
+                <Plus size={13} aria-hidden="true" />
+                Add More Exercises
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -620,6 +780,20 @@ export default function WorkoutCard({ date, weightUnit, onToast }: WorkoutCardPr
           exerciseId={activeExerciseId}
           onClose={() => setActiveExerciseId(null)}
           unit={weightUnit}
+        />
+      )}
+
+      {/* Workout Import Modal */}
+      {showImportModal && (
+        <WorkoutImportModal
+          weightUnit={weightUnit}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={(count) => {
+            onToast(`Successfully imported ${count} workout${count === 1 ? "" : "s"}`);
+            setShowImportModal(false);
+            loadWorkout();
+            onWorkoutSaved?.();
+          }}
         />
       )}
     </div>

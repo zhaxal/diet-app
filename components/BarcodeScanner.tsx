@@ -365,7 +365,7 @@ export default function BarcodeScanner({
                 onChange={(e) => setManualCode(e.target.value)}
                 placeholder="Or enter barcode digits…"
                 aria-label="Barcode digits"
-                className="field flex-1 text-xs"
+                className="field flex-1 text-base sm:text-xs"
               />
               <button
                 type="submit"

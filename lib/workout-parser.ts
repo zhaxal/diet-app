@@ -387,3 +387,153 @@ export function formatWorkoutNote(workout: {
 
   return parts.join("\n").trim();
 }
+
+export interface MultiWorkoutItem {
+  date: string; // YYYY-MM-DD
+  title: string;
+  rawNote: string;
+  parsed: ParsedWorkout;
+}
+
+/**
+ * Parses a bulk multi-day markdown note into individual dated workouts.
+ * Supports headings with dates (e.g. `## 2026-09-08 Push Day` or `# 2026-09-08`),
+ * horizontal rules (`---`), and individual dates.
+ */
+export function parseMultiWorkoutMarkdown(
+  text: string,
+  defaultUnit: "kg" | "lb" = "kg",
+): MultiWorkoutItem[] {
+  const lines = text.split(/\r?\n/);
+  const sections: { date: string; title: string; lines: string[] }[] = [];
+
+  let currentSection: { date: string; title: string; lines: string[] } | null = null;
+  const isoDateRegex = /\b(20\d{2})[-/.](0[1-9]|1[0-2])[-/.](0[1-9]|[12]\d|3[01])\b/;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Check if line is a header containing a date
+    const isHeading = /^#{1,4}\s+/.test(trimmed);
+    const dateMatch = trimmed.match(isoDateRegex);
+
+    if (dateMatch && (isHeading || trimmed.startsWith("date:") || trimmed.startsWith("---"))) {
+      const year = dateMatch[1];
+      const month = dateMatch[2];
+      const day = dateMatch[3];
+      const normalizedDate = `${year}-${month}-${day}`;
+
+      // Extract optional title from the rest of the heading
+      let title = trimmed
+        .replace(/^#{1,4}\s+/, "")
+        .replace(isoDateRegex, "")
+        .replace(/^[-:—·\s]+/, "")
+        .replace(/[-:—·\s]+$/, "")
+        .trim();
+
+      if (!title || title.toLowerCase() === "workout") {
+        title = "Workout";
+      }
+
+      currentSection = {
+        date: normalizedDate,
+        title,
+        lines: [],
+      };
+      sections.push(currentSection);
+      continue;
+    }
+
+    if (currentSection) {
+      currentSection.lines.push(line);
+    } else {
+      // Content before any dated header: if it contains a date, start a section
+      const standaloneDateMatch = trimmed.match(isoDateRegex);
+      if (standaloneDateMatch) {
+        currentSection = {
+          date: `${standaloneDateMatch[1]}-${standaloneDateMatch[2]}-${standaloneDateMatch[3]}`,
+          title: "Workout",
+          lines: [],
+        };
+        sections.push(currentSection);
+      }
+    }
+  }
+
+  // If no dated headers were found, treat the entire text as a single workout for today
+  if (sections.length === 0 && text.trim().length > 0) {
+    const single = parseWorkoutNote(text, defaultUnit);
+    return [
+      {
+        date: new Date().toISOString().slice(0, 10),
+        title: single.title || "Workout",
+        rawNote: text.trim(),
+        parsed: single,
+      },
+    ];
+  }
+
+  return sections.map((sec) => {
+    const rawNote = sec.lines.join("\n").trim();
+    const parsed = parseWorkoutNote(rawNote, defaultUnit);
+    return {
+      date: sec.date,
+      title: sec.title !== "Workout" ? sec.title : parsed.title || "Workout",
+      rawNote: rawNote || `# ${sec.title}`,
+      parsed,
+    };
+  });
+}
+
+/**
+ * Formats an array of workouts into a consolidated Obsidian markdown journal file.
+ */
+export function generateObsidianExport(
+  workouts: Array<{ date: string; title: string; rawNote: string }>,
+): string {
+  const header = `# Workout Vault Export\nGenerated on ${new Date().toISOString().slice(0, 10)}\n\n`;
+  const formattedWorkouts = workouts
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map((w) => {
+      return `## ${w.date} · ${w.title || "Workout"}\n\n${w.rawNote.trim()}\n`;
+    });
+
+  return header + formattedWorkouts.join("\n---\n\n");
+}
+
+export interface SessionMetrics {
+  totalVolume: number;
+  totalSets: number;
+  totalReps: number;
+  exerciseCount: number;
+}
+
+/**
+ * Calculates in-memory metrics for a workout session.
+ */
+export function calculateSessionStats(
+  exercises: Array<{ sets: Array<{ weight: number; reps: number; isWarmup?: boolean }> }>,
+): SessionMetrics {
+  let totalVolume = 0;
+  let totalSets = 0;
+  let totalReps = 0;
+
+  for (const ex of exercises) {
+    for (const s of ex.sets) {
+      if (!s.isWarmup) {
+        totalSets++;
+        totalReps += s.reps;
+        totalVolume += Math.max(0, s.weight) * s.reps;
+      }
+    }
+  }
+
+  return {
+    totalVolume: Math.round(totalVolume * 10) / 10,
+    totalSets,
+    totalReps,
+    exerciseCount: exercises.length,
+  };
+}
+

@@ -218,3 +218,105 @@ export async function getExerciseFullHistory(
     sessions,
   };
 }
+
+export { calculateSessionStats, type SessionMetrics } from "./workout-parser";
+
+export interface MacroWorkoutSummary {
+  periodDays: number;
+  totalWorkouts: number;
+  totalVolume: number;
+  totalSets: number;
+  totalReps: number;
+  displayUnit: WeightUnit;
+  muscleGroups: Record<string, { sets: number; percentage: number }>;
+  recentWorkouts: Array<{
+    id: string;
+    date: string;
+    title: string;
+    exercisesCount: number;
+    setsCount: number;
+    volume: number;
+  }>;
+}
+
+/**
+ * Computes macro-level workout analytics for a user over a time window.
+ */
+export async function getWorkoutMacroSummary(
+  userId: string,
+  days: number = 30,
+  displayUnit: WeightUnit = "kg",
+): Promise<MacroWorkoutSummary> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const workouts = await prisma.workout.findMany({
+    where: {
+      userId,
+      date: { gte: since },
+    },
+    include: {
+      exercises: {
+        include: {
+          exercise: true,
+          sets: true,
+        },
+      },
+    },
+    orderBy: { date: "desc" },
+  });
+
+  let totalVolumeKg = 0;
+  let totalSets = 0;
+  let totalReps = 0;
+  const muscleSets: Record<string, number> = {};
+
+  const recentWorkouts = workouts.map((w) => {
+    let sessionVol = 0;
+    let sessionSets = 0;
+
+    for (const we of w.exercises) {
+      const muscle = we.exercise.muscleGroup || "Other";
+      for (const s of we.sets) {
+        if (!s.isWarmup) {
+          sessionSets++;
+          totalSets++;
+          totalReps += s.reps;
+          const vol = s.weight * s.reps;
+          sessionVol += vol;
+          totalVolumeKg += vol;
+          muscleSets[muscle] = (muscleSets[muscle] || 0) + 1;
+        }
+      }
+    }
+
+    return {
+      id: w.id,
+      date: w.date.toISOString().slice(0, 10),
+      title: w.title,
+      exercisesCount: w.exercises.length,
+      setsCount: sessionSets,
+      volume: fromKg(sessionVol, displayUnit),
+    };
+  });
+
+  // Calculate percentage for each muscle group
+  const muscleGroups: Record<string, { sets: number; percentage: number }> = {};
+  for (const [group, count] of Object.entries(muscleSets)) {
+    muscleGroups[group] = {
+      sets: count,
+      percentage: totalSets > 0 ? Math.round((count / totalSets) * 100) : 0,
+    };
+  }
+
+  return {
+    periodDays: days,
+    totalWorkouts: workouts.length,
+    totalVolume: fromKg(totalVolumeKg, displayUnit),
+    totalSets,
+    totalReps,
+    displayUnit,
+    muscleGroups,
+    recentWorkouts,
+  };
+}
+

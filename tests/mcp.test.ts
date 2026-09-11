@@ -99,5 +99,8 @@ test("MCP tools/list includes workout tracking and gym tools", async () => {
   assert.ok(toolNames.includes("get_workout"));
   assert.ok(toolNames.includes("get_exercise_history"));
   assert.ok(toolNames.includes("suggest_next_workout"));
+  assert.ok(toolNames.includes("import_workouts"));
+  assert.ok(toolNames.includes("export_workouts"));
+  assert.ok(toolNames.includes("get_workout_summary"));
 });
 
