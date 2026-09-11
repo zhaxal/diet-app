@@ -1,30 +1,26 @@
 "use client";
 
-import { CalendarDays, ChartColumn, Scale, Settings2, type LucideIcon } from "lucide-react";
+import { CalendarDays, ChartColumn, Dumbbell, Scale, Settings2, type LucideIcon } from "lucide-react";
 
-export type Tab = "today" | "trends" | "weight" | "settings";
+export type Tab = "today" | "workout" | "trends" | "weight" | "settings";
 
 /*
  * Lucide, bundled through npm rather than fetched from a CDN — the self-hosting
  * constraint is about outbound dependencies at runtime, and these ship inside
- * the container like any other module. It replaces four hand-written paths that
- * came from three different grids: a 20-vertex gear that went muddy at 22px, a
- * stroked-but-closed weight silhouette that read as filled, and a house, which
- * means "home" and not "today".
- *
- * The four chosen glyphs are optically distinct at 22px — frame, bars, balance,
- * sliders — so the bar is scannable by silhouette before the labels are read.
+ * the container like any other module.
  */
 const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
   // A day is the unit of this product, and the week strip above is a calendar.
   { id: "today", label: "Today", Icon: CalendarDays },
+  // Dumbbell for the gym / workout tracker
+  { id: "workout", label: "Workout", Icon: Dumbbell },
   // Bars, because the tab's own chart is a bar chart.
   { id: "trends", label: "Trends", Icon: ChartColumn },
   { id: "weight", label: "Weight", Icon: Scale },
-  // Sliders rather than a gear: fewer vertices at this size, and it echoes the
-  // meter tracks that make up most of the settings it opens.
+  // Sliders rather than a gear
   { id: "settings", label: "Settings", Icon: Settings2 },
 ];
+
 
 export default function BottomNav({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
   return (

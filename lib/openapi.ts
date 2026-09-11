@@ -528,6 +528,80 @@ export function buildOpenApiDocument(baseUrl?: string) {
           },
         },
       },
+      "/workouts": {
+        get: {
+          tags: ["Workouts"],
+          summary: "Get workout for a day",
+          parameters: [
+            {
+              name: "date",
+              in: "query",
+              required: true,
+              schema: { type: "string", example: "2026-09-11" },
+              description: "Day to retrieve workout for (YYYY-MM-DD)",
+            },
+          ],
+          responses: {
+            "200": jsonResponse("Workout details and exercise stats", {
+              type: "object",
+              properties: {
+                workout: { type: ["object", "null"] },
+                exerciseStats: { type: "object" },
+              },
+            }),
+            "401": jsonResponse("Unauthorized", { $ref: "#/components/schemas/Error" }),
+          },
+        },
+        post: {
+          tags: ["Workouts"],
+          summary: "Create or update a workout using Obsidian-style markdown",
+          requestBody: jsonBody({
+            type: "object",
+            required: ["date", "rawNote"],
+            properties: {
+              date: { type: "string", example: "2026-09-11" },
+              title: { type: "string", example: "Push Day" },
+              rawNote: { type: "string", example: "Bench Press\n- 80kg x 8\n- 85kg x 6" },
+              source: { type: "string", enum: ["ui", "mcp"], default: "ui" },
+            },
+          }),
+          responses: {
+            "200": jsonResponse("Saved workout and performance stats", {
+              type: "object",
+              properties: {
+                workout: { type: "object" },
+                exerciseStats: { type: "object" },
+              },
+            }),
+            "401": jsonResponse("Unauthorized", { $ref: "#/components/schemas/Error" }),
+          },
+        },
+      },
+      "/exercises": {
+        get: {
+          tags: ["Workouts"],
+          summary: "List or search user exercises with performance summaries",
+          parameters: [
+            {
+              name: "q",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+              description: "Search filter for exercise name",
+            },
+          ],
+          responses: {
+            "200": jsonResponse("List of exercises", {
+              type: "object",
+              properties: {
+                exercises: { type: "array", items: { type: "object" } },
+              },
+            }),
+            "401": jsonResponse("Unauthorized", { $ref: "#/components/schemas/Error" }),
+          },
+        },
+      },
     },
   };
 }
+

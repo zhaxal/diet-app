@@ -340,4 +340,102 @@ export const api = {
       }),
     });
   },
+
+  getWorkout: (date: string) =>
+    request<{ workout: ClientWorkout | null; exerciseStats: Record<string, ExerciseStats> }>(
+      `/api/workouts?date=${encodeURIComponent(date)}`,
+    ),
+
+  saveWorkout: (data: { date: string; title?: string; rawNote: string; source?: "ui" | "mcp" }) =>
+    request<{ workout: ClientWorkout; exerciseStats: Record<string, ExerciseStats> }>("/api/workouts", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteWorkout: (id: string) =>
+    request<{ ok: boolean }>(`/api/workouts?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+
+  searchExercises: (q?: string) =>
+    request<{ exercises: Array<{ id: string; name: string; normalized: string; summary?: ExerciseStats }> }>(
+      `/api/exercises${q ? `?q=${encodeURIComponent(q)}` : ""}`,
+    ),
+
+  getExerciseHistory: (id: string) =>
+    request<{
+      exercise: { id: string; name: string; normalized: string };
+      lifetime: { bestWeight: number; best1RM: number; totalVolume: number; totalSessions: number };
+      sessions: Array<{
+        workoutId: string;
+        date: string;
+        workoutTitle: string;
+        topWeight: number;
+        top1RM: number;
+        volume: number;
+        sets: Array<{
+          id: string;
+          setNumber: number;
+          weight: number;
+          unit: string;
+          reps: number;
+          isWarmup: boolean;
+          isBodyweight: boolean;
+          rpe?: number;
+        }>;
+      }>;
+    }>(`/api/exercises/${encodeURIComponent(id)}/history`),
 };
+
+export interface ClientWorkoutSet {
+  id: string;
+  workoutExerciseId: string;
+  setNumber: number;
+  weight: number;
+  unit: string;
+  reps: number;
+  isWarmup: boolean;
+  isBodyweight: boolean;
+  rpe?: number | null;
+  notes?: string | null;
+}
+
+export interface ClientWorkoutExercise {
+  id: string;
+  workoutId: string;
+  exerciseId: string;
+  order: number;
+  notes?: string | null;
+  exercise: {
+    id: string;
+    name: string;
+    normalized: string;
+    muscleGroup?: string | null;
+  };
+  sets: ClientWorkoutSet[];
+}
+
+export interface ClientWorkout {
+  id: string;
+  userId: string;
+  date: string;
+  title: string;
+  rawNote: string;
+  notes?: string | null;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+  exercises: ClientWorkoutExercise[];
+}
+
+export interface ExerciseStats {
+  exerciseId: string;
+  exerciseName: string;
+  normalized: string;
+  lastPerformance?: string;
+  lastDate?: string;
+  bestWeightKg: number;
+  best1RMKg: number;
+  totalSetsLogged: number;
+}
+

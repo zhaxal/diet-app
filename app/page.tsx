@@ -44,6 +44,7 @@ import TrendsCard from "@/components/TrendsCard";
 import AddFood from "@/components/AddFood";
 import TdeeCard from "@/components/TdeeCard";
 import ProductsCard from "@/components/ProductsCard";
+import WorkoutCard from "@/components/WorkoutCard";
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 type Meal = (typeof MEALS)[number];
@@ -96,7 +97,7 @@ function stripEnding(selected: string, today: string): string {
   return selected > shiftDate(today, -6) ? today : selected;
 }
 
-const TABS: Tab[] = ["today", "trends", "weight", "settings"];
+const TABS: Tab[] = ["today", "workout", "trends", "weight", "settings"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function Page() {
@@ -424,11 +425,15 @@ function Dashboard() {
         setRecent(rec);
         setGoals(g);
         loadStrip(stripEnding(date, todayStr())).catch(() => {});
+      } else if (tab === "workout") {
+        const { goals: g } = await api.getGoals();
+        setGoals(g);
       } else if (tab === "trends") {
         const [{ goals: g }] = await Promise.all([
           api.getGoals(),
           loadTrends(trendRange),
         ]);
+
         setGoals(g);
       } else if (tab === "weight") {
         const [{ goals: g }, { logs }] = await Promise.all([api.getGoals(), api.listWeight()]);
@@ -1050,8 +1055,76 @@ function Dashboard() {
         </>
       )}
 
+      {/* ── Workout ───────────────────────────────────── */}
+      {tab === "workout" && (
+        <>
+          <Header sub={prettyDate(date)}>Workout</Header>
+
+          <nav className="panel mb-2 flex overflow-x-auto" aria-label="Week">
+            {weekEnding(stripEnd).map((d) => {
+              const active = d === date;
+              const dt = new Date(`${d}T00:00:00`);
+              return (
+                <button
+                  key={d}
+                  onClick={() => setDate(d)}
+                  aria-pressed={active}
+                  aria-label={prettyDate(d)}
+                  className="flex-1 min-w-[44px] border-r py-2 text-center last:border-r-0 transition-colors"
+                  style={{
+                    borderColor: "var(--line)",
+                    background: active ? "var(--ink)" : "transparent",
+                    color: active ? "var(--panel)" : "var(--ink-dim)",
+                  }}
+                >
+                  <div className="text-2xs uppercase tracking-wider opacity-70">
+                    {dt.toLocaleDateString(undefined, { weekday: "narrow" })}
+                  </div>
+                  <div className="num text-sm font-semibold">{d.slice(8)}</div>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <span className="num text-2xs uppercase tracking-wider text-ink-faint">
+              {prettyDate(date)}
+            </span>
+            <div className="flex items-center gap-2">
+              {date !== todayStr() && (
+                <button
+                  onClick={() => setDate(todayStr())}
+                  className="min-h-[32px] px-2 text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
+                >
+                  Today
+                </button>
+              )}
+              <input
+                type="date"
+                value={date}
+                max={todayStr()}
+                aria-label="Show a different day"
+                onChange={(e) => {
+                  if (e.target.value) setDate(e.target.value);
+                }}
+                className="rounded border px-1.5 py-0.5 font-mono text-2xs text-ink-dim"
+                style={{ borderColor: "var(--line)", background: "var(--panel)" }}
+              />
+            </div>
+          </div>
+
+          <WorkoutCard
+            date={date}
+            weightUnit={goals.weightUnit || "kg"}
+            onToast={(m) => toast(m)}
+          />
+        </>
+      )}
+
+
       {/* ── Trends ────────────────────────────────────── */}
       {tab === "trends" && (
+
         <>
           <Header>Trends</Header>
           {trends ? (

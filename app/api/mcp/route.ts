@@ -25,6 +25,8 @@ import {
   type ServingUnit,
   type WeightUnit,
 } from "@/lib/units";
+import { parseWorkoutNote, formatWorkoutNote, calculate1RM, normalizeExerciseName } from "@/lib/workout-parser";
+import { getExerciseSummary, getExerciseFullHistory } from "@/lib/workout-stats";
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 
@@ -159,6 +161,24 @@ const favoriteArgsSchema = z.object({
 
 const barcodeArgSchema = z.object({ barcode: z.string().min(1).max(64) });
 
+const logWorkoutSchema = z.object({
+  date: z.string().regex(DATE_ONLY).optional(),
+  title: z.string().max(200).optional(),
+  note: z.string().min(1, "Workout note text is required"),
+});
+
+const getWorkoutSchema = z.object({
+  date: z.string().regex(DATE_ONLY).optional(),
+});
+
+const exerciseHistorySchema = z.object({
+  exercise: z.string().min(1, "Exercise name is required"),
+});
+
+const suggestNextWorkoutSchema = z.object({
+  routine: z.string().optional().default("Push Day"),
+});
+
 const ARG_SCHEMAS: Record<string, z.ZodTypeAny> = {
   log_meal: logMealSchema,
   get_summary: dateArgSchema,
@@ -174,7 +194,12 @@ const ARG_SCHEMAS: Record<string, z.ZodTypeAny> = {
   delete_product: idArgSchema,
   lookup_barcode: barcodeArgSchema,
   log_meal_items: logMealItemsSchema,
+  log_workout: logWorkoutSchema,
+  get_workout: getWorkoutSchema,
+  get_exercise_history: exerciseHistorySchema,
+  suggest_next_workout: suggestNextWorkoutSchema,
 };
+
 
 const nutrientProps = {
   protein: { type: "number", minimum: 0, description: "grams" },
@@ -380,7 +405,55 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "log_workout",
+    description: "Log or update a gym workout for a day using Obsidian-style markdown text. Automatically parses exercises, weights, reps, and detects PRs.",
+    inputSchema: {
+      type: "object",
+      required: ["note"],
+      properties: {
+        date: { type: "string", description: "YYYY-MM-DD — defaults to today" },
+        title: { type: "string", description: "Workout title, e.g. 'Push Day' or 'Legs'" },
+        note: {
+          type: "string",
+          description: "Full markdown text of the workout (e.g. 'Bench Press\\n- 80kg x 8\\n- 85kg x 6\\n\\nIncline DB\\n- 30kg x 10')",
+        },
+      },
+    },
+  },
+  {
+    name: "get_workout",
+    description: "Get the workout log and exercise performance stats for a date.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "YYYY-MM-DD — defaults to today" },
+      },
+    },
+  },
+  {
+    name: "get_exercise_history",
+    description: "Get performance progression, lifetime bests (top weight, 1RM), and past sessions for a specific exercise (e.g. 'Bench Press').",
+    inputSchema: {
+      type: "object",
+      required: ["exercise"],
+      properties: {
+        exercise: { type: "string", description: "Name of the exercise" },
+      },
+    },
+  },
+  {
+    name: "suggest_next_workout",
+    description: "Inspects previous workouts for a routine (e.g. 'Push Day') and drafts a progressive overload workout note for today.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        routine: { type: "string", description: "Routine title, e.g. 'Push Day', 'Pull Day', 'Legs'. Defaults to 'Push Day'." },
+      },
+    },
+  },
 ];
+
 
 function rpcError(id: unknown, code: number, message: string) {
   return NextResponse.json({
@@ -854,7 +927,228 @@ async function callTool(
       return `Saved "${fav.name}" as a favorite (id: ${fav.id})`;
     }
 
+    case "log_workout": {
+      const { date: dateParam, title, note } = parsed.data as z.infer<typeof logWorkoutSchema>;
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } });
+      const userUnit: WeightUnit = isWeightUnit(user?.weightUnit) ? (user!.weightUnit as WeightUnit) : "kg";
+
+      const targetDateStr = dateParam ?? todayInTz(tz);
+      const workoutUtcDate = zonedWallToUtc(targetDateStr, "12:00:00.000", tz);
+      const { start, end } = dayBoundsInTz(targetDateStr, tz);
+
+      const parsedWorkout = parseWorkoutNote(note, userUnit);
+      const resolvedTitle = parsedWorkout.title && parsedWorkout.title !== "Workout"
+        ? parsedWorkout.title
+        : title || "Workout";
+
+      const saved = await prisma.$transaction(async (tx) => {
+        let existing = await tx.workout.findFirst({
+          where: { userId, date: { gte: start, lt: end } },
+        });
+
+        if (!existing) {
+          existing = await tx.workout.create({
+            data: {
+              userId,
+              date: workoutUtcDate,
+              title: resolvedTitle,
+              rawNote: note,
+              notes: parsedWorkout.notes,
+              source: "mcp",
+            },
+          });
+        } else {
+          await tx.workoutExercise.deleteMany({ where: { workoutId: existing.id } });
+          existing = await tx.workout.update({
+            where: { id: existing.id },
+            data: {
+              title: resolvedTitle,
+              rawNote: note,
+              notes: parsedWorkout.notes,
+              source: "mcp",
+              updatedAt: new Date(),
+            },
+          });
+        }
+
+        for (let i = 0; i < parsedWorkout.exercises.length; i++) {
+          const parsedEx = parsedWorkout.exercises[i];
+          const exercise = await tx.exercise.upsert({
+            where: { userId_normalized: { userId, normalized: parsedEx.normalized } },
+            update: { name: parsedEx.name },
+            create: { userId, name: parsedEx.name, normalized: parsedEx.normalized },
+          });
+
+          const we = await tx.workoutExercise.create({
+            data: {
+              workoutId: existing.id,
+              exerciseId: exercise.id,
+              order: i,
+              notes: parsedEx.notes,
+            },
+          });
+
+          if (parsedEx.sets.length > 0) {
+            await tx.workoutSet.createMany({
+              data: parsedEx.sets.map((s) => ({
+                workoutExerciseId: we.id,
+                setNumber: s.setNumber,
+                weight: toKg(s.weight, s.unit),
+                unit: s.unit,
+                reps: s.reps,
+                isWarmup: s.isWarmup,
+                isBodyweight: s.isBodyweight,
+                rpe: s.rpe,
+              })),
+            });
+          }
+        }
+
+        return existing;
+      });
+
+      const lines: string[] = [
+        `Logged workout "${saved.title}" for ${targetDateStr}:`,
+      ];
+      for (const ex of parsedWorkout.exercises) {
+        const topSet = [...ex.sets].sort((a, b) => b.weight - a.weight)[0];
+        lines.push(
+          `• ${ex.name}: ${ex.sets.length} set${ex.sets.length === 1 ? "" : "s"}${
+            topSet ? ` (top: ${topSet.weight}${topSet.unit} × ${topSet.reps})` : ""
+          }`,
+        );
+      }
+      return lines.join("\n");
+    }
+
+    case "get_workout": {
+      const { date: dateParam } = parsed.data as z.infer<typeof getWorkoutSchema>;
+      const targetDateStr = dateParam ?? todayInTz(tz);
+      const { start, end } = dayBoundsInTz(targetDateStr, tz);
+
+      const workout = await prisma.workout.findFirst({
+        where: { userId, date: { gte: start, lt: end } },
+        include: {
+          exercises: {
+            orderBy: { order: "asc" },
+            include: {
+              exercise: true,
+              sets: { orderBy: { setNumber: "asc" } },
+            },
+          },
+        },
+      });
+
+      if (!workout) {
+        return `No workout logged for ${targetDateStr}.`;
+      }
+
+      const lines: string[] = [
+        `# ${workout.title} (${targetDateStr})`,
+        "",
+        workout.rawNote,
+      ];
+      return lines.join("\n");
+    }
+
+    case "get_exercise_history": {
+      const { exercise: rawName } = parsed.data as z.infer<typeof exerciseHistorySchema>;
+      const norm = normalizeExerciseName(rawName);
+
+      const ex = await prisma.exercise.findFirst({
+        where: { userId, normalized: norm },
+      });
+
+      if (!ex) {
+        return `Exercise "${rawName}" not found in your workout history.`;
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } });
+      const userUnit: WeightUnit = isWeightUnit(user?.weightUnit) ? (user!.weightUnit as WeightUnit) : "kg";
+
+      const history = await getExerciseFullHistory(userId, ex.id, userUnit);
+      if (!history || history.sessions.length === 0) {
+        return `No sessions logged yet for "${ex.name}".`;
+      }
+
+      const lines: string[] = [
+        `# History: ${ex.name}`,
+        `• Lifetime Best Weight: ${history.lifetime.bestWeight} ${userUnit}`,
+        `• Lifetime Best 1RM: ${history.lifetime.best1RM} ${userUnit}`,
+        `• Total Sessions: ${history.lifetime.totalSessions}`,
+        "",
+        "Recent Sessions:",
+      ];
+
+      const recentSessions = [...history.sessions].reverse().slice(0, 5);
+      for (const s of recentSessions) {
+        const setStrings = s.sets.map((set) => `${set.weight}${userUnit} × ${set.reps}`);
+        lines.push(`• ${s.date} (${s.workoutTitle}): ${setStrings.join(", ")}`);
+      }
+
+      return lines.join("\n");
+    }
+
+    case "suggest_next_workout": {
+      const { routine } = parsed.data as z.infer<typeof suggestNextWorkoutSchema>;
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } });
+      const userUnit: WeightUnit = isWeightUnit(user?.weightUnit) ? (user!.weightUnit as WeightUnit) : "kg";
+
+      const prev = await prisma.workout.findFirst({
+        where: {
+          userId,
+          title: { contains: routine },
+        },
+        include: {
+          exercises: {
+            orderBy: { order: "asc" },
+            include: {
+              exercise: true,
+              sets: { orderBy: { setNumber: "asc" } },
+            },
+          },
+        },
+        orderBy: { date: "desc" },
+      });
+
+      if (!prev || prev.exercises.length === 0) {
+        return (
+          `# ${routine}\n\n` +
+          `Bench Press\n- 60${userUnit} x 8\n- 60${userUnit} x 8\n\n` +
+          `Incline Dumbbell Press\n- 22${userUnit} x 10\n- 22${userUnit} x 10\n\n` +
+          `Tricep Pushdown\n- 25${userUnit} x 12\n- 25${userUnit} x 12\n`
+        );
+      }
+
+      const weightStep = userUnit === "lb" ? 5 : 2.5;
+      const suggestedExercises = prev.exercises.map((we) => {
+        const sets = we.sets.map((s) => {
+          const w = fromKg(s.weight, userUnit);
+          const nextReps = s.reps >= 10 ? 8 : s.reps + 1;
+          const nextWeight = s.reps >= 10 ? Math.round((w + weightStep) * 10) / 10 : w;
+          return {
+            weight: nextWeight,
+            unit: userUnit,
+            reps: nextReps,
+            isWarmup: s.isWarmup,
+            isBodyweight: s.isBodyweight,
+          };
+        });
+
+        return {
+          name: we.exercise.name,
+          sets,
+        };
+      });
+
+      return formatWorkoutNote({
+        title: prev.title,
+        exercises: suggestedExercises,
+      });
+    }
+
     default:
+
       throw new Error(`Unknown tool: ${name}`);
   }
 }

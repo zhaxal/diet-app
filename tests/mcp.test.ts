@@ -81,3 +81,23 @@ test("MCP tools/list includes log_meal_items with items schema", async () => {
   assert.deepEqual(logMealItems.inputSchema.required, ["mealType", "items"]);
   assert.equal(logMealItems.inputSchema.properties.items.type, "array");
 });
+
+test("MCP tools/list includes workout tracking and gym tools", async () => {
+  const req = new NextRequest("http://localhost:3000/api/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "tools/list",
+    }),
+  });
+  const res = await POST(req);
+  const json = await res.json();
+  const toolNames = json.result.tools.map((t: { name: string }) => t.name);
+  assert.ok(toolNames.includes("log_workout"));
+  assert.ok(toolNames.includes("get_workout"));
+  assert.ok(toolNames.includes("get_exercise_history"));
+  assert.ok(toolNames.includes("suggest_next_workout"));
+});
+

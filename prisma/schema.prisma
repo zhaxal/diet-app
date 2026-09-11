@@ -30,6 +30,8 @@ model User {
   favorites     Favorite[]
   templates     MealTemplate[]
   products      Product[]
+  workouts      Workout[]
+  exercises     Exercise[]
 }
 
 model Product {
@@ -120,3 +122,66 @@ model FoodEntry {
 
   @@index([userId, consumedAt])
 }
+
+model Workout {
+  id        String            @id @default(cuid())
+  userId    String
+  date      DateTime          @default(now())
+  title     String            @default("Workout")
+  rawNote   String
+  notes     String?
+  source    String            @default("ui") // ui | mcp
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercises WorkoutExercise[]
+
+  @@index([userId, date])
+}
+
+model Exercise {
+  id          String            @id @default(cuid())
+  userId      String
+  name        String
+  normalized  String
+  muscleGroup String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workoutLogs WorkoutExercise[]
+
+  @@unique([userId, normalized])
+  @@index([userId, name])
+}
+
+model WorkoutExercise {
+  id         String       @id @default(cuid())
+  workoutId  String
+  exerciseId String
+  order      Int          @default(0)
+  notes      String?
+  workout    Workout      @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  exercise   Exercise     @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  sets       WorkoutSet[]
+
+  @@index([workoutId])
+  @@index([exerciseId])
+}
+
+model WorkoutSet {
+  id                String          @id @default(cuid())
+  workoutExerciseId String
+  setNumber         Int
+  weight            Float           // canonical kilograms
+  unit              String          @default("kg") // the unit it was entered in: kg | lb
+  reps              Int
+  isWarmup          Boolean         @default(false)
+  isBodyweight      Boolean         @default(false)
+  rpe               Float?
+  notes             String?
+  createdAt         DateTime        @default(now())
+  workoutExercise   WorkoutExercise @relation(fields: [workoutExerciseId], references: [id], onDelete: Cascade)
+
+  @@index([workoutExerciseId])
+}
+

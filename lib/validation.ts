@@ -175,3 +175,10 @@ export const updateProductSchema = productSchema.partial().refine(
 );
 
 export type ProductInput = z.infer<typeof productSchema>;
+
+export const workoutInputSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
+  title: z.string().max(200).optional().default("Workout"),
+  rawNote: z.string(),
+  source: z.enum(["ui", "mcp"]).optional().default("ui"),
+});
