@@ -48,8 +48,42 @@ export default function GoalsCard({ goals, latestWeight, onGoalsChange }: Props)
         birthYear: profile.birthYear ?? goals.birthYear,
         heightCm: profile.heightCm ?? goals.heightCm,
       });
+      const previousGoals = { ...goals };
       onGoalsChange(updated);
-      toast("Goals saved");
+      toast("Goals saved", "info", {
+        label: "Undo",
+        onAct: async () => {
+          try {
+            const { goals: reverted } = await api.saveGoals({
+              dailyCalories: previousGoals.dailyCalories,
+              dailyProtein: previousGoals.dailyProtein,
+              dailyCarbs: previousGoals.dailyCarbs,
+              dailyFat: previousGoals.dailyFat,
+              dailyFiber: previousGoals.dailyFiber,
+              dailySugar: previousGoals.dailySugar,
+              dailySodium: previousGoals.dailySodium,
+              weightUnit: previousGoals.weightUnit,
+              sex: previousGoals.sex,
+              birthYear: previousGoals.birthYear,
+              heightCm: previousGoals.heightCm,
+            });
+            onGoalsChange(reverted);
+            setForm({
+              dailyCalories: reverted.dailyCalories != null ? String(reverted.dailyCalories) : "",
+              dailyProtein: reverted.dailyProtein != null ? String(reverted.dailyProtein) : "",
+              dailyCarbs: reverted.dailyCarbs != null ? String(reverted.dailyCarbs) : "",
+              dailyFat: reverted.dailyFat != null ? String(reverted.dailyFat) : "",
+              dailyFiber: reverted.dailyFiber != null ? String(reverted.dailyFiber) : "",
+              dailySugar: reverted.dailySugar != null ? String(reverted.dailySugar) : "",
+              dailySodium: reverted.dailySodium != null ? String(reverted.dailySodium) : "",
+              weightUnit: reverted.weightUnit,
+            });
+            toast("Goals reverted", "info");
+          } catch {
+            toast("Failed to revert goals", "error");
+          }
+        },
+      });
     } catch (e) {
       toast(e instanceof Error ? e.message : "Failed to save goals", "error");
     } finally {

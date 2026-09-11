@@ -115,6 +115,12 @@ body {
   scrollbar-width: none;
 }
 
+/* Subtle edge fade mask for horizontal scroll trays to indicate overflow */
+.scroll-fade-x {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+}
+
 /* Inputs inherit the panel language rather than browser chrome. */
 .field {
   background: var(--panel-2);

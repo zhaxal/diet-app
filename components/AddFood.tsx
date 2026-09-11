@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ScanBarcode, Star, X } from "lucide-react";
+import { Check, ScanBarcode, Star, X } from "lucide-react";
 import {
   api,
   type Favorite,
@@ -150,6 +150,98 @@ export default function AddFood({
   const [showTrace, setShowTrace] = useState(initialDraft?.showTrace ?? false);
   const [saving, setSaving] = useState(false);
   const hasDraft = !!(q || name || amount || Object.values(vals).some((v) => v !== ""));
+
+  // ── Batch selection ──────────────────────────────────────────────────────
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchSelection, setBatchSelection] = useState<
+    Map<
+      string,
+      {
+        name: string;
+        calories: number;
+        protein: number;
+        carbs: number;
+        fat: number;
+        fiber: number;
+        sugar: number;
+        sodium: number;
+        quantity: number | null;
+        quantityUnit: QuantityUnit | null;
+        productId: string | null;
+      }
+    >
+  >(new Map());
+
+  function toggleBatch(
+    key: string,
+    item: {
+      name: string;
+      calories: number;
+      protein: number;
+      carbs: number;
+      fat: number;
+      fiber: number;
+      sugar: number;
+      sodium: number;
+      quantity: number | null;
+      quantityUnit: QuantityUnit | null;
+      productId: string | null;
+    }
+  ) {
+    setBatchSelection((prev) => {
+      const next = new Map(prev);
+      if (next.has(key)) next.delete(key);
+      else next.set(key, item);
+      return next;
+    });
+  }
+
+  const batchCalories = useMemo(() => {
+    let sum = 0;
+    for (const item of batchSelection.values()) sum += item.calories;
+    return Math.round(sum);
+  }, [batchSelection]);
+
+  async function logBatch() {
+    if (batchSelection.size === 0) return;
+    setSaving(true);
+    try {
+      const items = Array.from(batchSelection.values());
+      const res = await Promise.all(
+        items.map((it) =>
+          api.createEntry({
+            name: it.name,
+            calories: it.calories,
+            protein: it.protein,
+            carbs: it.carbs,
+            fat: it.fat,
+            fiber: it.fiber,
+            sugar: it.sugar,
+            sodium: it.sodium,
+            mealType: meal,
+            productId: it.productId,
+            quantity: it.quantity,
+            quantityUnit: it.quantityUnit,
+            consumedAt: consumedAtFor(date),
+          })
+        )
+      );
+      toast(`Added ${items.length} items to ${meal}`, "success", {
+        label: "Undo all",
+        onAct: async () => {
+          await Promise.all(res.map((r) => api.deleteEntry(r.entry.id)));
+          onLogged();
+        },
+      });
+      setBatchSelection(new Map());
+      setBatchMode(false);
+      onLogged();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to log batch", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (initialDraft) onMealChange(initialDraft.meal);
@@ -483,10 +575,7 @@ export default function AddFood({
         : !hasAmount
           ? "Enter an amount."
           : reference.kind === "per"
-            ? `These values are quoted per ${formatQuantity(
-                reference.amount,
-                reference.unit,
-              )}, which cannot be restated in ${unitLabel(unit)}.`
+            ? `Cannot convert ${unitLabel(reference.unit)} to ${unitLabel(unit)} — choose a compatible unit.`
             : "Enter an amount.";
 
   /** Nothing has been chosen or typed, so there is no reading to preview yet. */
@@ -742,33 +831,69 @@ export default function AddFood({
           <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-ink-dim">
             Copied
           </p>
-          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
-            {copied.map((c) => (
-              <div
-                key={c.key}
-                className="flex shrink-0 items-stretch gap-1 rounded border border-line bg-panel-2 py-1 pl-2.5 pr-1"
-              >
-                <button type="button" onClick={() => pickCopied(c)} className="text-left">
-                  <div className="num text-xs text-ink">
-                    {c.name} <span className="text-ink-faint">{c.calories}</span>
-                  </div>
-                  <div className="num text-2xs text-ink-faint">
-                    {c.quantity != null && c.quantityUnit
-                      ? formatQuantity(c.quantity, c.quantityUnit)
-                      : "1 helping"}{" "}
-                    · {whenLabel(c.fromDate)}
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onRemoveCopied(c.key)}
-                  className="glyph-btn ml-1 border-l border-line text-sm leading-none text-ink-faint hover:text-over"
-                  aria-label={`Remove ${c.name} from copied`}
+          <div className="scroll-fade-x overflow-hidden">
+            <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+              {copied.map((c) => (
+                <div
+                  key={c.key}
+                  className="flex shrink-0 items-stretch gap-1 rounded border border-line bg-panel-2 py-1 pl-2.5 pr-1"
                 >
-                  ×
-                </button>
-              </div>
-            ))}
+                  <button type="button" onClick={() => pickCopied(c)} className="text-left">
+                    <div className="num text-xs text-ink flex items-center gap-1.5">
+                      <span className="truncate max-w-[10rem]">{c.name}</span>
+                      <span className="shrink-0 text-ink-faint">{c.calories}</span>
+                    </div>
+                    <div className="num text-2xs text-ink-faint">
+                      {c.quantity != null && c.quantityUnit
+                        ? formatQuantity(c.quantity, c.quantityUnit)
+                        : "1 helping"}{" "}
+                      · {whenLabel(c.fromDate)}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveCopied(c.key)}
+                    className="glyph-btn ml-1 border-l border-line text-sm leading-none text-ink-faint hover:text-over"
+                    aria-label={`Remove ${c.name} from copied`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch action queue bar when batch mode is active */}
+      {!query && batchMode && (
+        <div className="flex items-center justify-between gap-2 rounded border border-accent/40 bg-panel-2 p-2">
+          <div className="flex items-baseline gap-1.5 text-2xs">
+            <span className="font-semibold uppercase tracking-wider text-accent">Batch queue:</span>
+            <span className="num font-semibold text-ink">
+              {batchSelection.size} {batchSelection.size === 1 ? "item" : "items"}
+            </span>
+            <span className="num text-ink-faint">({batchCalories} kcal)</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={batchSelection.size === 0 || saving}
+              onClick={logBatch}
+              className="btn btn-primary py-1 text-2xs"
+            >
+              {saving ? "Logging…" : `Log to ${meal}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setBatchSelection(new Map());
+                setBatchMode(false);
+              }}
+              className="btn btn-ghost py-1 text-2xs"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
@@ -776,41 +901,183 @@ export default function AddFood({
       {/* Favorites tray, visible when not searching so your staple foods are 1 tap away */}
       {!query && favorites.length > 0 && (
         <div>
-          <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-            Favorites
-          </p>
-          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
-            {favorites.map((f) => (
-              <div
-                key={f.id}
-                className="flex shrink-0 items-stretch gap-1 rounded border border-line bg-panel-2 py-1 pl-2.5 pr-1"
-              >
-                <button
-                  type="button"
-                  onClick={() => pickEaten(f, true)}
-                  className="text-left"
-                >
-                  <div className="flex items-center gap-1 text-xs font-medium text-accent">
-                    <Star size={11} className="shrink-0 fill-accent" strokeWidth={1.75} aria-hidden="true" />
-                    <span>{f.name}</span>
-                    <span className="num text-accent">{f.calories}</span>
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+              Favorites
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setBatchMode((b) => !b);
+                if (batchMode) setBatchSelection(new Map());
+              }}
+              className="text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
+            >
+              {batchMode ? "Done" : "Batch +"}
+            </button>
+          </div>
+          <div className="scroll-fade-x overflow-hidden">
+            <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+              {favorites.map((f) => {
+                const isSelected = batchSelection.has(`fav:${f.id}`);
+                return (
+                  <div
+                    key={f.id}
+                    className={`flex shrink-0 items-stretch gap-1 rounded border py-1 pl-2.5 pr-1 transition-colors ${
+                      isSelected ? "border-accent bg-panel text-accent" : "border-line bg-panel-2"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (batchMode) {
+                          toggleBatch(`fav:${f.id}`, {
+                            name: f.name,
+                            calories: f.calories,
+                            protein: f.protein,
+                            carbs: f.carbs,
+                            fat: f.fat,
+                            fiber: f.fiber,
+                            sugar: f.sugar,
+                            sodium: f.sodium,
+                            quantity: null,
+                            quantityUnit: null,
+                            productId: null,
+                          });
+                        } else {
+                          pickEaten(f, true);
+                        }
+                      }}
+                      className="text-left flex items-center gap-1.5"
+                    >
+                      {batchMode && (
+                        <span
+                          className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-xs border text-2xs ${
+                            isSelected
+                              ? "border-accent bg-accent text-panel"
+                              : "border-ink-faint bg-panel"
+                          }`}
+                        >
+                          {isSelected && <Check size={10} strokeWidth={3} />}
+                        </span>
+                      )}
+                      <div>
+                        <div className="flex items-center gap-1 text-xs font-medium text-accent">
+                          <Star size={11} className="shrink-0 fill-accent" strokeWidth={1.75} aria-hidden="true" />
+                          <span className="truncate max-w-[10rem]">{f.name}</span>
+                          <span className="num shrink-0 text-accent">{f.calories}</span>
+                        </div>
+                        <div className="num text-2xs text-ink-faint">
+                          {f.mealType ? `${f.mealType} · 1 portion` : "1 portion"}
+                        </div>
+                      </div>
+                    </button>
+                    {!batchMode && (
+                      <button
+                        type="button"
+                        onClick={() => deleteFav(f.id, f.name)}
+                        className="glyph-btn ml-1 border-l border-line text-ink-faint hover:text-over"
+                        aria-label={`Remove ${f.name} from favorites`}
+                      >
+                        <X size={12} strokeWidth={1.75} />
+                      </button>
+                    )}
                   </div>
-                  <div className="num text-2xs text-ink-faint">
-                    {f.mealType ? `${f.mealType} · 1 portion` : "1 portion"}
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => deleteFav(f.id, f.name)}
-                  className="glyph-btn ml-1 border-l border-line text-ink-faint hover:text-over"
-                  aria-label={`Remove ${f.name} from favorites`}
-                >
-                  <X size={12} strokeWidth={1.75} />
-                </button>
-              </div>
-            ))}
+                );
+              })}
+            </div>
           </div>
         </div>
+      )}
+
+      {/* Recent strip, visible when not searching to surface habit foods */}
+      {!query && rankedRecent.length > 0 && (
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+              Recent
+            </p>
+            {favorites.length === 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setBatchMode((b) => !b);
+                  if (batchMode) setBatchSelection(new Map());
+                }}
+                className="text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
+              >
+                {batchMode ? "Done" : "Batch +"}
+              </button>
+            )}
+          </div>
+          <div className="scroll-fade-x overflow-hidden">
+            <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+              {rankedRecent.slice(0, 8).map((r) => {
+                const isSelected = batchSelection.has(`rec:${r.name}`);
+                return (
+                  <div
+                    key={r.name}
+                    className={`flex shrink-0 items-stretch gap-1 rounded border py-1 px-2.5 transition-colors ${
+                      isSelected ? "border-accent bg-panel text-accent" : "border-line bg-panel-2"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (batchMode) {
+                          toggleBatch(`rec:${r.name}`, {
+                            name: r.name,
+                            calories: r.calories,
+                            protein: r.protein,
+                            carbs: r.carbs,
+                            fat: r.fat,
+                            fiber: r.fiber,
+                            sugar: r.sugar,
+                            sodium: r.sodium,
+                            quantity: r.quantity ?? null,
+                            quantityUnit: (r.quantityUnit as QuantityUnit) ?? null,
+                            productId: r.productId ?? null,
+                          });
+                        } else {
+                          pickEaten(r, false);
+                        }
+                      }}
+                      className="text-left flex items-center gap-1.5"
+                    >
+                      {batchMode && (
+                        <span
+                          className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-xs border text-2xs ${
+                            isSelected
+                              ? "border-accent bg-accent text-panel"
+                              : "border-ink-faint bg-panel"
+                          }`}
+                        >
+                          {isSelected && <Check size={10} strokeWidth={3} />}
+                        </span>
+                      )}
+                      <div>
+                        <div className="flex items-center gap-1.5 text-xs font-medium text-ink">
+                          <span className="truncate max-w-[10rem]">{r.name}</span>
+                          <span className="num shrink-0 text-ink-faint">{r.calories}</span>
+                        </div>
+                        <div className="num text-2xs text-ink-faint">
+                          {r.mealType ? `${r.mealType} · ` : ""}
+                          {r.quantity ? formatQuantity(r.quantity, r.quantityUnit || "g") : "1 portion"}
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!query && favorites.length === 0 && rankedRecent.length === 0 && copied.length === 0 && (
+        <p className="text-2xs text-ink-faint">
+          Log your first meal to build your quick-add strip.
+        </p>
       )}
 
       {/* ── Compose ───────────────────────────────────────────────────────── */}
@@ -846,40 +1113,20 @@ export default function AddFood({
                 </button>
               </>
             ) : (
-              <>
-                <span className="shrink-0 text-2xs uppercase tracking-wider text-ink-faint">
-                  Values are
+              <div className="flex w-full items-center justify-between text-2xs">
+                <span className="text-ink-faint">
+                  {reference.kind === "per"
+                    ? `Quoting ${perLabel ?? "per 100"} · scales with amount below`
+                    : "Direct portion total"}
                 </span>
-                <div
-                  className="flex overflow-hidden rounded border"
-                  style={{ borderColor: "var(--line)" }}
-                  role="group"
-                  aria-label="What the values describe"
+                <button
+                  type="button"
+                  onClick={() => setPerHundred(reference.kind !== "per")}
+                  className="text-2xs font-medium text-ink-dim hover:text-accent hover:underline"
                 >
-                  {[
-                    { on: false, label: "as eaten" },
-                    { on: true, label: perLabel ?? "per 100" },
-                  ].map((o) => {
-                    const active = (reference.kind === "per") === o.on;
-                    return (
-                      <button
-                        key={String(o.on)}
-                        type="button"
-                        onClick={() => setPerHundred(o.on)}
-                        aria-pressed={active}
-                        className="border-r px-2 py-1 text-2xs font-semibold uppercase tracking-wider transition-colors last:border-r-0"
-                        style={{
-                          borderColor: "var(--line)",
-                          background: active ? "var(--ink)" : "transparent",
-                          color: active ? "var(--panel)" : "var(--ink-dim)",
-                        }}
-                      >
-                        {o.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
+                  {reference.kind === "per" ? "Switch to direct portion" : "+ Quote per 100 g/ml"}
+                </button>
+              </div>
             )}
           </div>
 
@@ -967,13 +1214,16 @@ export default function AddFood({
           {/* What the row will say, before it says it. Under a label this is the
               only place the arithmetic is visible. */}
           <div
-            className="col-span-full flex items-baseline gap-2 border-t pt-1.5"
-            style={{ borderColor: "var(--line-soft)" }}
+            className="col-span-full sticky bottom-0 z-10 flex items-baseline gap-2 border-t pt-2 pb-1"
+            style={{ borderColor: "var(--line-soft)", background: "var(--panel)" }}
           >
             {!touched ? (
-              <p className="flex-1 text-2xs text-ink-faint">
-                Pick something above, or type the numbers in.
-              </p>
+              <div className="flex-1 flex items-baseline justify-between text-2xs text-ink-faint">
+                <span>Pick something above, or type numbers in.</span>
+                <span className="hidden sm:inline text-ink-faint/80">
+                  Tip: AI assistant can log via MCP
+                </span>
+              </div>
             ) : problem ? (
               <p className="flex-1 text-2xs text-over">{problem}</p>
             ) : (
