@@ -42,11 +42,12 @@ import EntryRow from "@/components/EntryRow";
 import WeightCard from "@/components/WeightCard";
 import TrendsCard from "@/components/TrendsCard";
 import AddFood from "@/components/AddFood";
-import TdeeCard from "@/components/TdeeCard";
 import ProductsCard from "@/components/ProductsCard";
 import WorkoutCard from "@/components/WorkoutCard";
 import WorkoutNavigator from "@/components/WorkoutNavigator";
 import WorkoutSummaryCard from "@/components/WorkoutSummaryCard";
+import WorkoutImportModal from "@/components/WorkoutImportModal";
+import { UploadCloud } from "lucide-react";
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 type Meal = (typeof MEALS)[number];
@@ -85,7 +86,7 @@ function stripEnding(selected: string, today: string): string {
   return selected > shiftDate(today, -6) ? today : selected;
 }
 
-const TABS: Tab[] = ["today", "workout", "trends", "weight", "settings"];
+const TABS: Tab[] = ["food", "workout", "settings"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function Page() {
@@ -107,8 +108,8 @@ function Dashboard() {
 
   // Tab and day live in the URL. Android back now walks the tab history instead
   // of exiting the installed app, and the assistant can link to a specific day.
-  const tabParam = params.get("tab") as Tab | null;
-  const tab: Tab = tabParam && TABS.includes(tabParam) ? tabParam : "today";
+  const tabParam = params.get("tab");
+  const tab: Tab = tabParam === "workout" || tabParam === "settings" ? tabParam : "food";
   const dParam = params.get("d");
   const date = dParam && DATE_RE.test(dParam) ? dParam : todayStr();
 
@@ -129,7 +130,9 @@ function Dashboard() {
   const [urlCopied, setUrlCopied] = useState(false);
   const [urlRevealed, setUrlRevealed] = useState(false);
   const [origin, setOrigin] = useState("");
-  const [clientSnippet, setClientSnippet] = useState<"cursor" | "claude-desktop" | "claude-cli" | "windsurf">("cursor");
+  const [showWorkoutImportModal, setShowWorkoutImportModal] = useState(false);
+  const [showMcpDetails, setShowMcpDetails] = useState(false);
+  const [showImportExportDetails, setShowImportExportDetails] = useState(false);
 
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -143,6 +146,7 @@ function Dashboard() {
   const [trends, setTrends] = useState<Trends | null>(null);
   const [trendsError, setTrendsError] = useState<string | null>(null);
   const [trendRange, setTrendRange] = useState<TrendRange>(7);
+  const [trendsOpen, setTrendsOpen] = useState(tabParam === "trends");
 
   // Per-day calorie totals behind the week strip, accumulated from every window
   // that has been read. They used to be lifted out of whatever Trends happened
@@ -300,6 +304,16 @@ function Dashboard() {
     }
   }, [mergeDayTotals]);
 
+  const toggleTrends = useCallback(() => {
+    setTrendsOpen((prev) => {
+      const next = !prev;
+      if (next && !trends) {
+        loadTrends(trendRange).catch(() => {});
+      }
+      return next;
+    });
+  }, [trends, trendRange, loadTrends]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -371,7 +385,7 @@ function Dashboard() {
   }, [router, applySummary]);
 
   useEffect(() => {
-    if (!ready || tab !== "today") return;
+    if (!ready || tab !== "food") return;
     void loadDay(date);
   }, [ready, tab, date, loadDay]);
 
@@ -379,12 +393,14 @@ function Dashboard() {
   // only thing that makes the bars true for a day reached by navigating back.
   const stripEnd = stripEnding(date, todayStr());
   useEffect(() => {
-    if (ready && tab === "today") loadStrip(stripEnd).catch(() => {});
+    if (ready && tab === "food") loadStrip(stripEnd).catch(() => {});
   }, [ready, tab, stripEnd, loadStrip]);
 
   useEffect(() => {
-    if (ready && tab === "trends") loadTrends(trendRange).catch(() => {});
-  }, [ready, tab, trendRange, loadTrends]);
+    if (ready && (trendsOpen || tabParam === "trends")) {
+      loadTrends(trendRange).catch(() => {});
+    }
+  }, [ready, trendsOpen, tabParam, trendRange, loadTrends]);
 
   // An installed PWA is not remounted when it comes back from the background, so
   // without this the screen keeps showing whatever it loaded hours ago — including
@@ -393,7 +409,7 @@ function Dashboard() {
   const revalidate = useCallback(async () => {
     setRefreshing(true);
     try {
-      if (tab === "today") {
+      if (tab === "food") {
         const now = todayStr();
         const wasOnToday = date === todayRef.current;
         todayRef.current = now;
@@ -406,28 +422,22 @@ function Dashboard() {
           await loadDay(date);
         }
 
-        const [{ favorites: favs, recent: rec }, { goals: g }] = await Promise.all([
+        const [{ favorites: favs, recent: rec }, { goals: g }, { logs }] = await Promise.all([
           api.listFavorites(),
           api.getGoals(),
+          api.listWeight(),
         ]);
         setFavorites(favs);
         setRecent(rec);
         setGoals(g);
+        setWeightLogs(logs);
         loadStrip(stripEnding(date, todayStr())).catch(() => {});
+        if (trendsOpen || trends) {
+          loadTrends(trendRange).catch(() => {});
+        }
       } else if (tab === "workout") {
         const { goals: g } = await api.getGoals();
         setGoals(g);
-      } else if (tab === "trends") {
-        const [{ goals: g }] = await Promise.all([
-          api.getGoals(),
-          loadTrends(trendRange),
-        ]);
-
-        setGoals(g);
-      } else if (tab === "weight") {
-        const [{ goals: g }, { logs }] = await Promise.all([api.getGoals(), api.listWeight()]);
-        setGoals(g);
-        setWeightLogs(logs);
       } else {
         const [{ goals: g }, { logs }, { apiKey: key }] = await Promise.all([
           api.getGoals(),
@@ -443,7 +453,7 @@ function Dashboard() {
     } finally {
       setRefreshing(false);
     }
-  }, [tab, date, loadDay, loadStrip, loadTrends, trendRange, writeParams]);
+  }, [tab, date, loadDay, loadStrip, loadTrends, trendRange, trendsOpen, trends, writeParams]);
 
   useEffect(() => {
     if (!ready) return;
@@ -616,16 +626,6 @@ function Dashboard() {
     }
   }
 
-  async function copySnippet(text: string, clientName: string) {
-    try {
-      if (!navigator.clipboard) throw new Error("no clipboard");
-      await navigator.clipboard.writeText(text);
-      toast(`Copied ${clientName} configuration`, "success");
-    } catch {
-      toast("Could not copy — please copy manually", "error");
-    }
-  }
-
   async function regenerateKey() {
     if (!confirm("Regenerate key? The old connector URL will stop working immediately.")) return;
     try {
@@ -686,8 +686,8 @@ function Dashboard() {
 
   return (
     <div className="mx-auto max-w-2xl px-3 pb-32 pt-3">
-      {/* ── Today ─────────────────────────────────────── */}
-      {tab === "today" && (
+      {/* ── Food ──────────────────────────────────────── */}
+      {tab === "food" && (
         <>
           {/* The other three tabs render a visible <h1>. Here the screen is the
               instrument itself; a visible title would repeat the strip and the
@@ -916,6 +916,17 @@ function Dashboard() {
             ))}
           </section>
 
+          {/* Contextual weight reading and quick logging for this day */}
+          <WeightCard
+            date={date}
+            logs={weightLogs}
+            weightUnit={goals.weightUnit}
+            onLogsChange={(fresh) => {
+              setWeightLogs(fresh);
+              if (trends) loadTrends(trendRange).catch(() => {});
+            }}
+          />
+
           {/* Where the next log lands. Every capture path on this screen reads it,
               so it is stated before anything is tapped rather than inferred after. */}
           <div
@@ -1040,6 +1051,53 @@ function Dashboard() {
               })
             )}
           </section>
+
+          {/* Trends & Analysis — collapsible instrument */}
+          <Panel
+            title="Trends & Analysis"
+            hint={
+              trends && trends.nutrition.length > 0
+                ? `${trendRange === "all" ? "all" : `${trendRange}d`} · avg ${Math.round(trends.nutrition.filter((d) => d.count > 0).reduce((s, d) => s + d.calories, 0) / (trends.nutrition.filter((d) => d.count > 0).length || 1))} kcal`
+                : undefined
+            }
+            open={trendsOpen}
+            onToggle={toggleTrends}
+            bare
+          >
+            <div className="pt-2">
+              {trends ? (
+                <TrendsCard
+                  trends={trends}
+                  goals={goals}
+                  range={trendRange}
+                  onRangeChange={(r) => {
+                    setTrendRange(r);
+                    loadTrends(r).catch(() => {});
+                  }}
+                  onSetGoals={() => goTab("settings")}
+                />
+              ) : trendsError ? (
+                <section className="panel p-3 text-center">
+                  <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+                    Trends unavailable
+                  </p>
+                  <p className="mt-1 text-xs text-ink-faint">{trendsError}</p>
+                  <button
+                    onClick={() => loadTrends(trendRange).catch(() => {})}
+                    className="btn btn-primary mt-3 w-full"
+                  >
+                    Retry
+                  </button>
+                </section>
+              ) : (
+                <section className="panel p-3 text-center">
+                  <p className="text-2xs uppercase tracking-wider text-ink-faint">
+                    Loading trends…
+                  </p>
+                </section>
+              )}
+            </div>
+          </Panel>
           </>}
         </>
       )}
@@ -1047,17 +1105,10 @@ function Dashboard() {
       {/* ── Workout ───────────────────────────────────── */}
       {tab === "workout" && (
         <>
-          <Header sub={prettyDate(date)}>Workout</Header>
-
           <WorkoutNavigator
             currentDate={date}
             onSelectDate={setDate}
             todayDate={todayStr()}
-            refreshTrigger={workoutRefreshKey}
-          />
-
-          <WorkoutSummaryCard
-            weightUnit={goals.weightUnit || "kg"}
             refreshTrigger={workoutRefreshKey}
           />
 
@@ -1067,56 +1118,13 @@ function Dashboard() {
             onToast={(m) => toast(m)}
             onWorkoutSaved={() => setWorkoutRefreshKey((k) => k + 1)}
           />
-        </>
-      )}
 
-
-      {/* ── Trends ────────────────────────────────────── */}
-      {tab === "trends" && (
-
-        <>
-          <Header>Trends</Header>
-          {trends ? (
-            <TrendsCard
-              trends={trends}
-              goals={goals}
-              range={trendRange}
-              onRangeChange={setTrendRange}
-              onSetGoals={() => goTab("settings")}
+          <div className="mt-3">
+            <WorkoutSummaryCard
+              weightUnit={goals.weightUnit || "kg"}
+              refreshTrigger={workoutRefreshKey}
             />
-          ) : trendsError ? (
-            <section className="panel p-3 text-center">
-              <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-                Trends unavailable
-              </p>
-              <p className="mt-1 text-xs text-ink-faint">{trendsError}</p>
-              <button
-                onClick={() => loadTrends(trendRange).catch(() => {})}
-                className="btn btn-primary mt-3 w-full"
-              >
-                Retry
-              </button>
-            </section>
-          ) : (
-            <section className="panel p-3">
-              <p className="text-2xs uppercase tracking-wider text-ink-faint">
-                Loading…
-              </p>
-            </section>
-          )}
-          {trends && trendsError && (
-            <p className="mt-1.5 text-2xs text-ink-faint">
-              Last refresh failed — showing the previous reading. {trendsError}
-            </p>
-          )}
-        </>
-      )}
-
-      {/* ── Weight ────────────────────────────────────── */}
-      {tab === "weight" && (
-        <>
-          <Header>Weight</Header>
-          <WeightCard logs={weightLogs} weightUnit={goals.weightUnit} onLogsChange={setWeightLogs} />
+          </div>
         </>
       )}
 
@@ -1130,29 +1138,54 @@ function Dashboard() {
             <ThemeToggle />
           </div>
 
-          <GoalsCard goals={goals} onGoalsChange={setGoals} />
-
-          <Panel title="Calculate goals" hint="TDEE estimate" defaultOpen={false}>
-            <TdeeCard
-              goals={goals}
-              latestWeight={weightLogs.length ? weightLogs[weightLogs.length - 1].weight : null}
-              onGoalsChange={setGoals}
-            />
-          </Panel>
+          <GoalsCard
+            goals={goals}
+            latestWeight={weightLogs.length ? weightLogs[weightLogs.length - 1].weight : null}
+            onGoalsChange={setGoals}
+          />
 
           {/* The assistant is a front door, not a footnote: this used to be the
               last section on the screen, below Export. It sits above the archival
               controls now, and below Goals, which is where "Set a goal" lands. */}
+          {/* AI Assistant / MCP connector */}
           <section className="panel mt-2 p-3">
-            <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">AI Assistant / MCP connector</h2>
-            <p className="mt-1 text-2xs text-ink-faint">
-              Connect any Model Context Protocol (MCP) client — Claude (Web & Desktop), Cursor, Windsurf, Claude Code, ChatGPT, etc. Photograph a nutrition label or scan a barcode and your AI assistant saves it to the catalog automatically, where you can log it anytime by weight or portion.
-            </p>
-            <p className="mt-1 text-2xs text-ink-faint">
-              Anyone with this URL can read and change your diet data.
-            </p>
-            <div className="mt-2 flex items-center gap-1.5">
-              <code className="num min-w-0 flex-1 truncate rounded px-2 py-1.5 text-2xs text-ink-dim" style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+                AI Assistant / MCP connector
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowMcpDetails((s) => !s)}
+                className="text-2xs text-ink-faint hover:text-ink transition-colors flex items-center gap-1"
+                aria-expanded={showMcpDetails}
+              >
+                <span>{showMcpDetails ? "Hide details" : "Details"}</span>
+                <span className="num text-xs">{showMcpDetails ? "−" : "+"}</span>
+              </button>
+            </div>
+
+            {showMcpDetails && (
+              <div
+                className="mt-2 space-y-1.5 border-b pb-2.5 text-2xs text-ink-faint"
+                style={{ borderColor: "var(--line-soft)" }}
+              >
+                <p>
+                  Connect any MCP client (Claude, Cursor, Windsurf, ChatGPT) to auto-log meals from labels, photos, or barcodes.
+                </p>
+                <p className="text-over">
+                  Anyone with this URL can read and change your diet data.
+                </p>
+                <div>
+                  Includes <strong className="text-ink-dim">13 tools</strong> (barcode lookup, nutrition OCR, auto-saving) &amp; <strong className="text-ink-dim">5 live resources</strong> (@today/summary, @today/entries, @catalog/products).
+                </div>
+              </div>
+            )}
+
+            <div className="mt-2.5 flex items-center gap-1.5">
+              <code
+                className="num min-w-0 flex-1 truncate rounded px-2 py-1.5 text-2xs text-ink-dim"
+                style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}
+              >
                 {displayedMcpUrl}
               </code>
               <button
@@ -1167,97 +1200,13 @@ function Dashboard() {
               </button>
             </div>
 
-            {/* Quick Client Setup Snippets */}
-            <div className="mt-3 rounded border p-2" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
-              <div className="flex items-center justify-between border-b pb-1.5" style={{ borderColor: "var(--line)" }}>
-                <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-                  Client configurations
-                </span>
-                <span className="num text-2xs text-ink-faint">JSON-RPC / HTTP</span>
-              </div>
-              <div className="no-scrollbar mt-1.5 flex gap-1 overflow-x-auto pb-0.5">
-                {(
-                  [
-                    { id: "cursor", label: "Cursor" },
-                    { id: "claude-desktop", label: "Claude Desktop" },
-                    { id: "claude-cli", label: "Claude Code" },
-                    { id: "windsurf", label: "Windsurf" },
-                  ] as const
-                ).map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setClientSnippet(c.id)}
-                    className="rounded px-2.5 py-1 text-2xs font-medium transition-colors min-h-[28px] shrink-0"
-                    style={{
-                      background: clientSnippet === c.id ? "var(--ink)" : "transparent",
-                      color: clientSnippet === c.id ? "var(--panel)" : "var(--ink-dim)",
-                    }}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-2">
-                <p className="text-2xs text-ink-faint">
-                  {clientSnippet === "cursor" && "Paste into .cursor/mcp.json (or Cursor Settings → MCP):"}
-                  {clientSnippet === "claude-desktop" && "Paste into claude_desktop_config.json:"}
-                  {clientSnippet === "claude-cli" && "Run in terminal:"}
-                  {clientSnippet === "windsurf" && "Paste into ~/.codeium/windsurf/mcp_config.json:"}
-                </p>
-                <div className="mt-1 flex items-start gap-1.5">
-                  <pre
-                    className="font-mono max-h-32 flex-1 overflow-x-auto rounded p-2 text-2xs text-ink-dim"
-                    style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
-                  >
-                    {clientSnippet === "cursor" && JSON.stringify({ mcpServers: { "diet-tracker": { url: mcpUrl || "https://your-domain/api/mcp?key=YOUR_KEY" } } }, null, 2)}
-                    {clientSnippet === "claude-desktop" && JSON.stringify({ mcpServers: { "diet-tracker": { url: mcpUrl || "https://your-domain/api/mcp?key=YOUR_KEY" } } }, null, 2)}
-                    {clientSnippet === "claude-cli" && `claude mcp add --transport http diet-tracker "${mcpUrl || "https://your-domain/api/mcp?key=YOUR_KEY"}"`}
-                    {clientSnippet === "windsurf" && JSON.stringify({ mcpServers: { "diet-tracker": { serverUrl: mcpUrl || "https://your-domain/api/mcp?key=YOUR_KEY" } } }, null, 2)}
-                  </pre>
-                  <button
-                    onClick={() => {
-                      const text =
-                        clientSnippet === "cursor"
-                          ? JSON.stringify({ mcpServers: { "diet-tracker": { url: mcpUrl } } }, null, 2)
-                          : clientSnippet === "claude-desktop"
-                            ? JSON.stringify({ mcpServers: { "diet-tracker": { url: mcpUrl } } }, null, 2)
-                            : clientSnippet === "claude-cli"
-                              ? `claude mcp add --transport http diet-tracker "${mcpUrl}"`
-                              : JSON.stringify({ mcpServers: { "diet-tracker": { serverUrl: mcpUrl } } }, null, 2);
-                      const label =
-                        clientSnippet === "cursor"
-                          ? "Cursor"
-                          : clientSnippet === "claude-desktop"
-                            ? "Claude Desktop"
-                            : clientSnippet === "claude-cli"
-                              ? "Claude Code"
-                              : "Windsurf";
-                      copySnippet(text, label);
-                    }}
-                    disabled={!mcpUrl}
-                    className="btn btn-ghost shrink-0 text-2xs"
-                  >
-                    Copy
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* MCP Capabilities Hint */}
-            <div className="mt-2 text-2xs text-ink-faint">
-              <span>Includes </span>
-              <strong className="font-semibold text-ink-dim">13 tools</strong>
-              <span> (barcode lookup, nutrition OCR, auto-saving) &amp; </span>
-              <strong className="font-semibold text-ink-dim">5 live resources</strong>
-              <span> (@today/summary, @today/entries, @catalog/products).</span>
-            </div>
-
             <div className="mt-2 flex items-center justify-between text-2xs">
               <span className="text-ink-faint">
                 Timezone <span className="num text-ink-dim">{goals.timezone}</span>
               </span>
-              <button onClick={regenerateKey} className="text-ink-faint hover:text-over">Regenerate key</button>
+              <button onClick={regenerateKey} className="text-ink-faint hover:text-over">
+                Regenerate key
+              </button>
             </div>
           </section>
 
@@ -1266,27 +1215,85 @@ function Dashboard() {
           </Panel>
 
           <section className="panel mt-2 p-3">
-            <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">Export</h2>
-            <div className="mt-2 flex gap-1.5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+                Import & Export
+              </h2>
               <button
-                onClick={() => downloadExport("json")}
-                disabled={exporting !== null}
-                className="btn btn-ghost flex-1 text-center"
+                type="button"
+                onClick={() => setShowImportExportDetails((s) => !s)}
+                className="text-2xs text-ink-faint hover:text-ink transition-colors flex items-center gap-1"
+                aria-expanded={showImportExportDetails}
               >
-                {exporting === "json" ? "Preparing…" : "JSON"}
-              </button>
-              <button
-                onClick={() => downloadExport("csv")}
-                disabled={exporting !== null}
-                className="btn btn-ghost flex-1 text-center"
-              >
-                {exporting === "csv" ? "Preparing…" : "CSV"}
+                <span>{showImportExportDetails ? "Hide details" : "Details"}</span>
+                <span className="num text-xs">{showImportExportDetails ? "−" : "+"}</span>
               </button>
             </div>
-            <p className="mt-1.5 text-2xs text-ink-faint">
-              JSON is everything: entries, weight, favorites, products, templates
-              and your goals. CSV is entries only, with quantity and provenance.
-            </p>
+
+            {showImportExportDetails && (
+              <div
+                className="mt-2 space-y-1 border-b pb-2.5 text-2xs text-ink-faint"
+                style={{ borderColor: "var(--line-soft)" }}
+              >
+                <p>
+                  <strong className="text-ink-dim">JSON:</strong> Complete backup (food, weight, products, workouts).
+                </p>
+                <p>
+                  <strong className="text-ink-dim">CSV:</strong> Tabular food log entries for spreadsheets.
+                </p>
+                <p>
+                  <strong className="text-ink-dim">Vault (.md):</strong> Workout logs formatted for Obsidian.
+                </p>
+                <p>
+                  <strong className="text-ink-dim">Import:</strong> Markdown logs from Obsidian, Hevy, or Strong. Dry-run preview supported.
+                </p>
+              </div>
+            )}
+
+            {/* Export */}
+            <div className="mt-2.5">
+              <span className="text-2xs text-ink-faint block uppercase tracking-wider mb-1.5">
+                Export Data
+              </span>
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  onClick={() => downloadExport("json")}
+                  disabled={exporting !== null}
+                  className="btn btn-ghost text-center text-2xs"
+                >
+                  {exporting === "json" ? "Preparing…" : "JSON Backup"}
+                </button>
+                <button
+                  onClick={() => downloadExport("csv")}
+                  disabled={exporting !== null}
+                  className="btn btn-ghost text-center text-2xs"
+                >
+                  {exporting === "csv" ? "Preparing…" : "CSV Entries"}
+                </button>
+                <a
+                  href="/api/workouts/export?format=markdown"
+                  download={`workouts-vault-${date}.md`}
+                  className="btn btn-ghost text-center text-2xs flex items-center justify-center"
+                >
+                  Vault (.md)
+                </a>
+              </div>
+            </div>
+
+            {/* Import */}
+            <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--line)" }}>
+              <span className="text-2xs text-ink-faint block uppercase tracking-wider mb-1.5">
+                Import Data
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowWorkoutImportModal(true)}
+                className="btn btn-ghost w-full text-center text-2xs flex items-center justify-center gap-1.5"
+              >
+                <UploadCloud size={13} aria-hidden="true" />
+                <span>Import Workouts (Markdown)</span>
+              </button>
+            </div>
           </section>
 
           <div className="mt-3 flex items-center justify-between">
@@ -1296,6 +1303,18 @@ function Dashboard() {
             <button onClick={logout} className="btn btn-ghost">Log out</button>
           </div>
         </>
+      )}
+
+      {showWorkoutImportModal && (
+        <WorkoutImportModal
+          weightUnit={goals.weightUnit || "kg"}
+          onClose={() => setShowWorkoutImportModal(false)}
+          onSuccess={(count) => {
+            toast(`Successfully imported ${count} workout${count === 1 ? "" : "s"}`);
+            setShowWorkoutImportModal(false);
+            setWorkoutRefreshKey((k) => k + 1);
+          }}
+        />
       )}
 
       <BottomNav active={tab} onChange={goTab} />

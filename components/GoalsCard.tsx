@@ -3,14 +3,16 @@
 import { useState } from "react";
 import { api, type Goals } from "@/lib/api-client";
 import Select from "./Select";
+import TdeeCard from "./TdeeCard";
 import { useToast } from "./Toast";
 
 interface Props {
   goals: Goals;
+  latestWeight: number | null;
   onGoalsChange: (g: Goals) => void;
 }
 
-export default function GoalsCard({ goals, onGoalsChange }: Props) {
+export default function GoalsCard({ goals, latestWeight, onGoalsChange }: Props) {
   const toast = useToast();
   const [form, setForm] = useState({
     dailyCalories: goals.dailyCalories?.toString() ?? "",
@@ -22,6 +24,12 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
     dailySodium: goals.dailySodium?.toString() ?? "",
     weightUnit: goals.weightUnit,
   });
+  const [profile, setProfile] = useState({
+    sex: goals.sex,
+    birthYear: goals.birthYear,
+    heightCm: goals.heightCm,
+  });
+  const [showCalculator, setShowCalculator] = useState(false);
   const [saving, setSaving] = useState(false);
 
   async function save() {
@@ -36,6 +44,9 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
         dailySugar: form.dailySugar ? Number(form.dailySugar) : null,
         dailySodium: form.dailySodium ? Number(form.dailySodium) : null,
         weightUnit: form.weightUnit as "kg" | "lb",
+        sex: profile.sex ?? goals.sex,
+        birthYear: profile.birthYear ?? goals.birthYear,
+        heightCm: profile.heightCm ?? goals.heightCm,
       });
       onGoalsChange(updated);
       toast("Goals saved");
@@ -92,15 +103,44 @@ export default function GoalsCard({ goals, onGoalsChange }: Props) {
           </Select>
         </label>
       </div>
-      {/* This setting used to be a label with no conversion behind it: switching
-          it reinterpreted every stored reading instead of re-rendering it.
-          Readings are canonical kilograms now, so the switch is safe — and
-          saying so is worth two lines, because the old behaviour means readings
-          taken before the change were read as whatever this was set to then. */}
-      <p className="mt-2 text-2xs text-ink-faint">
-        Weight is stored in kilograms and converted for display, so changing the
-        unit re-renders your history rather than reinterpreting it.
-      </p>
+
+      {/* Nested TDEE / Body Profile Calculator */}
+      <div className="mt-3 border-t pt-2" style={{ borderColor: "var(--line)" }}>
+        <button
+          type="button"
+          onClick={() => setShowCalculator((s) => !s)}
+          aria-expanded={showCalculator}
+          className="flex w-full items-center justify-between py-1 text-2xs font-semibold uppercase tracking-wider text-ink-dim transition-colors hover:text-ink"
+        >
+          <span>Calculate from TDEE / Profile</span>
+          <span className="num text-xs text-ink-faint">{showCalculator ? "−" : "+"}</span>
+        </button>
+
+        {showCalculator && (
+          <div className="mt-2 border-t pt-2.5" style={{ borderColor: "var(--line-soft)" }}>
+            <TdeeCard
+              goals={goals}
+              latestWeight={latestWeight}
+              onApply={(calc) => {
+                setForm((prev) => ({
+                  ...prev,
+                  dailyCalories: String(calc.calories),
+                  dailyProtein: String(calc.protein),
+                  dailyCarbs: String(calc.carbs),
+                  dailyFat: String(calc.fat),
+                }));
+                setProfile({
+                  sex: calc.sex,
+                  birthYear: calc.birthYear,
+                  heightCm: calc.heightCm,
+                });
+                toast("Calculated targets filled into form. Review and save below.");
+              }}
+            />
+          </div>
+        )}
+      </div>
+
       <button onClick={save} disabled={saving} className="btn btn-primary mt-2.5 w-full">
         {saving ? "Saving…" : "Save goals"}
       </button>

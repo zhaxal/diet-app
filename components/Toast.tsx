@@ -40,7 +40,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={push}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 max-h-[45dvh] overflow-y-auto px-3">
+      <div
+        data-toast-container
+        aria-label="Notifications"
+        className="pointer-events-none fixed inset-x-0 bottom-24 z-50 max-h-[45dvh] overflow-y-auto px-3"
+      >
         {/* Stable live regions announce additions without moving keyboard focus. */}
         <div role="status" aria-live="polite" aria-relevant="additions text" className="flex flex-col items-center gap-2">
           {toasts.filter((t) => t.kind !== "error").map((t) => <ToastMessage key={t.id} toast={t} onDismiss={dismiss} />)}

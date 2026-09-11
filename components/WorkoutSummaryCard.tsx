@@ -80,7 +80,7 @@ export default function WorkoutSummaryCard({
       </div>
 
       {/* Primary Metrics Row */}
-      <div className="grid grid-cols-3 gap-2 mt-2 text-center">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-center">
         <div
           className="rounded border p-2"
           style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
@@ -95,7 +95,7 @@ export default function WorkoutSummaryCard({
         >
           <div className="text-2xs text-ink-faint uppercase tracking-wider mb-0.5">Volume</div>
           <div className="num text-sm font-bold text-ink">
-            {data.totalVolume.toLocaleString()}
+            {Math.round(data.totalVolume).toLocaleString()}
             <span className="text-2xs font-normal text-ink-faint ml-0.5">{weightUnit}</span>
           </div>
         </div>
@@ -106,6 +106,14 @@ export default function WorkoutSummaryCard({
         >
           <div className="text-2xs text-ink-faint uppercase tracking-wider mb-0.5">Sets</div>
           <div className="num text-sm font-bold text-ink">{data.totalSets}</div>
+        </div>
+
+        <div
+          className="rounded border p-2"
+          style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
+        >
+          <div className="text-2xs text-ink-faint uppercase tracking-wider mb-0.5">Reps</div>
+          <div className="num text-sm font-bold text-ink">{data.totalReps}</div>
         </div>
       </div>
 

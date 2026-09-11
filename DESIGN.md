@@ -319,13 +319,14 @@ gets the same column centred in more grey.
 
 Vertical rhythm is tight and uniform: panels are separated by 8px, padded 12px inside, and
 their internal rows use 6px gaps. There is no large spacing step in the system — the biggest
-gap between two adjacent elements on the Today screen is 8px. This is intentional, and it is
+gap between two adjacent elements on the Food screen is 8px. This is intentional, and it is
 the main reason the screen carries a full day of nutrition with very little scrolling.
 
-The Today screen is a fixed vertical sequence, densest at the top: seven-day strip → the
-calorie readout → a responsive grid of six macro meters → the meal selector → quick-add
-chips → one collapsible Add food panel → entries grouped by meal. Everything optional
-collapses; the day's numbers never do.
+The Food screen is a fixed vertical sequence, densest at the top: seven-day strip → the
+calorie readout → a responsive grid of six macro meters → the contextual daily weight instrument
+→ the meal selector → quick-add chips → one collapsible Add food panel → entries grouped by meal
+→ the collapsible Trends & Analysis instrument. Everything optional collapses; the day's numbers
+never do.
 
 There used to be three panels below the chips — Products, Add food, and Copy & templates —
 which is three places to answer one question. Products was a second logging surface for one
@@ -333,10 +334,10 @@ kind of source; templates and day-copy were a surface of their own for repeating
 are now inputs to Add food, which is the single place an entry is composed, and the catalog
 itself moved to Settings where a reference table belongs.
 
-The Trends screen is the same instrument over a window instead of a day, in five panels at the
-same 8px separation: coverage (days logged, average calories, weight delta) → the metric chart
-with its goal rule, two date ticks and min/median/max → goal adherence, one cell per day in
-range/over/unlogged → the average day, using the same seven meters Today uses → the meal split.
+Trends and Weight live directly on the Food screen rather than occupying standalone tabs:
+Weight is a compact daily instrument beneath the macro meters (with one-tap logging for that day,
+overall trend delta, and expandable line chart history), while Trends & Analysis is an accordion
+instrument beneath the meal entries providing the full multi-metric chart suite over 7d/30d/90d/all windows.
 It reports what the range *was*; it does not project, streak, or congratulate.
 Every chart has a text alternative naming its metric, span, and reading count. A single logged
 day is reported as insufficient evidence for a trend; the chart, axis, and distribution stats
@@ -364,7 +365,8 @@ annotation label lifts to 12px. Glyph hit
 areas never overlap neighboring controls. The week strip scrolls if seven targets cannot fit.
 
 Settings keeps Daily Goals open because it is the destination of every “Set a goal” action.
-The optional TDEE estimate and product catalog use collapsed panels. The MCP connector URL
+The optional TDEE estimate is nested directly inside Daily Goals as an expandable disclosure
+(Calculate from TDEE / Profile) which pre-populates the target fields for review. The product catalog uses a collapsed panel. The MCP connector URL
 is a bearer credential: its key is masked by default, Copy does not reveal it, and Reveal is a
 deliberate adjacent action. The panel states that anyone holding the URL can read and change the
 account’s diet data.
@@ -528,10 +530,10 @@ bumping `VERSION` in `public/sw.js` — the icons are cache-first and are not co
   and falls back to a screenshot of the page.
 
 ### Navigation
-- **Bottom nav:** Four fixed tabs, each a 22px lucide glyph over a 0.6875rem label —
-  `CalendarDays` (a day is the unit, and the week strip above it is a calendar), `ChartColumn`
-  (the tab's own chart is a bar chart), `Scale`, and `Settings2` (sliders, echoing the meter
-  tracks that make up most of what it opens). The four silhouettes — frame, bars, balance,
+- **Bottom nav:** Three fixed tabs, each a 22px lucide glyph over a 0.6875rem label —
+  `CalendarDays` (a day is the unit, and the week strip above it is a calendar), `Dumbbell`
+  (the gym and workout tracker), and `Settings2` (sliders, echoing the meter
+  tracks that make up most of what it opens). The three silhouettes — frame, barbell,
   sliders — are distinct enough to scan before the labels are read. The active tab is amber at
   stroke 2.25; inactive tabs are faint ink at 1.75. There is no indicator bar, pill, or
   underline — weight and colour carry the state.
@@ -711,3 +713,9 @@ overwrite it.
   any surface.
 - **Don't** set prose in monospace or figures in sans. The split is the system's primary semantic
   signal.
+- **Don't** clutter functional settings cards with permanent paragraphs of instructional prose.
+  Explanatory copy, warnings, and format specifications belong behind progressive disclosure toggles
+  (`Details +`) so the interface remains light, actionable, and uncluttered.
+- **Don't** allow fixed transient overlays (snackbars, toast notifications, dev tooling portals) to
+  freeze across stitched full-page captures. Suppress transient overlays and dock fixed bars statically
+  in visual regression helpers.

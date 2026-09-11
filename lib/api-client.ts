@@ -352,10 +352,19 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  deleteWorkout: (id: string) =>
-    request<{ ok: boolean }>(`/api/workouts?id=${encodeURIComponent(id)}`, {
+  deleteWorkout: (idOrParams: string | { id?: string; date?: string }) => {
+    let qs = "";
+    if (typeof idOrParams === "string") {
+      qs = `id=${encodeURIComponent(idOrParams)}`;
+    } else if (idOrParams.id) {
+      qs = `id=${encodeURIComponent(idOrParams.id)}`;
+    } else if (idOrParams.date) {
+      qs = `date=${encodeURIComponent(idOrParams.date)}`;
+    }
+    return request<{ ok: boolean }>(`/api/workouts?${qs}`, {
       method: "DELETE",
-    }),
+    });
+  },
 
   searchExercises: (q?: string, muscle?: string) => {
     const params = new URLSearchParams();

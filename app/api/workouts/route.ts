@@ -219,17 +219,33 @@ export async function POST(req: NextRequest) {
   });
 }
 
-// DELETE /api/workouts?id=...
+// DELETE /api/workouts?id=... or ?date=YYYY-MM-DD
 export async function DELETE(req: NextRequest) {
   const user = await getUserFromRequest(req);
   if (!user) return unauthorized();
 
   const id = req.nextUrl.searchParams.get("id");
-  if (!id) return jsonError("id parameter is required", 400);
+  const dateParam = req.nextUrl.searchParams.get("date");
+  if (!id && !dateParam) {
+    return jsonError("id or date parameter is required", 400);
+  }
 
-  const existing = await prisma.workout.findFirst({
-    where: { id, userId: user.id },
-  });
+  let existing = null;
+  if (id) {
+    existing = await prisma.workout.findFirst({
+      where: { id, userId: user.id },
+    });
+  } else if (dateParam) {
+    const parsed = dateQuerySchema.safeParse(dateParam);
+    if (!parsed.success) return zodError(parsed.error);
+    const { start, end } = dayBoundsInTz(parsed.data, user.timezone);
+    existing = await prisma.workout.findFirst({
+      where: {
+        userId: user.id,
+        date: { gte: start, lt: end },
+      },
+    });
+  }
 
   if (!existing) return jsonError("Workout not found", 404);
 
