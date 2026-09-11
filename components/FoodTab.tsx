@@ -295,7 +295,7 @@ export default function FoodTab({
                   className="num ml-auto text-right text-sm font-semibold shrink-0 whitespace-nowrap"
                   style={{ color: calOver ? "var(--over)" : "var(--ok)" }}
                 >
-                  {Math.abs(calLeft).toLocaleString()}
+                  {calOver ? `+${Math.abs(calLeft).toLocaleString()}` : Math.abs(calLeft).toLocaleString()}
                   <span className="ml-1 text-2xs uppercase tracking-wider opacity-80">
                     {calOver ? "over" : "left"}
                   </span>
@@ -544,6 +544,16 @@ export default function FoodTab({
                           <span className="num text-2xs text-ink-faint">
                             {Math.round(summary?.byMeal[mealName]?.calories ?? 0)} kcal
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMeal(mealName);
+                              setShowAdd(true);
+                            }}
+                            className="text-2xs font-semibold uppercase tracking-wider text-ink-faint transition-colors hover:text-accent"
+                          >
+                            + add
+                          </button>
                           <button
                             type="button"
                             onClick={() => copyMeal(mealName, items)}

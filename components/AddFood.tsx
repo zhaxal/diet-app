@@ -148,8 +148,10 @@ export default function AddFood({
   const [productId, setProductId] = useState<string | null>(initialDraft?.productId ?? null);
   const [origin, setOrigin] = useState<Origin | null>(initialDraft?.origin ?? null);
   const [showTrace, setShowTrace] = useState(initialDraft?.showTrace ?? false);
+  const [showManual, setShowManual] = useState(false);
   const [saving, setSaving] = useState(false);
   const hasDraft = !!(q || name || amount || Object.values(vals).some((v) => v !== ""));
+  const isComposing = Boolean(name.trim() || vals.calories.trim() || origin || showManual);
 
   // ── Batch selection ──────────────────────────────────────────────────────
   const [batchMode, setBatchMode] = useState(false);
@@ -366,6 +368,7 @@ export default function AddFood({
     setProductId(null);
     setOrigin(null);
     setShowTrace(false);
+    setShowManual(false);
   }
 
   function pickCopied(item: CopiedItem) {
@@ -748,9 +751,20 @@ export default function AddFood({
       {scanning && <BarcodeScanner onDetected={onScanned} onClose={() => setScanning(false)} />}
 
       {query.length > 0 && !resultsShown && (
-        <p className="text-xs text-ink-faint">
-          Nothing matches “{query}”. Type the values in below.
-        </p>
+        <div className="flex items-center justify-between text-xs text-ink-faint py-1">
+          <span>Nothing matches “{query}”.</span>
+          <button
+            type="button"
+            onClick={() => {
+              setName(query);
+              setShowManual(true);
+              focusCompose();
+            }}
+            className="text-accent hover:underline font-medium"
+          >
+            Create “{query}” →
+          </button>
+        </div>
       )}
 
       {resultsShown && (
@@ -1081,8 +1095,38 @@ export default function AddFood({
       )}
 
       {/* ── Compose ───────────────────────────────────────────────────────── */}
-      <div ref={composeRef}>
-        <form onSubmit={log} className="grid grid-cols-2 gap-1.5 min-[360px]:grid-cols-4">
+      {!isComposing ? (
+        <div className="flex items-center justify-between border-t border-line-soft pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowManual(true);
+              focusCompose();
+            }}
+            className="text-2xs font-semibold uppercase tracking-wider text-ink-dim hover:text-accent hover:underline"
+          >
+            + Custom food entry
+          </button>
+          <span className="text-2xs text-ink-faint">Or search / pick above</span>
+        </div>
+      ) : (
+        <div ref={composeRef}>
+          <form onSubmit={log} className="grid grid-cols-2 gap-1.5 min-[360px]:grid-cols-4">
+            <div className="col-span-full flex items-center justify-between">
+              <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+                {origin ? "Confirm & Scale" : "Manual entry"}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  reset();
+                  setShowManual(false);
+                }}
+                className="text-2xs text-ink-faint hover:text-over"
+              >
+                close
+              </button>
+            </div>
           <label className="col-span-full block">
             <span className="block text-2xs uppercase tracking-wider text-ink-faint">Food</span>
             <input
@@ -1161,7 +1205,7 @@ export default function AddFood({
                 step="any"
                 value={multiple}
                 onChange={(e) => setMultiple(e.target.value)}
-                className="field num mt-0.5 w-full text-right"
+                className="field num mt-0.5 w-full text-right scroll-mb-28"
               />
             </label>
           ) : (
@@ -1176,7 +1220,7 @@ export default function AddFood({
                   step="any"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="field num mt-0.5 w-full text-right"
+                  className="field num mt-0.5 w-full text-right scroll-mb-28"
                   aria-label={
                     reference.kind === "per" ? "Amount to log" : "Amount, recorded on the entry"
                   }
@@ -1211,10 +1255,33 @@ export default function AddFood({
             ))}
           </Select>
 
+          {/* Subordinate actions: Trace disclosure & saving to favorites/catalog */}
+          <div className="col-span-full flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowTrace((s) => !s)}
+              className="text-2xs uppercase tracking-wider text-ink-faint hover:text-ink transition-colors"
+            >
+              {showTrace ? "− fewer" : "+ fiber / sugar / sodium"}
+            </button>
+            {canLog && (
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={saveFavorite} className="text-2xs text-accent hover:underline">
+                  ★ favorite
+                </button>
+                {per100Basis && (
+                  <button type="button" onClick={saveProduct} className="text-2xs text-accent hover:underline">
+                    ⬚ save label
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* What the row will say, before it says it. Under a label this is the
               only place the arithmetic is visible. */}
           <div
-            className="col-span-full sticky bottom-0 z-10 flex items-baseline gap-2 border-t pt-2 pb-1"
+            className="col-span-full flex items-baseline gap-2 border-t pt-2.5 pb-1"
             style={{ borderColor: "var(--line-soft)", background: "var(--panel)" }}
           >
             {!touched ? (
@@ -1245,30 +1312,9 @@ export default function AddFood({
               {saving ? "Adding…" : "Log"}
             </button>
           </div>
-
-          <div className="col-span-full flex flex-wrap items-center gap-x-3 gap-y-1">
-            <button
-              type="button"
-              onClick={() => setShowTrace((s) => !s)}
-              className="text-2xs text-ink-faint hover:text-ink"
-            >
-              {showTrace ? "− fewer" : "+ fiber / sugar / sodium"}
-            </button>
-            {canLog && (
-              <>
-                <button type="button" onClick={saveFavorite} className="text-2xs text-accent hover:underline">
-                  ★ favorite
-                </button>
-                {per100Basis && (
-                  <button type="button" onClick={saveProduct} className="text-2xs text-accent hover:underline">
-                    ⬚ save label
-                  </button>
-                )}
-              </>
-            )}
-          </div>
         </form>
       </div>
+      )}
     </div>
   );
 }
@@ -1354,7 +1400,7 @@ function NumInput({
         required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="field num mt-0.5 w-full text-right"
+        className="field num mt-0.5 w-full text-right scroll-mb-28"
       />
     </label>
   );

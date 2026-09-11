@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Dumbbell, Flame, Layers, ChevronDown, ChevronUp } from "lucide-react";
 import { api } from "@/lib/api-client";
 
 interface WorkoutSummaryCardProps {
@@ -56,64 +55,48 @@ export default function WorkoutSummaryCard({
       className="panel p-3 mb-3 text-xs"
       style={{ background: "var(--panel)", borderColor: "var(--line)" }}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <Dumbbell size={14} className="text-accent" aria-hidden="true" />
-          <span className="text-2xs font-semibold uppercase tracking-wider text-ink-faint">
-            30-Day Training Summary
-          </span>
-        </div>
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+          30-Day Training Summary
+        </h3>
 
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          className="min-h-[36px] px-2 flex items-center gap-1 text-2xs text-ink-faint hover:text-ink transition-colors"
+          className="flex items-center gap-1.5 text-2xs uppercase tracking-wider text-ink-faint hover:text-ink transition-colors"
           aria-expanded={expanded}
         >
-          <span>{expanded ? "Less" : "Breakdown"}</span>
-          {expanded ? (
-            <ChevronUp size={12} aria-hidden="true" />
-          ) : (
-            <ChevronDown size={12} aria-hidden="true" />
-          )}
+          <span>{expanded ? "Hide details" : "Details"}</span>
+          <span className="num text-xs font-mono">{expanded ? "−" : "+"}</span>
         </button>
       </div>
 
-      {/* Primary Metrics Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-center">
-        <div
-          className="rounded border p-2"
-          style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
-        >
-          <div className="text-2xs text-ink-faint uppercase tracking-wider mb-0.5">Sessions</div>
-          <div className="num text-sm font-bold text-ink">{data.totalWorkouts}</div>
+      {/* Primary Metrics Row - Unified Hairline Panel */}
+      <div
+        className="grid grid-cols-2 sm:grid-cols-4 gap-px mt-2 overflow-hidden rounded border border-line"
+        style={{ background: "var(--line)" }}
+      >
+        <div className="p-2.5 text-left" style={{ background: "var(--panel-2)" }}>
+          <div className="text-2xs text-ink-faint uppercase tracking-wider">Sessions</div>
+          <div className="num text-sm font-bold text-ink mt-0.5">{data.totalWorkouts}</div>
         </div>
 
-        <div
-          className="rounded border p-2"
-          style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
-        >
-          <div className="text-2xs text-ink-faint uppercase tracking-wider mb-0.5">Volume</div>
-          <div className="num text-sm font-bold text-ink">
+        <div className="p-2.5 text-left" style={{ background: "var(--panel-2)" }}>
+          <div className="text-2xs text-ink-faint uppercase tracking-wider">Volume</div>
+          <div className="num text-sm font-bold text-ink mt-0.5">
             {Math.round(data.totalVolume).toLocaleString()}
             <span className="text-2xs font-normal text-ink-faint ml-0.5">{weightUnit}</span>
           </div>
         </div>
 
-        <div
-          className="rounded border p-2"
-          style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
-        >
-          <div className="text-2xs text-ink-faint uppercase tracking-wider mb-0.5">Sets</div>
-          <div className="num text-sm font-bold text-ink">{data.totalSets}</div>
+        <div className="p-2.5 text-left" style={{ background: "var(--panel-2)" }}>
+          <div className="text-2xs text-ink-faint uppercase tracking-wider">Sets</div>
+          <div className="num text-sm font-bold text-ink mt-0.5">{data.totalSets}</div>
         </div>
 
-        <div
-          className="rounded border p-2"
-          style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
-        >
-          <div className="text-2xs text-ink-faint uppercase tracking-wider mb-0.5">Reps</div>
-          <div className="num text-sm font-bold text-ink">{data.totalReps}</div>
+        <div className="p-2.5 text-left" style={{ background: "var(--panel-2)" }}>
+          <div className="text-2xs text-ink-faint uppercase tracking-wider">Reps</div>
+          <div className="num text-sm font-bold text-ink mt-0.5">{data.totalReps}</div>
         </div>
       </div>
 
@@ -123,19 +106,19 @@ export default function WorkoutSummaryCard({
           <div className="text-2xs font-semibold uppercase tracking-wider text-ink-faint">
             Sets by Muscle Group
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {Object.entries(data.muscleGroups)
               .sort(([, a], [, b]) => b.sets - a.sets)
               .map(([group, info]) => (
-                <div key={group} className="space-y-0.5">
-                  <div className="flex justify-between text-2xs">
+                <div key={group} className="space-y-1">
+                  <div className="flex justify-between items-baseline text-2xs">
                     <span className="text-ink font-medium">{group}</span>
                     <span className="num text-ink-dim">
                       {info.sets} sets ({info.percentage}%)
                     </span>
                   </div>
                   <div
-                    className="h-1.5 w-full overflow-hidden rounded-sm"
+                    className="h-1 w-full overflow-hidden rounded-sm"
                     style={{ background: "var(--line-soft)" }}
                   >
                     <div

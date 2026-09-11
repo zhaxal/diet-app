@@ -91,23 +91,46 @@ export default function GoalsCard({ goals, latestWeight, onGoalsChange }: Props)
     }
   }
 
+  const hasMicrosSet = Boolean(
+    goals.dailyFiber || goals.dailySugar || goals.dailySodium
+  );
+  const [showMicros, setShowMicros] = useState(hasMicrosSet);
+
+  const PRIMARY_FIELDS = [
+    { label: "kcal", key: "dailyCalories", max: 100000 },
+    { label: "protein g", key: "dailyProtein", max: 1000000 },
+    { label: "carbs g", key: "dailyCarbs", max: 1000000 },
+    { label: "fat g", key: "dailyFat", max: 1000000 },
+  ] as const;
+
+  const MICRO_FIELDS = [
+    { label: "fiber g", key: "dailyFiber", max: 1000000 },
+    { label: "sugar g", key: "dailySugar", max: 1000000 },
+    { label: "sodium mg", key: "dailySodium", max: 1000000 },
+  ] as const;
+
   return (
     <section className="panel p-3">
-      <h2 className="mb-2 text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-        Daily goals
-      </h2>
+      <div className="mb-2 flex items-baseline justify-between">
+        <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+          Daily goals
+        </h2>
+        <label className="flex items-center gap-1 text-2xs uppercase tracking-wider text-ink-faint">
+          <span>Unit</span>
+          <Select
+            value={form.weightUnit}
+            onChange={(e) => setForm({ ...form, weightUnit: e.target.value as "kg" | "lb" })}
+            className="py-0.5 text-xs"
+          >
+            <option value="kg">kg</option>
+            <option value="lb">lb</option>
+          </Select>
+        </label>
+      </div>
+
+      {/* Primary Target Macros */}
       <div className="grid grid-cols-2 gap-1.5 min-[380px]:grid-cols-4">
-        {(
-          [
-            ["kcal", "dailyCalories", 100000],
-            ["protein", "dailyProtein", 1000000],
-            ["carbs", "dailyCarbs", 1000000],
-            ["fat", "dailyFat", 1000000],
-            ["fiber", "dailyFiber", 1000000],
-            ["sugar", "dailySugar", 1000000],
-            ["Sodium mg", "dailySodium", 1000000],
-          ] as [string, keyof typeof form, number][]
-        ).map(([label, key, max]) => (
+        {PRIMARY_FIELDS.map(({ label, key, max }) => (
           <label key={key} className="block">
             <span className="text-2xs uppercase tracking-wider text-ink-faint">
               {label}
@@ -123,19 +146,47 @@ export default function GoalsCard({ goals, latestWeight, onGoalsChange }: Props)
             />
           </label>
         ))}
-        <label className="block">
-          <span className="text-2xs uppercase tracking-wider text-ink-faint">
-            <span className="sr-only">Weight </span>Unit
-          </span>
-          <Select
-            value={form.weightUnit}
-            onChange={(e) => setForm({ ...form, weightUnit: e.target.value as "kg" | "lb" })}
-            wrapClassName="mt-0.5"
+      </div>
+
+      {/* Progressive Disclosure for Micronutrients & Trace */}
+      <div className="mt-2.5">
+        <button
+          type="button"
+          onClick={() => setShowMicros((s) => !s)}
+          aria-expanded={showMicros}
+          className="flex items-center gap-1 text-2xs uppercase tracking-wider text-ink-faint hover:text-ink transition-colors"
+        >
+          <span>{showMicros ? "− fewer" : "+ Micronutrients"}</span>
+          {!showMicros && (
+            <span className="text-ink-faint/60 lowercase tracking-normal">
+              (fiber, sugar, sodium)
+            </span>
+          )}
+        </button>
+
+        {showMicros && (
+          <div
+            className="mt-2 grid grid-cols-3 gap-1.5 border-t pt-2"
+            style={{ borderColor: "var(--line-soft)" }}
           >
-            <option value="kg">kg</option>
-            <option value="lb">lb</option>
-          </Select>
-        </label>
+            {MICRO_FIELDS.map(({ label, key, max }) => (
+              <label key={key} className="block">
+                <span className="text-2xs uppercase tracking-wider text-ink-faint">
+                  {label}
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={max}
+                  value={form[key]}
+                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                  placeholder="—"
+                  className="field num mt-0.5 w-full text-right"
+                />
+              </label>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Nested TDEE / Body Profile Calculator */}

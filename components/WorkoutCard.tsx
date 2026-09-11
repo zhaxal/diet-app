@@ -2,17 +2,13 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import {
-  FileText,
-  Layers,
   Copy,
   Plus,
   Check,
   History,
-  Sparkles,
   ChevronRight,
   Search,
   X,
-  Trash2,
   Dumbbell,
   AlertCircle,
 } from "lucide-react";
@@ -521,10 +517,9 @@ export default function WorkoutCard({
                 handleNoteChange("Bench Press\n- ");
                 setViewMode("note");
               }}
-              className="btn btn-ghost text-xs text-ink-dim hover:text-ink inline-flex items-center gap-1.5"
+              className="btn btn-ghost text-xs text-ink-dim hover:text-ink"
             >
-              <FileText size={12} aria-hidden="true" />
-              <span>Start blank workout note</span>
+              Start blank workout note
             </button>
           </div>
         </div>
@@ -565,43 +560,37 @@ export default function WorkoutCard({
               onClick={() => setViewMode("note")}
               aria-label="Markdown Note Mode"
               aria-pressed={viewMode === "note"}
-              className={`flex items-center gap-1 rounded px-2 py-0.5 text-2xs transition-colors ${
+              className={`rounded px-2 py-0.5 text-2xs uppercase tracking-wider transition-colors ${
                 viewMode === "note"
-                  ? "bg-ink text-panel font-medium"
+                  ? "bg-ink text-panel font-semibold"
                   : "text-ink-faint hover:text-ink"
               }`}
             >
-              <FileText size={11} aria-hidden="true" />
-              <span>Note</span>
+              Note
             </button>
             <button
               type="button"
               onClick={() => setViewMode("cards")}
               aria-label="Interactive Cards Mode"
               aria-pressed={viewMode === "cards"}
-              className={`flex items-center gap-1 rounded px-2 py-0.5 text-2xs transition-colors ${
+              className={`rounded px-2 py-0.5 text-2xs uppercase tracking-wider transition-colors ${
                 viewMode === "cards"
-                  ? "bg-ink text-panel font-medium"
+                  ? "bg-ink text-panel font-semibold"
                   : "text-ink-faint hover:text-ink"
               }`}
             >
-              <Layers size={11} aria-hidden="true" />
-              <span>Cards</span>
+              Cards
             </button>
           </div>
 
-          {/* Save Status badge */}
+          {/* Save Status telemetry */}
           <span
-            className="text-2xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap"
+            className="num text-2xs font-mono uppercase tracking-wider shrink-0 whitespace-nowrap"
             style={{
-              color: saveStatus === "saved" ? "var(--ok)" : "var(--warn)",
-              background:
-                saveStatus === "saved"
-                  ? "color-mix(in srgb, var(--ok) 10%, transparent)"
-                  : "color-mix(in srgb, var(--warn) 10%, transparent)",
+              color: saveStatus === "saved" ? "var(--ink-faint)" : "var(--warn)",
             }}
           >
-            {saveStatus === "saving" ? "saving…" : saveStatus === "saved" ? "saved" : "draft"}
+            {saveStatus === "saving" ? "· saving…" : saveStatus === "saved" ? "· saved" : "· draft"}
           </span>
 
           {/* Delete Workout Action */}
@@ -611,16 +600,16 @@ export default function WorkoutCard({
                 type="button"
                 onClick={handleDeleteWorkout}
                 disabled={deleting}
-                className="px-2 py-0.5 rounded text-2xs font-semibold text-over border border-over transition-colors"
+                className="px-2 py-0.5 rounded text-2xs font-semibold text-over border border-over hover:bg-over/10 transition-colors"
               >
-                {deleting ? "…" : "Confirm"}
+                {deleting ? "…" : "delete"}
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
-                className="px-2 py-0.5 rounded text-2xs text-ink-dim border border-line"
+                className="px-2 py-0.5 rounded text-2xs text-ink-faint border border-line hover:text-ink"
               >
-                Cancel
+                cancel
               </button>
             </div>
           ) : (
@@ -629,9 +618,9 @@ export default function WorkoutCard({
               onClick={() => setConfirmDelete(true)}
               aria-label="Delete this workout"
               title="Delete this workout"
-              className="p-1 rounded text-ink-faint hover:text-over transition-colors"
+              className="glyph-btn text-2xs text-ink-faint hover:text-over transition-colors"
             >
-              <Trash2 size={13} aria-hidden="true" />
+              ✕
             </button>
           )}
         </div>
@@ -704,6 +693,16 @@ export default function WorkoutCard({
                     style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
                   >
                     <span className="font-semibold text-ink">{ex.name}</span>
+                    <span
+                      className={`num border-l pl-1 text-2xs ${
+                        ex.sets.length > 0 ? "text-ink-dim" : "text-warn font-semibold"
+                      }`}
+                      style={{ borderColor: "var(--line)" }}
+                    >
+                      {ex.sets.length > 0
+                        ? `${ex.sets.length} set${ex.sets.length === 1 ? "" : "s"}`
+                        : "0 sets"}
+                    </span>
                     {stat?.lastPerformance && (
                       <span
                         className="text-ink-dim border-l pl-1 font-mono text-2xs"
@@ -721,6 +720,25 @@ export default function WorkoutCard({
                   </button>
                 );
               })}
+            </div>
+          )}
+
+          {/* Inline syntax reassurance when raw note has text but no exercises parsed */}
+          {rawNote.trim().length > 0 && parsedPreview.exercises.length === 0 && (
+            <div
+              className="flex items-center justify-between gap-2 rounded px-2.5 py-1.5 text-2xs border"
+              style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
+            >
+              <span className="text-warn">
+                No exercises parsed yet. Format lines as: <span className="font-mono text-ink">Exercise Name</span> then <span className="font-mono text-ink">- 80kg x 8</span>
+              </span>
+              <button
+                type="button"
+                onClick={handleFormatNote}
+                className="font-semibold text-accent uppercase tracking-wider shrink-0 hover:underline"
+              >
+                Auto-format
+              </button>
             </div>
           )}
 
@@ -761,7 +779,7 @@ export default function WorkoutCard({
                 {showAddMenu && (
                   <>
                     <div
-                      className="fixed inset-0 z-20"
+                      className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] sm:bg-transparent sm:backdrop-blur-none"
                       onClick={() => {
                         setShowAddMenu(false);
                         setExerciseSearchQuery("");
@@ -769,10 +787,10 @@ export default function WorkoutCard({
                       aria-hidden="true"
                     />
                     <div
-                      className="absolute left-0 bottom-10 z-30 w-[290px] sm:w-[330px] rounded border shadow-lg flex flex-col max-h-[340px] overflow-hidden"
+                      className="fixed inset-x-3 bottom-20 z-50 sm:absolute sm:inset-auto sm:left-0 sm:bottom-10 sm:w-[330px] rounded border shadow-lg flex flex-col max-h-[360px] overflow-hidden"
                       style={{ background: "var(--panel)", borderColor: "var(--line)" }}
                     >
-                      {/* Search Bar */}
+                      {/* Search Bar & Mobile Header */}
                       <div
                         className="p-2 border-b flex items-center gap-2"
                         style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
@@ -797,9 +815,20 @@ export default function WorkoutCard({
                             <X size={12} aria-hidden="true" />
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAddMenu(false);
+                            setExerciseSearchQuery("");
+                          }}
+                          aria-label="Close exercise picker"
+                          className="glyph-btn text-ink-faint hover:text-ink sm:hidden -mr-1"
+                        >
+                          ✕
+                        </button>
                       </div>
 
-                      {/* Muscle Group Pills */}
+                      {/* Muscle Group Filter Strip */}
                       <div
                         className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto border-b no-scrollbar"
                         style={{ borderColor: "var(--line-soft)", background: "var(--panel)" }}
@@ -834,7 +863,7 @@ export default function WorkoutCard({
                                 handleInsertExercise(s.name);
                                 setExerciseSearchQuery("");
                               }}
-                              className="min-h-[36px] w-full text-left px-3 py-2 text-xs text-ink hover:bg-ink hover:text-panel transition-colors flex items-center justify-between group"
+                              className="min-h-[38px] w-full text-left px-3 py-2 text-xs text-ink hover:bg-ink hover:text-panel transition-colors flex items-center justify-between group"
                             >
                               <div className="truncate mr-2">
                                 <div className="font-medium truncate">{s.name}</div>
@@ -856,15 +885,21 @@ export default function WorkoutCard({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleFormatNote}
-              aria-label="Clean up note formatting"
-              className="min-h-[36px] px-2 flex items-center gap-1 text-ink-faint hover:text-ink transition-colors"
-            >
-              <Sparkles size={12} aria-hidden="true" />
-              <span>Format</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {parsedPreview.exercises.length > 0 && (
+                <span className="num text-2xs text-ink-faint">
+                  {parsedPreview.exercises.length} ex · {sessionStats.totalSets} set{sessionStats.totalSets === 1 ? "" : "s"}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleFormatNote}
+                aria-label="Clean up note formatting"
+                className="min-h-[36px] px-2 flex items-center text-2xs uppercase tracking-wider text-ink-faint hover:text-ink transition-colors"
+              >
+                Format note
+              </button>
+            </div>
           </div>
         </div>
       ) : (
@@ -1004,11 +1039,9 @@ export default function WorkoutCard({
             <button
               type="button"
               onClick={() => setViewMode("note")}
-              className="min-h-[36px] flex items-center gap-1.5 rounded px-3 py-1.5 border text-xs font-medium text-ink-dim hover:text-ink transition-colors"
-              style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
+              className="btn btn-ghost text-xs text-ink-dim hover:text-ink"
             >
-              <FileText size={13} aria-hidden="true" />
-              <span>Edit Note</span>
+              Edit Note
             </button>
           </div>
         </div>
