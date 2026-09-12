@@ -426,22 +426,28 @@ body {
   mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
 }
 
-/* Inputs inherit the panel language rather than browser chrome. */
-.field {
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  color: var(--ink);
-  @apply rounded px-2 py-1.5 text-sm outline-none transition-colors;
-}
-.field:focus {
-  border-color: var(--accent);
-}
-.field::placeholder {
-  color: var(--ink-faint);
-}
-.field:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+/* Inputs inherit the panel language rather than browser chrome.
+   Wrapped in @layer components so Tailwind orders it before the utilities
+   layer — otherwise this rule's own px-2 sits later in the stylesheet than
+   utility classes of equal specificity (e.g. pl-8 for a leading icon) and
+   wins by source order, silently cancelling the override. */
+@layer components {
+  .field {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    @apply rounded px-2 py-1.5 text-sm outline-none transition-colors;
+  }
+  .field:focus {
+    border-color: var(--accent);
+  }
+  .field::placeholder {
+    color: var(--ink-faint);
+  }
+  .field:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 /* ── The iOS zoom floor ────────────────────────────────────────────────────

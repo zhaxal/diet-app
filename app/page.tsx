@@ -129,14 +129,26 @@ function Dashboard() {
   // guards links, bookmarks, and hand-edited URLs as well.
   const date = dParam && isCalendarDate(dParam) && dParam <= currentDay ? dParam : currentDay;
 
+  // Tab and day are pure client state — nothing server-side depends on them
+  // on this all-client-component page. router.push/replace still triggers a
+  // full Next.js navigation (including an RSC round-trip to the server) for
+  // every keystroke of date-switching, which is what left the screen frozen
+  // on the old day before anything — even our own loading skeleton — could
+  // appear. The native History API updates the URL and stays in sync with
+  // useSearchParams() without leaving the client.
   const writeParams = useCallback(
     (next: { tab?: Tab; d?: string }, mode: "push" | "replace" = "push") => {
       const p = new URLSearchParams(params.toString());
       if (next.tab) p.set("tab", next.tab);
       if (next.d) p.set("d", next.d);
-      router[mode](`/?${p.toString()}`, { scroll: false });
+      const url = `/?${p.toString()}`;
+      if (mode === "push") {
+        window.history.pushState(null, "", url);
+      } else {
+        window.history.replaceState(null, "", url);
+      }
     },
-    [params, router],
+    [params],
   );
   const goTab = useCallback((t: Tab) => writeParams({ tab: t }), [writeParams]);
   const setDate = useCallback((d: string) => writeParams({ d }), [writeParams]);
