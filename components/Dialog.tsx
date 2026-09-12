@@ -167,7 +167,6 @@ export function Dialog({
   return createPortal(
     <div
       className={`motion-dialog-scrim fixed inset-0 z-[60] flex ${overlayClass}`}
-      style={{ background: "color-mix(in srgb, var(--ink) 65%, transparent)" }}
       onPointerDown={(event) => {
         if (closeOnBackdrop && event.target === event.currentTarget) onClose();
       }}

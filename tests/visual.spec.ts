@@ -114,6 +114,12 @@ test.describe("Visual Regression Tests", () => {
     await page.getByRole("button", { name: "Add exercise from database" }).click();
     const dialog = page.getByRole("dialog", { name: "Add Exercise" });
     await expect(dialog).toBeVisible();
+    const scrim = page.locator(".motion-dialog-scrim");
+    await expect(scrim).toBeVisible();
+    expect(await scrim.evaluate((node) => getComputedStyle(node).backdropFilter)).toContain("blur(");
+    expect(await scrim.evaluate((node) => getComputedStyle(node).backgroundColor)).toMatch(
+      /rgba?\(4,\s*8,\s*13/,
+    );
     const search = page.getByRole("textbox", { name: "Search exercises" });
     await expect(search).toBeFocused();
 
@@ -402,5 +408,100 @@ test.describe("Visual Regression Tests", () => {
     await page.goto("/?tab=food&d=2099-01-01");
     await expect.poll(() => new URL(page.url()).searchParams.get("d")).toBe(browserToday);
     await expect(page.locator('input[type="date"]').first()).toHaveValue(browserToday);
+  });
+
+  test("Food Tab - Changing a date does not replay the page entrance", async ({ page }) => {
+    await page.goto(`/?tab=food&d=${EMPTY_DAY}`);
+    const motionRegion = page.locator(".motion-view");
+    const initialClass = await motionRegion.getAttribute("class");
+
+    // Aug 31 is the preceding day in Sep 1's visible week strip. Using the
+    // navigator exercises the same URL transition people use in the app.
+    await page.locator('nav[aria-label="Week"]').getByRole("button").nth(5).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get("d")).toBe("2026-08-31");
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+
+    await expect(motionRegion).toHaveAttribute("class", initialClass ?? "");
+  });
+
+  test("Food Tab - Changing a date keeps a loading surface on screen", async ({ page }) => {
+    const nextDate = "2026-08-31";
+    await page.goto(`/?tab=food&d=${EMPTY_DAY}`);
+    await expect(page.getByRole("heading", { name: "Calories" })).toBeVisible();
+
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    await page.route(
+      (url) =>
+        (url.pathname === "/api/entries" || url.pathname === "/api/summary") &&
+        url.searchParams.get("date") === nextDate,
+      async (route) => {
+        await readGate;
+        await route.continue();
+      },
+    );
+
+    await page.locator('nav[aria-label="Week"]').getByRole("button").nth(5).click();
+    const skeleton = page.locator(
+      '[data-testid="food-day-skeleton"][aria-label="Loading food log for mon, aug 31"]',
+    );
+    await expect(skeleton).toBeVisible();
+    await expect(skeleton).toHaveAttribute("aria-busy", "true");
+
+    releaseRead();
+    await expect(skeleton).toBeHidden();
+  });
+
+  test("Workout Tab - Changing a date keeps a loading surface on screen", async ({ page }) => {
+    const nextDate = "2026-08-31";
+    await page.goto(`/?tab=workout&d=${EMPTY_DAY}`);
+    await expect(page.getByText("No workout logged")).toBeVisible();
+
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    await page.route(
+      (url) => url.pathname === "/api/workouts" && url.searchParams.get("date") === nextDate,
+      async (route) => {
+        await readGate;
+        await route.continue();
+      },
+    );
+
+    await page
+      .locator('nav[aria-label="Workout session navigation"]')
+      .getByRole("button")
+      .nth(5)
+      .click();
+    const skeleton = page.locator(
+      '[data-testid="workout-day-skeleton"][aria-label="Loading workout for mon, aug 31"]',
+    );
+    await expect(skeleton).toBeVisible();
+    await expect(skeleton).toHaveAttribute("aria-busy", "true");
+
+    releaseRead();
+    await expect(skeleton).toBeHidden();
+  });
+
+  test("Chrome desktop width applies the responsive dialog and workout layout", async ({ page }) => {
+    await page.setViewportSize({ width: 915, height: 653 });
+    await page.goto(`/?tab=workout&d=${EMPTY_DAY}`);
+    const templateGrid = page.locator(".grid.grid-cols-2.sm\\:grid-cols-3");
+    await expect(templateGrid).toBeVisible();
+    expect(
+      await templateGrid.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").length),
+    ).toBe(3);
+
+    await page.goto("/?tab=settings");
+    await page.getByRole("button", { name: "Regenerate key" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Regenerate connector key?" });
+    await expect(dialog).toBeVisible();
+    expect(await dialog.evaluate((node) => getComputedStyle(node).maxWidth)).toBe("384px");
+    await page.keyboard.press("Escape");
   });
 });

@@ -14,7 +14,7 @@
  * renders it labelled as a past reading. See lib/offline-cache.ts.
  */
 
-const VERSION = "v3";
+const VERSION = "v4";
 const SHELL = `diet-shell-${VERSION}`;
 const ASSETS = `diet-assets-${VERSION}`;
 
@@ -66,6 +66,12 @@ function isImmutableAsset(url) {
   );
 }
 
+function canCacheAsset(url, response) {
+  const isIcon = /^\/(icon|apple-touch-icon)[\w-]*\.(svg|png)$/.test(url.pathname);
+  const cacheControl = response.headers.get("cache-control") || "";
+  return response.ok && (isIcon || /\bimmutable\b/.test(cacheControl));
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
@@ -82,7 +88,9 @@ self.addEventListener("fetch", (event) => {
         const hit = await caches.match(req);
         if (hit) return hit;
         const res = await fetch(req);
-        if (res.ok) (await caches.open(ASSETS)).put(req, res.clone());
+        // Turbopack development chunks use stable URLs and must never be
+        // cache-first. Production output declares itself immutable instead.
+        if (canCacheAsset(url, res)) (await caches.open(ASSETS)).put(req, res.clone());
         return res;
       })(),
     );

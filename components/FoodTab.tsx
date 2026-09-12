@@ -26,6 +26,8 @@ import EntryRow from "@/components/EntryRow";
 import TrendsCard from "@/components/TrendsCard";
 import Select from "@/components/Select";
 import { useToast } from "@/components/Toast";
+import { FoodDaySkeleton } from "@/components/DayLoadingSkeleton";
+import DayTransition from "@/components/DayTransition";
 
 export const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 export type Meal = (typeof MEALS)[number];
@@ -207,6 +209,7 @@ export default function FoodTab({
     !goals.dailyFat &&
     favorites.length === 0 &&
     recent.length === 0;
+  const daySurface = loadedDate !== date ? "loading" : dayError ? "error" : "ready";
   const [datePickerOpen, setDatePickerOpen] = React.useState(false);
   const [quickLoggingName, setQuickLoggingName] = React.useState<string | null>(null);
   const quickLoggingRef = React.useRef(false);
@@ -242,17 +245,16 @@ export default function FoodTab({
     setFocusQuickSearch(false);
   }, [date]);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (!pendingQuickAdd) return;
-    // Let the click that opened this chooser finish first, then make the
-    // required decision visible and keyboard-ready even when it originated
-    // from a quick item inside the expanded composer.
-    const frame = window.requestAnimationFrame(() => {
-      const chooser = quickMealChooserRef.current;
-      chooser?.scrollIntoView({ block: "nearest" });
-      chooser?.querySelector<HTMLButtonElement>('[role="group"] button:not(:disabled)')?.focus();
+    // The chooser is a required follow-up action. Move focus as part of the
+    // committed layout so an unrelated paint/update cannot leave it behind
+    // the quick-add trigger.
+    const chooser = quickMealChooserRef.current;
+    chooser?.scrollIntoView({ block: "nearest" });
+    chooser?.querySelector<HTMLButtonElement>('[role="group"] button:not(:disabled)')?.focus({
+      preventScroll: true,
     });
-    return () => window.cancelAnimationFrame(frame);
   }, [pendingQuickAdd]);
 
   function refreshFoodLog() {
@@ -458,10 +460,9 @@ export default function FoodTab({
         )}
       </div>
 
+      <DayTransition transitionKey={`${date}:${daySurface}`}>
       {loadedDate !== date ? (
-        <section className="panel mt-2 p-4 text-sm text-ink-dim" role="status" aria-live="polite">
-          Loading {prettyDate(date).toLowerCase()}…
-        </section>
+        <FoodDaySkeleton date={date} />
       ) : dayError ? (
         <section className="panel mt-2 p-4" role="alert">
           <p className="text-2xs font-semibold uppercase tracking-wider text-over">
@@ -973,6 +974,7 @@ export default function FoodTab({
           </Panel>
         </>
       )}
+      </DayTransition>
     </>
   );
 }

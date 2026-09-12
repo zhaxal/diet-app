@@ -24,6 +24,7 @@ import { prettyDate } from "@/lib/time-client";
 import RestTimer from "./RestTimer";
 import ExerciseHistoryModal from "./ExerciseHistoryModal";
 import { AlertDialog, Dialog } from "./Dialog";
+import { WorkoutDaySkeleton } from "./DayLoadingSkeleton";
 
 interface WorkoutCardProps {
   date: string;
@@ -53,6 +54,7 @@ export default function WorkoutCard({
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState<string>("");
   const [searchingExercises, setSearchingExercises] = useState<boolean>(false);
   const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
+  const [copyingLastSession, setCopyingLastSession] = useState(false);
   const [lastSessionInfo, setLastSessionInfo] = useState<{ date: string; title: string } | null>(null);
 
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -321,7 +323,7 @@ export default function WorkoutCard({
   // One-tap copy last session
   const handleCopyLastSession = async () => {
     if (!lastSessionInfo) return;
-    setLoading(true);
+    setCopyingLastSession(true);
     try {
       const res = await api.getWorkout(lastSessionInfo.date);
       if (res.workout?.rawNote) {
@@ -332,7 +334,7 @@ export default function WorkoutCard({
     } catch {
       onToast("Could not copy previous workout");
     } finally {
-      setLoading(false);
+      setCopyingLastSession(false);
     }
   };
 
@@ -351,11 +353,16 @@ export default function WorkoutCard({
 
   const hasContent = rawNote.trim().length > 0 || workout !== null;
 
+  if (loading) {
+    return <WorkoutDaySkeleton date={date} />;
+  }
+
   // ── First-Class Empty State ──────────────────────────────
-  if (!loading && !hasContent) {
+  if (!hasContent) {
     return (
       <div
-        className="panel p-4 space-y-3 transition-colors"
+        key={`${date}:empty`}
+        className="motion-day-surface panel p-4 space-y-3 transition-colors"
         style={{ background: "var(--panel)", borderColor: "var(--line)" }}
       >
         <div
@@ -399,7 +406,8 @@ export default function WorkoutCard({
             <button
               type="button"
               onClick={handleCopyLastSession}
-              className="w-full mt-2 p-2 rounded border flex items-center justify-between text-xs text-ink hover:border-accent transition-colors"
+              disabled={copyingLastSession}
+              className="mt-2 flex w-full items-center justify-between rounded border p-2 text-xs text-ink transition-colors hover:border-accent disabled:cursor-wait disabled:opacity-60"
               style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
             >
               <div className="flex items-center gap-2 truncate">
@@ -410,7 +418,7 @@ export default function WorkoutCard({
                 <span className="num text-2xs text-ink-faint">({lastSessionInfo.date})</span>
               </div>
               <span className="text-2xs font-semibold text-accent uppercase tracking-wider shrink-0 ml-2">
-                Copy
+                {copyingLastSession ? "Copying…" : "Copy"}
               </span>
             </button>
           )}
@@ -435,7 +443,8 @@ export default function WorkoutCard({
   // ── Active Workout View ─────────────────────────────────
   return (
     <div
-      className="flex flex-col rounded border overflow-hidden transition-colors"
+      key={`${date}:ready`}
+      className="motion-day-surface flex flex-col overflow-hidden rounded border transition-colors"
       style={{ background: "var(--panel)", borderColor: "var(--line)" }}
     >
       {/* Top Bar: Title, Save State & Delete Action */}

@@ -42,6 +42,7 @@ import WorkoutCard from "@/components/WorkoutCard";
 import WorkoutNavigator from "@/components/WorkoutNavigator";
 import WorkoutSummaryCard from "@/components/WorkoutSummaryCard";
 import WorkoutImportModal from "@/components/WorkoutImportModal";
+import DayTransition from "@/components/DayTransition";
 
 // The meal a one-tap log lands in follows the clock, not a stale select. Whatever
 // this returns is shown on screen before anything is logged, never inferred silently.
@@ -67,9 +68,12 @@ function stripEnding(selected: string, today: string): string {
   return selected > shiftDate(today, -6) ? today : selected;
 }
 
-// Tabs and days are URL state, so a short transition helps a new reading land
-// without resetting the forms nested inside it. Alternating animation names
-// restarts the CSS animation while preserving the rendered child tree.
+// Tab changes replace the whole working surface, so they earn a short entrance
+// without resetting the forms nested inside it. A date change only replaces the
+// reading within that surface; replaying this animation there made the whole
+// app jump while its own loading state was already doing the explaining.
+// Alternating animation names restart the tab animation while preserving the
+// rendered child tree.
 function MotionRegion({ motionKey, children }: { motionKey: string; children: ReactNode }) {
   const [phase, setPhase] = useState<"a" | "b">("a");
   const previousKey = useRef(motionKey);
@@ -803,7 +807,7 @@ function Dashboard() {
 
   return (
     <div className="mx-auto max-w-2xl px-3 pb-32 pt-3">
-      <MotionRegion motionKey={tab === "settings" ? tab : `${tab}:${date}`}>
+      <MotionRegion motionKey={tab}>
       {tab === "food" && (
         <FoodTab
           date={date}
@@ -859,12 +863,15 @@ function Dashboard() {
             refreshTrigger={workoutRefreshKey}
           />
 
-          <WorkoutCard
-            date={date}
-            weightUnit={goals.weightUnit || "kg"}
-            onToast={(m) => toast(m)}
-            onWorkoutSaved={() => setWorkoutRefreshKey((k) => k + 1)}
-          />
+          <DayTransition transitionKey={`workout:${date}`}>
+            <WorkoutCard
+              key={date}
+              date={date}
+              weightUnit={goals.weightUnit || "kg"}
+              onToast={(m) => toast(m)}
+              onWorkoutSaved={() => setWorkoutRefreshKey((k) => k + 1)}
+            />
+          </DayTransition>
 
           <div className="mt-3">
             <WorkoutSummaryCard
