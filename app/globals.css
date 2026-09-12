@@ -110,6 +110,15 @@ body {
   pointer-events: none;
 }
 
+/* A chart is a meter that never resolved into one number — the bars fill and
+   the line draws for the same reason a meter's bar fills, so the reveal
+   reuses that vocabulary instead of inventing a data-viz-specific one. Base
+   state (no transform, no clip) keeps every mark visible with motion off. */
+.motion-chart-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+
 /* A neutral black scrim works in both themes. Using --ink made dark mode's
    light foreground wash the page white, obscuring the backdrop blur itself. */
 .motion-dialog-scrim {
@@ -135,6 +144,26 @@ body {
     transition:
       transform 500ms cubic-bezier(0.16, 1, 0.3, 1),
       background-color 150ms ease-out;
+  }
+
+  /* Bars grow from their own baseline like a meter filling. Capped stagger:
+     a 90-bar "all time" window still finishes cascading in under 200ms. */
+  .motion-chart-bar {
+    animation: bar-grow 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(min(var(--bar-index, 0), 15) * 12ms);
+  }
+
+  .motion-chart-ref-line {
+    animation: day-surface-enter 220ms ease-out both;
+    animation-delay: 260ms;
+  }
+
+  .motion-chart-line {
+    animation: chart-line-enter 550ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .motion-state-enter {
+    animation: list-item-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
   .loading-skeleton {
@@ -313,6 +342,16 @@ body {
     transform: translateY(0);
     clip-path: inset(0);
   }
+}
+
+@keyframes bar-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+@keyframes chart-line-enter {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
 }
 
 @keyframes list-item-enter {

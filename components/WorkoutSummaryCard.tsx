@@ -46,7 +46,7 @@ export default function WorkoutSummaryCard({
 
   return (
     <div
-      className="panel p-3 mb-3 text-xs"
+      className="motion-day-surface panel p-3 mb-3 text-xs"
       style={{ background: "var(--panel)", borderColor: "var(--line)" }}
     >
       <div className="flex items-baseline justify-between">

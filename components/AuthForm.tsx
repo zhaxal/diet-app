@@ -40,7 +40,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
 
   return (
     <main className="flex min-h-safe items-center justify-center p-3">
-      <div className="panel w-full max-w-sm overflow-hidden">
+      <div className="motion-day-surface panel w-full max-w-sm overflow-hidden">
         <div
           className="flex items-center justify-between border-b px-3 py-1.5"
           style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
@@ -103,7 +103,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             {error && (
               <p
                 role="alert"
-                className="rounded px-2.5 py-1.5 text-xs"
+                className="motion-state-enter rounded px-2.5 py-1.5 text-xs"
                 style={{
                   background: "var(--panel-2)",
                   border: "1px solid var(--over)",
@@ -117,7 +117,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             <button
               type="submit"
               disabled={loading}
-              className="btn btn-primary w-full"
+              className="motion-press btn btn-primary w-full"
             >
               {loading
                 ? "Please wait…"

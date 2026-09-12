@@ -1,5 +1,7 @@
 "use client";
 
+import type { CSSProperties } from "react";
+
 /*
  * Both charts stretch to their container with `preserveAspectRatio="none"`, so
  * only two kinds of mark survive intact: a rect, and a stroke carrying
@@ -57,6 +59,8 @@ export function BarChart({
         return (
           <rect
             key={i}
+            className="motion-chart-bar"
+            style={{ "--bar-index": i } as CSSProperties}
             x={i * w + w * 0.1}
             y={height - barH}
             width={w * 0.8}
@@ -68,6 +72,7 @@ export function BarChart({
       })}
       {refY != null && (
         <line
+          className="motion-chart-ref-line"
           x1={0}
           y1={refY}
           x2={100}
@@ -108,7 +113,7 @@ export function LineChart({ data, ariaLabel, color = "var(--accent)", height = 8
   return (
     <svg
       viewBox={`0 0 100 ${height}`}
-      className="block h-full w-full"
+      className="motion-chart-line block h-full w-full"
       preserveAspectRatio="none"
       role="img"
       aria-label={ariaLabel}

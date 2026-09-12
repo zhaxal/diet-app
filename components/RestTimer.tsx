@@ -146,7 +146,7 @@ export default function RestTimer({ onTimerEnd }: RestTimerProps) {
   if (!isRunning && totalSeconds === null) {
     return (
       <div
-        className="flex items-center justify-between border-t px-3 py-2 text-2xs"
+        className="motion-state-enter flex items-center justify-between border-t px-3 py-2 text-2xs"
         style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
       >
         <div className="flex items-center gap-1.5 text-ink-faint">
@@ -179,7 +179,7 @@ export default function RestTimer({ onTimerEnd }: RestTimerProps) {
       role="timer"
       aria-live="polite"
       aria-atomic="true"
-      className="relative flex items-center justify-between overflow-hidden border-t px-3 py-2.5 text-xs transition-colors"
+      className="motion-state-enter relative flex items-center justify-between overflow-hidden border-t px-3 py-2.5 text-xs transition-colors"
       style={{
         borderColor: "var(--line)",
         background: isComplete ? "var(--panel-2)" : "var(--panel)",
