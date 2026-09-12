@@ -34,7 +34,7 @@ interface WorkoutCardProps {
   onWorkoutSaved?: () => void;
 }
 
-interface CachedWorkoutSession {
+export interface CachedWorkoutSession {
   workout: ClientWorkout | null;
   title: string;
   rawNote: string;
@@ -42,7 +42,7 @@ interface CachedWorkoutSession {
   saveStatus: "saved" | "saving" | "unsaved";
 }
 
-const workoutSessionCache = new Map<string, CachedWorkoutSession>();
+export const workoutSessionCache = new Map<string, CachedWorkoutSession>();
 
 export default function WorkoutCard({
   date,
@@ -58,6 +58,19 @@ export default function WorkoutCard({
   const [loading, setLoading] = useState<boolean>(!cached);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(cached ? cached.saveStatus : "saved");
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
+
+  // Grace period before displaying skeleton: if data arrives within 100ms,
+  // do not flash an abrupt skeleton mid-transition.
+  const [showSkeleton, setShowSkeleton] = useState(false);
+
+  useEffect(() => {
+    if (loading) {
+      const timer = setTimeout(() => setShowSkeleton(true), 100);
+      return () => clearTimeout(timer);
+    } else {
+      setShowSkeleton(false);
+    }
+  }, [loading]);
   const [suggestedExercises, setSuggestedExercises] = useState<
     Array<{ id: string; name: string; normalized: string; muscleGroup?: string }>
   >([]);
@@ -389,7 +402,7 @@ export default function WorkoutCard({
 
   const hasContent = rawNote.trim().length > 0 || workout !== null;
 
-  if (loading) {
+  if (loading && showSkeleton) {
     return <WorkoutDaySkeleton date={date} />;
   }
 

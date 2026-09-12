@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import { prettyDate, shiftDate } from "@/lib/time-client";
+import { workoutSessionCache } from "./WorkoutCard";
 
 interface WorkoutSessionItem {
   id: string;
@@ -44,6 +45,24 @@ export default function WorkoutNavigator({
       .then((res) => {
         if (!cancelled && res.sessions) {
           setSessions(res.sessions);
+          for (const s of res.sessions) {
+            if (!workoutSessionCache.has(s.date)) {
+              api
+                .getWorkout(s.date)
+                .then((wRes) => {
+                  if (wRes.workout) {
+                    workoutSessionCache.set(s.date, {
+                      workout: wRes.workout,
+                      title: wRes.workout.title,
+                      rawNote: wRes.workout.rawNote,
+                      exerciseStats: wRes.exerciseStats || {},
+                      saveStatus: "saved",
+                    });
+                  }
+                })
+                .catch(() => {});
+            }
+          }
         }
       })
       .catch(() => {});

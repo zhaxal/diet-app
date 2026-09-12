@@ -299,6 +299,26 @@ export default function FoodTab({
     favorites.length === 0 &&
     recent.length === 0;
   const daySurface = loadedDate !== date ? "loading" : dayError ? "error" : "ready";
+
+  // Grace period before rendering a skeleton: if data arrives within 100ms (typical for
+  // local SQLite or cached responses), defer the slide until data is ready so the transition
+  // slides directly between complete day views without an abrupt skeleton pop.
+  const [loadingGraceExpired, setLoadingGraceExpired] = React.useState(false);
+
+  React.useEffect(() => {
+    if (loadedDate !== date) {
+      const timer = setTimeout(() => setLoadingGraceExpired(true), 100);
+      return () => clearTimeout(timer);
+    } else {
+      setLoadingGraceExpired(false);
+    }
+  }, [date, loadedDate]);
+
+  const isDataReady = loadedDate === date;
+  // If data is ready or the grace period has elapsed, transition to the selected date.
+  // Otherwise, hold the transition on loadedDate so it slides with complete content.
+  const activeTransitionKey = (isDataReady || loadingGraceExpired) ? date : (loadedDate ?? date);
+  const showSkeleton = !isDataReady && loadingGraceExpired;
   const [datePickerOpen, setDatePickerOpen] = React.useState(false);
   const [quickLoggingName, setQuickLoggingName] = React.useState<string | null>(null);
   const quickLoggingRef = React.useRef(false);
@@ -549,8 +569,8 @@ export default function FoodTab({
         )}
       </div>
 
-      <DayTransition transitionKey={date}>
-      {loadedDate !== date ? (
+      <DayTransition transitionKey={activeTransitionKey}>
+      {showSkeleton ? (
         <FoodDaySkeleton date={date} />
       ) : dayError ? (
         <section className="panel mt-2 p-4" role="alert">
@@ -566,7 +586,7 @@ export default function FoodTab({
           </button>
         </section>
       ) : (
-        <>
+        <div className={loadingGraceExpired ? "motion-day-surface" : undefined}>
           {/* The day's primary task lands before its report. Meal selection is
               deliberate, but it belongs inside the logging flow rather than
               competing with the dashboard before the user has chosen to log. */}
@@ -1049,7 +1069,7 @@ export default function FoodTab({
               )}
             </div>
           </Panel>
-        </>
+        </div>
       )}
       </DayTransition>
     </>

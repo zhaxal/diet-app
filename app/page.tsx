@@ -415,6 +415,19 @@ function Dashboard() {
     async (end: string) => {
       const { nutrition } = await api.dayTotals(shiftDate(end, -6), end);
       mergeDayTotals(nutrition);
+
+      // In the background, prefetch entries for the visible week strip days
+      // so clicks across the visible week hydrate from cache immediately.
+      const days = weekEnding(end);
+      for (const d of days) {
+        if (!dayCacheRef.current.has(d)) {
+          api.listEntries(d).then(({ entries: rows }) => {
+            api.summary(d).then((sum) => {
+              dayCacheRef.current.set(d, { entries: rows, summary: sum });
+            }).catch(() => {});
+          }).catch(() => {});
+        }
+      }
     },
     [mergeDayTotals],
   );
