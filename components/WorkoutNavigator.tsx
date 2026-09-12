@@ -37,6 +37,7 @@ export default function WorkoutNavigator({
   refreshTrigger = 0,
 }: WorkoutNavigatorProps) {
   const [sessions, setSessions] = useState<WorkoutSessionItem[]>([]);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,33 +133,62 @@ export default function WorkoutNavigator({
         })}
       </div>
 
-      {/* Date Bar: Identical layout and rhythm to Today tab */}
-      <div className="mt-1.5 flex items-center justify-between gap-2">
-        <div className="flex items-baseline gap-2 min-w-0">
-          <span className="num text-2xs uppercase tracking-wider text-ink-faint shrink-0">
-            {prettyDate(currentDate)}
-          </span>
-        </div>
+      {/* Date Bar: Identical layout and rhythm to Food tab */}
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+        <span className="num text-2xs uppercase tracking-wider text-ink-faint">
+          {prettyDate(currentDate)}
+        </span>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2">
           {!isToday && (
             <button
               type="button"
-              onClick={() => onSelectDate(todayDate)}
+              onClick={() => {
+                onSelectDate(todayDate);
+                setDatePickerOpen(false);
+              }}
               className="text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
             >
               Today
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setDatePickerOpen((open) => !open)}
+            aria-expanded={datePickerOpen}
+            className="text-2xs font-semibold uppercase tracking-wider text-ink-dim hover:text-accent sm:hidden"
+          >
+            {datePickerOpen ? "Close date" : "Change date"}
+          </button>
           <input
             type="date"
             value={currentDate}
             max={todayDate}
-            aria-label="Pick workout date"
-            onChange={(e) => e.target.value && onSelectDate(e.target.value)}
-            className="field num py-1 px-2 text-base sm:text-2xs"
+            aria-label="Show a different day"
+            onChange={(e) => {
+              if (e.target.value) {
+                onSelectDate(e.target.value);
+                setDatePickerOpen(false);
+              }
+            }}
+            className="field num hidden py-1 px-2 text-base sm:block sm:text-2xs"
           />
         </div>
+        {datePickerOpen && (
+          <input
+            type="date"
+            value={currentDate}
+            max={todayDate}
+            aria-label="Show a different day"
+            onChange={(e) => {
+              if (e.target.value) {
+                onSelectDate(e.target.value);
+                setDatePickerOpen(false);
+              }
+            }}
+            className="field num w-full py-1 px-2 text-base sm:hidden"
+          />
+        )}
       </div>
     </nav>
   );
