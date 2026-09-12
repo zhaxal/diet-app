@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type AnimationEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -71,22 +71,71 @@ function stripEnding(selected: string, today: string): string {
 }
 
 // Tab changes replace the whole working surface, so they earn a short entrance
-// without resetting the forms nested inside it. A date change only replaces the
-// reading within that surface; replaying this animation there made the whole
-// app jump while its own loading state was already doing the explaining.
-// Alternating animation names restart the tab animation while preserving the
-// rendered child tree.
-function MotionRegion({ motionKey, children }: { motionKey: string; children: ReactNode }) {
-  const [phase, setPhase] = useState<"a" | "b">("a");
-  const previousKey = useRef(motionKey);
+// with the outgoing surface cross-fading out underneath. A date change only
+// replaces the reading within that surface and is handled by DayTransition.
+//
+// The outgoing tab's last-committed content is captured before paint and
+// rendered in an absolutely-positioned layer that fades out while the incoming
+// tab fades in. Opacity only — a transformed ancestor would create a new
+// containing block and drag position:fixed descendants (the bottom nav) along.
+function TabCrossFade({ activeKey, children }: { activeKey: string; children: ReactNode }) {
+  const nextId = useRef(1);
+  const prev = useRef({ activeKey, content: children });
+  const [displayedKey, setDisplayedKey] = useState(activeKey);
+  const [leaving, setLeaving] = useState<{ id: number; content: ReactNode } | null>(null);
 
+  useLayoutEffect(() => {
+    const prior = prev.current;
+    if (prior.activeKey !== activeKey) {
+      if (
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: no-preference)").matches
+      ) {
+        setLeaving({ id: nextId.current++, content: prior.content });
+      } else {
+        setLeaving(null);
+      }
+      setDisplayedKey(activeKey);
+    }
+    prev.current = { activeKey, content: children };
+  }, [children, activeKey]);
+
+  const isEntering = displayedKey !== activeKey || leaving != null;
+
+  // Safety: if animationend never fires, clean up the leaving layer.
   useEffect(() => {
-    if (previousKey.current === motionKey) return;
-    previousKey.current = motionKey;
-    setPhase((current) => (current === "a" ? "b" : "a"));
-  }, [motionKey]);
+    if (!leaving) return;
+    const id = leaving.id;
+    const timeout = window.setTimeout(() => {
+      setLeaving((cur) => (cur?.id === id ? null : cur));
+    }, 280);
+    return () => window.clearTimeout(timeout);
+  }, [leaving]);
 
-  return <div className={`motion-view motion-view--${phase}`}>{children}</div>;
+  function handleAnimationEnd(e: AnimationEvent<HTMLDivElement>) {
+    if (e.target !== e.currentTarget || !leaving) return;
+    setLeaving((cur) => (cur?.id === leaving.id ? null : cur));
+  }
+
+  return (
+    <div className="motion-tab-fade">
+      {leaving != null && (
+        <div
+          aria-hidden="true"
+          className="motion-tab-fade__layer motion-tab-fade__layer--leaving"
+        >
+          {leaving.content}
+        </div>
+      )}
+      <div
+        key={activeKey}
+        className={`motion-tab-fade__layer motion-tab-fade__layer--${isEntering ? "entering" : "current"}`}
+        onAnimationEnd={isEntering ? handleAnimationEnd : undefined}
+      >
+        {children}
+      </div>
+    </div>
+  );
 }
 
 const TABS: Tab[] = ["food", "workout", "settings"];
@@ -823,7 +872,7 @@ function Dashboard() {
     </div>
   ) : (
     <div className="mx-auto max-w-2xl px-3 pb-32 pt-3">
-      <MotionRegion motionKey={tab}>
+      <TabCrossFade activeKey={tab}>
       {tab === "food" && (
         <FoodTab
           date={date}
@@ -921,7 +970,7 @@ function Dashboard() {
           logout={logout}
         />
       )}
-      </MotionRegion>
+      </TabCrossFade>
 
       {/* Always rendered (not gated on showWorkoutImportModal) so closing it
           animates out — conditionally mounting would remove Dialog from the

@@ -129,6 +129,68 @@ body {
   pointer-events: none;
 }
 
+/* ── Directional day transition ───────────────────────────────────────────
+   Used by DayTransition.tsx: when the date changes, the outgoing reading
+   slides out in the direction the calendar moved and the incoming one enters
+   from the opposite edge. Surface-state changes on the same date (loading →
+   ready) use a plain opacity fade instead.
+
+   Transforms are on the layer divs, not the container, so position:fixed
+   descendants stay pinned. The container clips overflow so a departing
+   reading does not flash beside the incoming one. */
+.motion-day-slide {
+  position: relative;
+  min-width: 0;
+}
+
+/* Clip only while a departing layer is still on screen — at rest, the
+   container allows normal overflow for any menus or tooltips inside. */
+.motion-day-slide:has(> .motion-day-layer--leaving-left),
+.motion-day-slide:has(> .motion-day-layer--leaving-right) {
+  overflow: hidden;
+}
+
+.motion-day-layer {
+  min-width: 0;
+}
+
+.motion-day-layer--leaving-left,
+.motion-day-layer--leaving-right,
+.motion-day-layer--leaving-fade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.motion-day-layer--entering-left,
+.motion-day-layer--entering-right,
+.motion-day-layer--entering-fade {
+  pointer-events: none;
+}
+
+/* ── Tab cross-fade ───────────────────────────────────────────────────────
+   Used by TabCrossFade in app/page.tsx: the outgoing tab surface fades out
+   underneath the incoming one. Opacity only — no transform on the container
+   so position:fixed children (bottom nav) stay put. */
+.motion-tab-fade {
+  position: relative;
+  min-width: 0;
+}
+
+.motion-tab-fade__layer {
+  min-width: 0;
+}
+
+.motion-tab-fade__layer--leaving {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.motion-tab-fade__layer--entering {
+  pointer-events: none;
+}
+
 /* A chart is a meter that never resolved into one number — the bars fill and
    the line draws for the same reason a meter's bar fills, so the reveal
    reuses that vocabulary instead of inventing a data-viz-specific one. Base
@@ -221,12 +283,46 @@ body {
     transform: translateY(-1px) scale(1.07);
   }
 
-  .motion-view--a {
-    animation: reading-enter-a 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* ── Directional day slide ─────────────────────────────────────────────── */
+  .motion-day-layer--entering-left {
+    animation: day-slide-in-left 250ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
-  .motion-view--b {
-    animation: reading-enter-b 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  .motion-day-layer--entering-right {
+    animation: day-slide-in-right 250ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .motion-day-layer--leaving-left {
+    animation: day-slide-out-left 180ms ease-in both;
+  }
+
+  .motion-day-layer--leaving-right {
+    animation: day-slide-out-right 180ms ease-in both;
+  }
+
+  /* Same-day surface changes (loading → ready) use a plain opacity fade. */
+  .motion-day-layer--entering-fade {
+    animation: day-surface-enter 170ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .motion-day-layer--leaving-fade {
+    animation: day-surface-leave 110ms ease-in both;
+  }
+
+  /* ── Tab cross-fade ──────────────────────────────────────────────────── */
+  .motion-tab-fade__layer--entering {
+    animation: tab-fade-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .motion-tab-fade__layer--leaving {
+    animation: tab-fade-leave 160ms ease-in both;
+  }
+
+  /* ── Week strip segments: smooth active-state tracking ───────────────── */
+  .motion-segment {
+    transition:
+      background-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+      color 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .motion-disclosure-content {
@@ -305,14 +401,63 @@ body {
   }
 }
 
-/* Opacity + transform only, deliberately: this plays across a whole tab's
-   content (meter grid, charts, entry lists), and clip-path over a tree that
-   size does not stay smooth — it forces a repaint of the clipped region on
-   every frame instead of compositing on the GPU like these two do. */
-@keyframes reading-enter-a {
+/* ── Day slide keyframes ──────────────────────────────────────────────────
+   Short horizontal movement (16px) conveys calendar direction without making
+   content feel distant. Opacity starts at 0.4 instead of 0 so the new content
+   is already partially legible on the first painted frame, which shortens the
+   perceived transition. Exit is faster than entrance. */
+@keyframes day-slide-in-left {
   from {
-    opacity: 0.66;
-    transform: translateY(6px);
+    opacity: 0.4;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes day-slide-in-right {
+  from {
+    opacity: 0.4;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes day-slide-out-left {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+}
+
+@keyframes day-slide-out-right {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+/* ── Tab cross-fade keyframes ─────────────────────────────────────────────
+   Opacity + a very short vertical settle. The tab surface is large, so
+   spatial movement is kept to 4px — just enough to give the eye a landing
+   point without the whole page appearing to jump. */
+@keyframes tab-fade-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -320,14 +465,12 @@ body {
   }
 }
 
-@keyframes reading-enter-b {
+@keyframes tab-fade-leave {
   from {
-    opacity: 0.66;
-    transform: translateY(6px);
+    opacity: 1;
   }
   to {
-    opacity: 1;
-    transform: translateY(0);
+    opacity: 0;
   }
 }
 
