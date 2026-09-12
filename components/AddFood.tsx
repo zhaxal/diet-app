@@ -76,6 +76,8 @@ interface Props {
   onRemoveCopied: (key: string) => void;
   onLogged: () => void;
   onFavoritesChanged: () => void;
+  onQuickLog: (food: Favorite | RecentFood) => Promise<void>;
+  quickLoggingName: string | null;
   seedQuery?: string;
   onSeedConsumed?: () => void;
 }
@@ -119,6 +121,8 @@ export default function AddFood({
   onRemoveCopied,
   onLogged,
   onFavoritesChanged,
+  onQuickLog,
+  quickLoggingName,
   seedQuery = "",
   onSeedConsumed,
 }: Props) {
@@ -149,6 +153,12 @@ export default function AddFood({
   const [productId, setProductId] = useState<string | null>(initialDraft?.productId ?? null);
   const [origin, setOrigin] = useState<Origin | null>(initialDraft?.origin ?? null);
   const [showTrace, setShowTrace] = useState(initialDraft?.showTrace ?? false);
+  const [showNutritionDetails, setShowNutritionDetails] = useState(
+    () => Boolean(initialDraft && [initialDraft.vals.protein, initialDraft.vals.carbs, initialDraft.vals.fat, initialDraft.vals.fiber, initialDraft.vals.sugar, initialDraft.vals.sodium].some(Boolean)),
+  );
+  const [showAmount, setShowAmount] = useState(
+    () => Boolean(initialDraft?.amount) || initialDraft?.reference.kind === "per",
+  );
   const [showManual, setShowManual] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -364,6 +374,8 @@ export default function AddFood({
     setProductId(null);
     setOrigin(null);
     setShowTrace(false);
+    setShowNutritionDetails(false);
+    setShowAmount(false);
     setShowManual(false);
     setComposerOpen(false);
   }
@@ -535,6 +547,7 @@ export default function AddFood({
     const base = dimensionOf(unit) === "volume" ? "ml" : "g";
     if (dimensionOf(unit) === "serving") setUnit(base);
     setReference({ kind: "per", amount: 100, unit: base });
+    setShowAmount(true);
   }
 
   function changeUnit(next: QuantityUnit) {
@@ -914,7 +927,7 @@ export default function AddFood({
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-              Favorites
+              Favorites <span className="font-normal text-ink-faint">· 1 tap</span>
             </p>
             <button
               type="button"
@@ -931,6 +944,7 @@ export default function AddFood({
             <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
               {favorites.map((f) => {
                 const isSelected = batchSelection.has(`fav:${f.id}`);
+                const isLogging = quickLoggingName === f.name;
                 return (
                   <div
                     key={f.id}
@@ -956,10 +970,15 @@ export default function AddFood({
                             productId: null,
                           });
                         } else {
-                          pickEaten(f, true);
+                          void onQuickLog(f);
                         }
                       }}
-                      className="text-left flex items-center gap-1.5"
+                      disabled={!batchMode && quickLoggingName !== null}
+                      aria-busy={isLogging || undefined}
+                      aria-label={batchMode
+                        ? `${isSelected ? "Remove" : "Add"} ${f.name} from the batch`
+                        : `Log ${f.name}, ${Math.round(f.calories)} calories, to ${meal}`}
+                      className="text-left flex items-center gap-1.5 disabled:cursor-wait disabled:opacity-60"
                     >
                       {batchMode && (
                         <span
@@ -974,19 +993,28 @@ export default function AddFood({
                       )}
                       <div>
                         <div className="flex items-center gap-1 text-xs font-medium text-accent">
-                          <Star size={11} className="shrink-0 fill-accent" strokeWidth={1.75} aria-hidden="true" />
-                          <span className="truncate max-w-[10rem]">{f.name}</span>
-                          <span className="num shrink-0 text-accent">{f.calories}</span>
+                          {isLogging ? (
+                            <span>Logging…</span>
+                          ) : (
+                            <>
+                              <Star size={11} className="shrink-0 fill-accent" strokeWidth={1.75} aria-hidden="true" />
+                              <span className="truncate max-w-[10rem]">{f.name}</span>
+                              <span className="num shrink-0 text-accent">{f.calories}</span>
+                            </>
+                          )}
                         </div>
-                        <div className="num text-2xs text-ink-faint">
-                          {f.mealType ? `${f.mealType} · 1 portion` : "1 portion"}
-                        </div>
+                        {!isLogging && (
+                          <div className="num text-2xs text-ink-faint">
+                            {f.mealType ? `${f.mealType} · saved portion` : "saved portion"}
+                          </div>
+                        )}
                       </div>
                     </button>
                     {!batchMode && (
                       <button
                         type="button"
                         onClick={() => deleteFav(f.id, f.name)}
+                        disabled={quickLoggingName !== null}
                         className="glyph-btn ml-1 border-l border-line text-ink-faint hover:text-over"
                         aria-label={`Remove ${f.name} from favorites`}
                       >
@@ -1006,7 +1034,7 @@ export default function AddFood({
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-              Recent
+              Recent <span className="font-normal text-ink-faint">· 1 tap</span>
             </p>
             {favorites.length === 0 && (
               <button
@@ -1025,6 +1053,7 @@ export default function AddFood({
             <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
               {rankedRecent.slice(0, 8).map((r) => {
                 const isSelected = batchSelection.has(`rec:${r.name}`);
+                const isLogging = quickLoggingName === r.name;
                 return (
                   <div
                     key={r.name}
@@ -1050,10 +1079,15 @@ export default function AddFood({
                             productId: r.productId ?? null,
                           });
                         } else {
-                          pickEaten(r, false);
+                          void onQuickLog(r);
                         }
                       }}
-                      className="text-left flex items-center gap-1.5"
+                      disabled={!batchMode && quickLoggingName !== null}
+                      aria-busy={isLogging || undefined}
+                      aria-label={batchMode
+                        ? `${isSelected ? "Remove" : "Add"} ${r.name} from the batch`
+                        : `Log ${r.name}, ${Math.round(r.calories)} calories, to ${meal}`}
+                      className="text-left flex items-center gap-1.5 disabled:cursor-wait disabled:opacity-60"
                     >
                       {batchMode && (
                         <span
@@ -1068,13 +1102,21 @@ export default function AddFood({
                       )}
                       <div>
                         <div className="flex items-center gap-1.5 text-xs font-medium text-ink">
-                          <span className="truncate max-w-[10rem]">{r.name}</span>
-                          <span className="num shrink-0 text-ink-faint">{r.calories}</span>
+                          {isLogging ? (
+                            <span>Logging…</span>
+                          ) : (
+                            <>
+                              <span className="truncate max-w-[10rem]">{r.name}</span>
+                              <span className="num shrink-0 text-ink-faint">{r.calories}</span>
+                            </>
+                          )}
                         </div>
-                        <div className="num text-2xs text-ink-faint">
-                          {r.mealType ? `${r.mealType} · ` : ""}
-                          {r.quantity ? formatQuantity(r.quantity, r.quantityUnit || "g") : "1 portion"}
-                        </div>
+                        {!isLogging && (
+                          <div className="num text-2xs text-ink-faint">
+                            {r.mealType ? `${r.mealType} · ` : ""}
+                            {r.quantity ? formatQuantity(r.quantity, r.quantityUnit || "g") : "last portion"}
+                          </div>
+                        )}
                       </div>
                     </button>
                   </div>
@@ -1101,7 +1143,7 @@ export default function AddFood({
           }}
           className="text-2xs font-semibold uppercase tracking-wider text-ink-dim hover:text-accent hover:underline"
         >
-          {isComposing ? "Resume food draft" : "+ Custom food entry"}
+          {isComposing ? "Resume food draft" : "Enter food manually"}
         </button>
         <span className="text-2xs text-ink-faint">
           {isComposing ? "Draft retained" : "Or search / pick above"}
@@ -1121,6 +1163,26 @@ export default function AddFood({
           bodyClassName="p-3"
         >
           <form onSubmit={log} className="grid grid-cols-2 gap-1.5 min-[360px]:grid-cols-4">
+          <div className="col-span-full flex items-end justify-between gap-3 border-b pb-2" style={{ borderColor: "var(--line-soft)" }}>
+            <div>
+              <span className="block text-2xs uppercase tracking-wider text-ink-faint">Log to</span>
+              <span className="mt-0.5 block text-xs font-semibold capitalize text-ink">{meal}</span>
+            </div>
+            <Select
+              value={meal}
+              onChange={(e) => onMealChange(e.target.value as Meal)}
+              aria-label="Meal"
+              className="capitalize text-xs"
+              wrapClassName="w-36 shrink-0"
+            >
+              {MEALS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </Select>
+          </div>
+
           <label className="col-span-full block">
             <span className="block text-2xs uppercase tracking-wider text-ink-faint">Food</span>
             <input
@@ -1128,12 +1190,14 @@ export default function AddFood({
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="field mt-0.5 w-full"
+              placeholder="What did you eat?"
             />
           </label>
 
-          {/* What the seven figures below are quoted against — the one thing
-              that decides whether the amount rescales them or annotates them. */}
-          <div className="col-span-full flex items-center gap-2">
+          {/* Declare the data basis only when it is relevant. A total for one
+              portion is the useful default; label arithmetic remains explicit
+              for people who need it. */}
+          <div className="col-span-full flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
             {origin ? (
               <>
                 <span className="min-w-0 truncate text-2xs uppercase tracking-wider text-ink-dim">
@@ -1151,42 +1215,71 @@ export default function AddFood({
                 </button>
               </>
             ) : (
-              <div className="flex w-full items-center justify-between text-2xs">
-                <span className="text-ink-faint">
+              <>
+                <span className="text-2xs text-ink-faint">
                   {reference.kind === "per"
-                    ? `Quoting ${perLabel ?? "per 100"} · scales with amount below`
-                    : "Direct portion total"}
+                    ? `Nutrition label: ${perLabel ?? "per 100"} · amount rescales it`
+                    : "Numbers are for this portion"}
                 </span>
                 <button
                   type="button"
                   onClick={() => setPerHundred(reference.kind !== "per")}
                   className="text-2xs font-medium text-ink-dim hover:text-accent hover:underline"
                 >
-                  {reference.kind === "per" ? "Switch to direct portion" : "+ Quote per 100 g/ml"}
+                  {reference.kind === "per" ? "Use portion total" : "+ Use a per 100 label"}
                 </button>
-              </div>
+              </>
             )}
           </div>
 
-          {MACRO_FIELDS.map((f) => (
-            <NumInput
-              key={f.key}
-              label={f.label}
-              value={vals[f.key]}
-              onChange={(v) => setVals({ ...vals, [f.key]: v })}
-              required={f.key === "calories"}
-            />
-          ))}
-          {showTrace &&
-            TRACE_FIELDS.map((f) => (
-              <NumInput
-                key={f.key}
-                label={f.label}
-                value={vals[f.key]}
-                onChange={(v) => setVals({ ...vals, [f.key]: v })}
-              />
-            ))}
-          {showTrace && <div />}
+          <NumInput
+            className="col-span-2"
+            label="Calories (kcal)"
+            value={vals.calories}
+            onChange={(v) => setVals({ ...vals, calories: v })}
+            required
+          />
+          <div className="col-span-2 flex items-end">
+            <button
+              type="button"
+              onClick={() => setShowNutritionDetails((shown) => !shown)}
+              aria-expanded={showNutritionDetails}
+              className="min-h-[36px] text-left text-2xs font-medium uppercase tracking-wider text-ink-dim hover:text-accent hover:underline"
+            >
+              {showNutritionDetails ? "− Fewer nutrition fields" : "+ Protein, carbs & fat"}
+            </button>
+          </div>
+
+          {showNutritionDetails && (
+            <>
+              {MACRO_FIELDS.slice(1).map((f) => (
+                <NumInput
+                  key={f.key}
+                  label={f.label}
+                  value={vals[f.key]}
+                  onChange={(v) => setVals({ ...vals, [f.key]: v })}
+                />
+              ))}
+              {showTrace &&
+                TRACE_FIELDS.map((f) => (
+                  <NumInput
+                    key={f.key}
+                    label={f.label}
+                    value={vals[f.key]}
+                    onChange={(v) => setVals({ ...vals, [f.key]: v })}
+                  />
+                ))}
+              <div className="col-span-full">
+                <button
+                  type="button"
+                  onClick={() => setShowTrace((shown) => !shown)}
+                  className="text-2xs uppercase tracking-wider text-ink-faint hover:text-ink transition-colors"
+                >
+                  {showTrace ? "− Fiber, sugar & sodium" : "+ Fiber, sugar & sodium"}
+                </button>
+              </div>
+            </>
+          )}
 
           {reference.kind === "unitless" ? (
             <label className="col-span-2 block">
@@ -1202,7 +1295,7 @@ export default function AddFood({
                 className="field num mt-0.5 w-full text-right scroll-mb-28"
               />
             </label>
-          ) : (
+          ) : showAmount || reference.kind === "per" || origin ? (
             <>
               <label className="block">
                 <span className="block text-2xs uppercase tracking-wider text-ink-faint">
@@ -1233,32 +1326,23 @@ export default function AddFood({
                 ))}
               </Select>
             </>
+          ) : (
+            <div className="col-span-full flex items-center justify-between gap-3 border-t pt-2" style={{ borderColor: "var(--line-soft)" }}>
+              <span className="text-2xs text-ink-faint">Amount is optional for a portion total.</span>
+              <button
+                type="button"
+                onClick={() => setShowAmount(true)}
+                className="shrink-0 text-2xs font-medium uppercase tracking-wider text-ink-dim hover:text-accent hover:underline"
+              >
+                + Record amount
+              </button>
+            </div>
           )}
 
-          <Select
-            value={meal}
-            onChange={(e) => onMealChange(e.target.value as Meal)}
-            aria-label="Meal"
-            className="capitalize"
-            wrapClassName="col-span-2 self-end"
-          >
-            {MEALS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </Select>
-
-          {/* Subordinate actions: Trace disclosure & saving to favorites/catalog */}
-          <div className="col-span-full flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 pt-1">
-            <button
-              type="button"
-              onClick={() => setShowTrace((s) => !s)}
-              className="text-2xs uppercase tracking-wider text-ink-faint hover:text-ink transition-colors"
-            >
-              {showTrace ? "− fewer" : "+ fiber / sugar / sodium"}
-            </button>
-            {canLog && (
+          {/* Saving is available after the core entry is valid, without
+              competing with the first decision: record the food. */}
+          {canLog && (
+            <div className="col-span-full flex flex-wrap items-center justify-end gap-3 pt-1">
               <div className="flex items-center gap-3">
                 <button type="button" onClick={saveFavorite} className="text-2xs text-accent hover:underline">
                   ★ favorite
@@ -1269,18 +1353,18 @@ export default function AddFood({
                   </button>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* What the row will say, before it says it. Under a label this is the
               only place the arithmetic is visible. */}
           <div
-            className="sticky bottom-0 col-span-full -mx-3 -mb-3 flex items-baseline gap-2 border-t px-3 pb-3 pt-2.5"
+            className="sticky bottom-0 col-span-full -mx-3 -mb-3 flex items-baseline gap-2 border-t px-3 pb-3 pt-2.5 sm:static sm:mb-0"
             style={{ borderColor: "var(--line-soft)", background: "var(--panel)" }}
           >
             {!touched ? (
               <div className="flex-1 flex items-baseline justify-between text-2xs text-ink-faint">
-                <span>Pick something above, or type numbers in.</span>
+                <span>Enter a food and calories to preview it.</span>
                 <span className="hidden sm:inline text-ink-faint/80">
                   Tip: AI assistant can log via MCP
                 </span>
@@ -1378,14 +1462,16 @@ function NumInput({
   onChange,
   label,
   required,
+  className = "",
 }: {
   value: string;
   onChange: (v: string) => void;
   label: string;
   required?: boolean;
+  className?: string;
 }) {
   return (
-    <label className="block">
+    <label className={`block ${className}`}>
       <span className="block text-2xs uppercase tracking-wider text-ink-faint">{label}</span>
       <input
         type="number"

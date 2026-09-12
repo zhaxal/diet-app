@@ -89,9 +89,9 @@ export default function WeightCard({ date, logs, weightUnit, onLogsChange }: Pro
       {/* Header bar: Context label + Trend delta + History toggle */}
       <div className="flex items-baseline justify-between gap-2">
         <div className="flex items-baseline gap-2">
-          <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+          <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
             Weight
-          </span>
+          </h2>
           <span className="text-2xs uppercase tracking-wider text-ink-faint">
             {prettyDate(date).toLowerCase()}
           </span>

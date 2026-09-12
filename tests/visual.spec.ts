@@ -1,5 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 
+// Keep visual fixtures on a genuinely selectable day. Future URL dates are
+// intentionally normalized by the app so the week navigator never loses its
+// active cell.
+const EMPTY_DAY = "2026-09-01";
+
 async function authenticate(page: Page) {
   // Login as demo user
   const res = await page.request.post("http://localhost:3000/api/auth/login", {
@@ -65,7 +70,7 @@ test.describe("Visual Regression Tests", () => {
 
   test("Workout Tab - Empty State & Routine Starters", async ({ page }) => {
     // Navigate to a clean date with no logged workout
-    await page.goto("/?tab=workout&d=2026-09-30");
+    await page.goto(`/?tab=workout&d=${EMPTY_DAY}`);
     await page.waitForSelector("text=No workout logged");
     await expect(page.locator("text=Choose a routine starter")).toBeVisible();
 
@@ -82,7 +87,7 @@ test.describe("Visual Regression Tests", () => {
   });
 
   test("Workout Tab - Note Mode with Loaded Routine", async ({ page }) => {
-    await page.goto("/?tab=workout&d=2026-09-30");
+    await page.goto(`/?tab=workout&d=${EMPTY_DAY}`);
     await page.waitForSelector('button:has-text("Chest, Delts, Triceps")');
 
     // Click "Push Day" starter template
@@ -97,7 +102,7 @@ test.describe("Visual Regression Tests", () => {
   });
 
   test("Workout Tab - Add Exercise Dialog", async ({ page }) => {
-    await page.goto("/?tab=workout&d=2026-09-30");
+    await page.goto(`/?tab=workout&d=${EMPTY_DAY}`);
     await page.waitForSelector('button:has-text("Chest, Delts, Triceps")');
 
     // Load template
@@ -109,9 +114,20 @@ test.describe("Visual Regression Tests", () => {
     await page.getByRole("button", { name: "Add exercise from database" }).click();
     const dialog = page.getByRole("dialog", { name: "Add Exercise" });
     await expect(dialog).toBeVisible();
-    await expect(page.getByRole("textbox", { name: "Search exercises" })).toBeFocused();
+    const search = page.getByRole("textbox", { name: "Search exercises" });
+    await expect(search).toBeFocused();
 
-    await expect(page).toHaveScreenshot("workout-add-exercise-dialog.png", {
+    // The catalog search is debounced. Pin the dialog to a specific settled
+    // response so the screenshot never races its initial empty-list state.
+    const searchResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/exercises" && url.searchParams.get("q") === "bench";
+    });
+    await search.fill("bench");
+    await searchResponse;
+    await expect(dialog.getByRole("button", { name: /Close-Grip Bench Press/ })).toBeVisible();
+
+    await expect(dialog).toHaveScreenshot("workout-add-exercise-dialog.png", {
       animations: "disabled",
     });
   });
@@ -174,7 +190,7 @@ test.describe("Visual Regression Tests", () => {
   });
 
   test("Food Tab - Daily Logging with Contextual Weight and Trends Accordion", async ({ page }) => {
-    await page.goto("/?tab=food&d=2026-09-30");
+    await page.goto(`/?tab=food&d=${EMPTY_DAY}`);
     await page.waitForSelector("text=Calories");
 
     // Verify 3-tab bottom navigation
@@ -191,21 +207,27 @@ test.describe("Visual Regression Tests", () => {
 
     // Verify Trends & Analysis collapsible panel is present
     await expect(page.locator("text=Trends & Analysis")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Open food composer for (breakfast|lunch|dinner|snack)/ }),
+    ).toBeVisible();
 
     // Take snapshot of Food tab
     await takeFullPageScreenshot(page, "food-tab.png");
   });
 
   test("Food Tab - Manual Entry Dialog", async ({ page }) => {
-    await page.goto("/?tab=food&d=2026-09-30");
-    await page.getByRole("button", { name: "Add food to dinner" }).click();
-    await page.getByRole("button", { name: "+ Custom food entry" }).click();
+    await page.goto(`/?tab=food&d=${EMPTY_DAY}`);
+    await page.getByRole("button", { name: /Open food composer for (breakfast|lunch|dinner|snack)/ }).click();
+    await page.getByRole("button", { name: "Enter food manually" }).click();
 
     const dialog = page.getByRole("dialog", { name: "Manual Food Entry" });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("textbox").first()).toBeVisible();
+    await expect(dialog.getByRole("textbox", { name: "Food" })).toBeVisible();
+    await expect(dialog.getByRole("spinbutton", { name: "Calories (kcal)" })).toBeVisible();
+    await expect(dialog.getByRole("spinbutton", { name: "Protein g" })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "+ Protein, carbs & fat" })).toBeVisible();
 
-    await expect(page).toHaveScreenshot("food-manual-entry-dialog.png", {
+    await expect(dialog).toHaveScreenshot("food-manual-entry-dialog.png", {
       animations: "disabled",
     });
 
@@ -214,7 +236,7 @@ test.describe("Visual Regression Tests", () => {
   });
 
   test("Food Tab - Trends & Analysis Expanded View", async ({ page }) => {
-    await page.goto("/?tab=food&d=2026-09-30");
+    await page.goto(`/?tab=food&d=${EMPTY_DAY}`);
     await page.waitForSelector("text=Trends & Analysis");
 
     // Click to expand Trends & Analysis accordion
@@ -226,5 +248,59 @@ test.describe("Visual Regression Tests", () => {
 
     // Take snapshot of expanded Trends & Analysis
     await takeFullPageScreenshot(page, "food-trends-expanded.png");
+  });
+
+  test("Food Tab - Quick add logs immediately with Undo", async ({ page }) => {
+    await page.goto("/?tab=food");
+    const favorite = await page.evaluate(async () => {
+      const response = await fetch("/api/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Instant test food",
+          calories: 123,
+          protein: 9,
+          carbs: 8,
+          fat: 4,
+          fiber: 2,
+          sugar: 1,
+          sodium: 45,
+          mealType: "snack",
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json() as Promise<{ favorite: { id: string } }>;
+    });
+
+    try {
+      await page.reload();
+      const quickAdd = page.getByRole("button", {
+        name: /Log Instant test food, 123 calories, to (breakfast|lunch|dinner|snack)/,
+      });
+      await expect(quickAdd).toBeVisible();
+      await quickAdd.click();
+
+      await expect(page.getByRole("status")).toContainText("Added Instant test food");
+      await page.getByRole("button", { name: "Undo" }).click();
+      await expect(page.getByRole("button", { name: "Undo" })).toBeHidden();
+    } finally {
+      await page.evaluate(async (id) => {
+        await fetch(`/api/favorites/${id}`, { method: "DELETE" });
+      }, favorite.favorite.id);
+    }
+  });
+
+  test("Food Tab - Future deep link is clamped to a selectable day", async ({ page }) => {
+    const browserToday = await page.evaluate(() => {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    });
+
+    await page.goto("/?tab=food&d=2099-01-01");
+    await expect.poll(() => new URL(page.url()).searchParams.get("d")).toBe(browserToday);
+    await expect(page.locator('input[type="date"]').first()).toHaveValue(browserToday);
   });
 });

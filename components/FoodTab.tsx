@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { RefreshCw } from "lucide-react";
 import type {
   FoodEntry,
   Summary,
@@ -11,18 +12,34 @@ import type {
   Trends,
   TrendRange,
 } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
 import type { CopiedItem } from "@/lib/copied";
 import type { Tab } from "@/components/BottomNav";
-import { prettyDate, todayStr, clockTime, weekEnding } from "@/lib/time-client";
+import { prettyDate, todayStr, clockTime, consumedAtFor, weekEnding } from "@/lib/time-client";
+import { rankRecent } from "@/lib/quick-add-rank";
+import { formatQuantity } from "@/lib/units";
 import { Panel } from "@/components/Panel";
 import { Meter, MeterFill } from "@/components/Meter";
 import WeightCard from "@/components/WeightCard";
 import AddFood from "@/components/AddFood";
 import EntryRow from "@/components/EntryRow";
 import TrendsCard from "@/components/TrendsCard";
+import Select from "@/components/Select";
+import { useToast } from "@/components/Toast";
 
 export const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 export type Meal = (typeof MEALS)[number];
+
+type QuickItem =
+  | { kind: "favorite"; food: Favorite }
+  | { kind: "recent"; food: RecentFood };
+
+function quickItemDetail(item: QuickItem) {
+  if (item.kind === "favorite") return "saved portion";
+  return item.food.quantity && item.food.quantityUnit
+    ? formatQuantity(item.food.quantity, item.food.quantityUnit)
+    : "last portion";
+}
 
 interface Props {
   date: string;
@@ -56,7 +73,7 @@ interface Props {
   recent: RecentFood[];
   copied: CopiedItem[];
   dropCopy: (key: string) => void;
-  setFavorites: React.Dispatch<React.SetStateAction<Favorite[]>>;
+  onQuickAddDataChanged: () => Promise<void>;
   trends: Trends | null;
   trendsError: string | null;
   trendRange: TrendRange;
@@ -99,7 +116,7 @@ export default function FoodTab({
   recent,
   copied,
   dropCopy,
-  setFavorites,
+  onQuickAddDataChanged,
   trends,
   trendsError,
   trendRange,
@@ -109,6 +126,7 @@ export default function FoodTab({
   loadTrends,
   onOpenShortcuts,
 }: Props) {
+  const toast = useToast();
   const total =
     summary?.total ?? { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0, count: 0 };
   const calGoal = goals.dailyCalories;
@@ -124,10 +142,64 @@ export default function FoodTab({
     !goals.dailyFat &&
     favorites.length === 0 &&
     recent.length === 0;
+  const [datePickerOpen, setDatePickerOpen] = React.useState(false);
+  const [quickLoggingName, setQuickLoggingName] = React.useState<string | null>(null);
+  const quickLoggingRef = React.useRef(false);
+  const quickItems = React.useMemo<QuickItem[]>(() => {
+    const favoriteNames = new Set(favorites.map((food) => food.name.toLocaleLowerCase()));
+    return [
+      ...favorites.map((food) => ({ kind: "favorite" as const, food })),
+      ...rankRecent(recent, meal)
+        .filter((food) => !favoriteNames.has(food.name.toLocaleLowerCase()))
+        .map((food) => ({ kind: "recent" as const, food })),
+    ].slice(0, 4);
+  }, [favorites, recent, meal]);
+
+  function refreshFoodLog() {
+    void loadDay(date);
+    void onQuickAddDataChanged();
+  }
+
+  async function quickLog(food: Favorite | RecentFood) {
+    if (quickLoggingRef.current) return;
+    quickLoggingRef.current = true;
+    setQuickLoggingName(food.name);
+    try {
+      const isRecent = "lastAt" in food;
+      const { entry } = await api.createEntry({
+        name: food.name,
+        calories: food.calories,
+        protein: food.protein,
+        carbs: food.carbs,
+        fat: food.fat,
+        fiber: food.fiber,
+        sugar: food.sugar,
+        sodium: food.sodium,
+        mealType: meal,
+        productId: isRecent ? food.productId ?? null : null,
+        quantity: isRecent ? food.quantity ?? null : null,
+        quantityUnit: isRecent ? food.quantityUnit ?? null : null,
+        consumedAt: consumedAtFor(date),
+      });
+      toast(`Added ${food.name} to ${meal}`, "success", {
+        label: "Undo",
+        onAct: async () => {
+          await api.deleteEntry(entry.id);
+          refreshFoodLog();
+        },
+      });
+      refreshFoodLog();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not log food", "error");
+    } finally {
+      quickLoggingRef.current = false;
+      setQuickLoggingName(null);
+    }
+  }
 
   return (
     <>
-      <h1 className="sr-only">{prettyDate(date)}</h1>
+      <h1 className="sr-only">Food log for {prettyDate(date)}</h1>
 
       {/* Week strip */}
       <nav className="panel flex overflow-x-auto" aria-label="Week">
@@ -209,7 +281,7 @@ export default function FoodTab({
       )}
 
       {/* Date bar */}
-      <div className="mt-1.5 flex items-center justify-between gap-2">
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
         <span className="num text-2xs uppercase tracking-wider text-ink-faint">
           {prettyDate(date)}
         </span>
@@ -222,15 +294,39 @@ export default function FoodTab({
               Today
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setDatePickerOpen((open) => !open)}
+            aria-expanded={datePickerOpen}
+            className="text-2xs font-semibold uppercase tracking-wider text-ink-dim hover:text-accent sm:hidden"
+          >
+            {datePickerOpen ? "Close date" : "Change date"}
+          </button>
           <input
             type="date"
             value={date}
             max={todayStr()}
             aria-label="Show a different day"
-            onChange={(e) => setDate(e.target.value)}
-            className="field num py-1 px-2 text-base sm:text-2xs"
+            onChange={(e) => {
+              setDate(e.target.value);
+              setDatePickerOpen(false);
+            }}
+            className="field num hidden py-1 px-2 text-base sm:block sm:text-2xs"
           />
         </div>
+        {datePickerOpen && (
+          <input
+            type="date"
+            value={date}
+            max={todayStr()}
+            aria-label="Show a different day"
+            onChange={(e) => {
+              setDate(e.target.value);
+              setDatePickerOpen(false);
+            }}
+            className="field num w-full py-1 px-2 text-base sm:hidden"
+          />
+        )}
       </div>
 
       {loadedDate !== date ? (
@@ -252,26 +348,146 @@ export default function FoodTab({
         </section>
       ) : (
         <>
-          {/* Calorie readout */}
-          <section className="panel gridlines mt-2 p-3">
-            <div className="flex items-baseline justify-between">
-              <span className="text-2xs uppercase tracking-wider text-ink-faint">
-                Calories
+          {/* The day's primary task lands before its report. Meal selection is
+              deliberate, but it belongs inside the logging flow rather than
+              competing with the dashboard before the user has chosen to log. */}
+          <section className="panel mt-2 overflow-hidden" aria-labelledby="log-food-heading">
+            <button
+              type="button"
+              onClick={() => setShowAdd((open) => !open)}
+              aria-expanded={showAdd}
+              aria-controls="food-composer"
+              aria-label={`${showAdd ? "Close" : "Open"} food composer for ${meal}`}
+              className={`motion-press flex min-h-[56px] w-full items-center justify-between gap-3 px-3 text-left transition-colors ${
+                showAdd ? "bg-panel-2 text-ink hover:bg-bg" : "bg-ink text-panel hover:opacity-95"
+              }`}
+            >
+              <span className="min-w-0">
+                <span id="log-food-heading" className="block text-xs font-semibold uppercase tracking-widest">
+                  {showAdd ? "Food composer" : "Log food"}
+                </span>
+                <span
+                  className={`mt-0.5 block text-2xs ${showAdd ? "text-ink-faint" : "text-panel/70"}`}
+                >
+                  {showAdd ? `Adding to ${meal}` : `${meal} · ${date === todayStr() ? "today" : prettyDate(date)}`}
+                </span>
               </span>
-              <button
-                onClick={revalidate}
-                disabled={refreshing}
-                title="Reload this day"
-                className="num -m-1.5 p-1.5 text-2xs text-ink-faint transition-colors hover:text-ink disabled:opacity-60"
-              >
-                {total.count} {total.count === 1 ? "entry" : "entries"}
-                {lastLoaded && (
-                  <span className="ml-1.5">
-                    {refreshing ? "· syncing" : `· ${clockTime(lastLoaded)} ↻`}
-                  </span>
-                )}
-                <span className="sr-only"> — reload this day</span>
-              </button>
+              <span className="num text-lg leading-none" aria-hidden="true">
+                {showAdd ? "−" : "+"}
+              </span>
+            </button>
+
+            {quickItems.length > 0 && (
+              <div className="border-t px-3 py-2.5" style={{ borderColor: "var(--line)" }}>
+                <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                  <h2 id="quick-add-heading" className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+                    Quick add
+                  </h2>
+                  <span id="quick-add-hint" className="text-2xs text-ink-faint">1 tap · Undo</span>
+                </div>
+                <div
+                  className="no-scrollbar flex gap-2 overflow-x-auto pb-0.5"
+                  role="group"
+                  aria-labelledby="quick-add-heading"
+                  aria-describedby="quick-add-hint"
+                >
+                  {quickItems.map((item) => {
+                    const { food } = item;
+                    const isLogging = quickLoggingName === food.name;
+                    return (
+                      <button
+                        key={`${item.kind}:${"id" in food ? food.id : food.name}`}
+                        type="button"
+                        onClick={() => void quickLog(food)}
+                        disabled={quickLoggingName !== null}
+                        aria-busy={isLogging || undefined}
+                        aria-label={`Log ${food.name}, ${Math.round(food.calories)} calories, to ${meal}`}
+                        className="motion-press flex min-h-[40px] shrink-0 items-center gap-1.5 rounded border border-line bg-panel-2 px-2.5 py-1.5 text-left transition-colors hover:border-accent disabled:cursor-wait disabled:opacity-60"
+                      >
+                        <span className={`truncate text-xs font-medium ${item.kind === "favorite" ? "text-accent" : "text-ink"}`}>
+                          {isLogging ? "Logging…" : `${item.kind === "favorite" ? "★ " : ""}${food.name}`}
+                        </span>
+                        {!isLogging && (
+                          <span className="num shrink-0 text-2xs text-ink-faint">
+                            {Math.round(food.calories)} kcal · {quickItemDetail(item)}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {showAdd && (
+              <div id="food-composer" className="border-t px-3 py-3" style={{ borderColor: "var(--line)" }}>
+                <div className="mb-3 flex items-end justify-between gap-3 border-b pb-2" style={{ borderColor: "var(--line-soft)" }}>
+                  <div>
+                    <p className="text-2xs uppercase tracking-wider text-ink-faint">Logging to</p>
+                    <p className="mt-0.5 text-xs font-semibold capitalize text-ink">{meal}</p>
+                  </div>
+                  <Select
+                    value={meal}
+                    onChange={(e) => setMeal(e.target.value as Meal)}
+                    aria-label="Meal for this food"
+                    className="capitalize text-xs"
+                    wrapClassName="w-36 shrink-0"
+                  >
+                    {MEALS.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </Select>
+                </div>
+                <AddFood
+                  key={`${userId}:${date}`}
+                  userId={userId}
+                  date={date}
+                  meal={meal}
+                  onMealChange={setMeal}
+                  favorites={favorites}
+                  recent={recent}
+                  copied={copied}
+                  onRemoveCopied={dropCopy}
+                  onLogged={refreshFoodLog}
+                  onFavoritesChanged={() => { void onQuickAddDataChanged(); }}
+                  onQuickLog={quickLog}
+                  quickLoggingName={quickLoggingName}
+                />
+              </div>
+            )}
+          </section>
+
+          {/* Calorie readout */}
+          <section className="panel gridlines mt-2 p-3" aria-labelledby="calories-heading">
+            <div className="flex items-baseline justify-between">
+              <h2 id="calories-heading" className="text-2xs uppercase tracking-wider text-ink-faint">
+                Calories
+              </h2>
+              <div className="flex min-w-0 items-center gap-0.5">
+                <span className="num min-w-0 text-right text-2xs text-ink-faint">
+                  {total.count} {total.count === 1 ? "entry" : "entries"}
+                  {lastLoaded && (
+                    <span className="ml-1.5">
+                      {refreshing ? "· syncing" : `· ${clockTime(lastLoaded)}`}
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={revalidate}
+                  disabled={refreshing}
+                  aria-label="Refresh food log"
+                  title="Refresh food log"
+                  className="glyph-btn -my-2 -mr-2 text-ink-faint transition-colors hover:text-ink disabled:opacity-60"
+                >
+                  <RefreshCw
+                    size={14}
+                    strokeWidth={1.75}
+                    aria-hidden="true"
+                    className={refreshing ? "animate-spin" : undefined}
+                  />
+                </button>
+              </div>
             </div>
 
             <div className="mt-1 flex items-baseline gap-2">
@@ -298,7 +514,7 @@ export default function FoodTab({
                   onClick={() => goTab("settings")}
                   className="ml-auto text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
                 >
-                  Set daily goals →
+                  Set targets →
                 </button>
               )}
             </div>
@@ -320,7 +536,8 @@ export default function FoodTab({
           </section>
 
           {/* Secondary macros */}
-          <section className="panel mt-2 grid grid-cols-3 gap-2 p-3">
+          <section className="panel mt-2 grid grid-cols-3 gap-2 p-3" aria-labelledby="nutrition-heading">
+            <h2 id="nutrition-heading" className="sr-only">Nutrition</h2>
             {[
               { label: "protein", cur: total.protein, goal: goals.dailyProtein, unit: "g" },
               { label: "carbs", cur: total.carbs, goal: goals.dailyCarbs, unit: "g" },
@@ -337,180 +554,47 @@ export default function FoodTab({
                 unit={m.unit}
               />
             ))}
-            {!calGoal && !goals.dailyProtein && !goals.dailyCarbs && !goals.dailyFat && (
-              <div
-                className="col-span-full border-t pt-2 text-center"
-                style={{ borderColor: "var(--line-soft)" }}
-              >
-                <button
-                  onClick={() => goTab("settings")}
-                  className="text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
-                >
-                  Set daily nutrition goals in Settings →
-                </button>
-              </div>
-            )}
           </section>
 
-          {/* Contextual weight reading and quick logging for this day */}
-          <WeightCard
-            date={date}
-            logs={weightLogs}
-            weightUnit={goals.weightUnit || "kg"}
-            onLogsChange={onWeightLogsChange}
-          />
-
-          {/* Meal selector for new entries */}
-          <div
-            className="panel mt-2 flex overflow-hidden"
-            role="group"
-            aria-label="Meal for new entries"
-          >
-            {MEALS.map((m) => {
-              const active = meal === m;
-              return (
-                <button
-                  key={m}
-                  onClick={() => setMeal(m)}
-                  aria-pressed={active}
-                  className="motion-segment flex-1 border-r py-2 text-2xs font-semibold uppercase tracking-wider transition-colors last:border-r-0"
-                  style={{
-                    borderColor: "var(--line)",
-                    background: active ? "var(--ink)" : "transparent",
-                    color: active ? "var(--panel)" : "var(--ink-dim)",
-                  }}
-                >
-                  {m}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Add food composer */}
-          <Panel
-            title="Add food"
-            hint={copied.length > 0 ? `${copied.length} copied` : undefined}
-            open={showAdd}
-            onToggle={() => setShowAdd((s) => !s)}
-          >
-            <AddFood
-              key={`${userId}:${date}`}
-              userId={userId}
-              date={date}
-              meal={meal}
-              onMealChange={setMeal}
-              favorites={favorites}
-              recent={recent}
-              copied={copied}
-              onRemoveCopied={dropCopy}
-              onLogged={() => loadDay(date)}
-              onFavoritesChanged={() => {
-                // Triggered in parent via callback
-              }}
-            />
-          </Panel>
-
           {/* Entries, grouped by meal or onboarding empty state */}
-          <section className="mt-2">
+          <section className="mt-2" aria-labelledby="meals-heading">
+            <h2 id="meals-heading" className="sr-only">Meals</h2>
             {isFirstRun ? (
-              <div className="panel px-4 py-6 text-center space-y-3">
+              <div className="panel px-4 py-5 text-center">
                 <div>
-                  <h2 className="text-xs font-semibold uppercase tracking-widest text-ink">
+                  <h3 className="text-xs font-semibold uppercase tracking-widest text-ink">
                     Welcome to Diet Tracker
-                  </h2>
+                  </h3>
                   <p className="mt-1 text-2xs text-ink-dim max-w-sm mx-auto">
-                    Fast, precise daily nutrition logging without bloat or ads. Here is how to get started:
+                    Start with one food. You can set targets once you have a day to read.
                   </p>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-left pt-1">
-                  <div className="rounded border p-2.5 bg-panel-2 border-line">
-                    <span className="text-2xs font-semibold uppercase tracking-wider text-accent block">1. Targets</span>
-                    <p className="mt-1 text-2xs text-ink-faint">
-                      Set calorie &amp; macro targets in Settings, or calculate via TDEE.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => goTab("settings")}
-                      className="mt-2 text-2xs font-semibold text-accent hover:underline block"
-                    >
-                      Set Goals →
-                    </button>
-                  </div>
-                  <div className="rounded border p-2.5 bg-panel-2 border-line">
-                    <span className="text-2xs font-semibold uppercase tracking-wider text-accent block">2. Log Food</span>
-                    <p className="mt-1 text-2xs text-ink-faint">
-                      Compose meals with barcode scanning, Open Food Facts, or quick macros.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setShowAdd(true)}
-                      className="mt-2 text-2xs font-semibold text-accent hover:underline block"
-                    >
-                      Add Food (N) →
-                    </button>
-                  </div>
-                  <div className="rounded border p-2.5 bg-panel-2 border-line">
-                    <span className="text-2xs font-semibold uppercase tracking-wider text-accent block">3. AI Assistant</span>
-                    <p className="mt-1 text-2xs text-ink-faint">
-                      Connect Claude, ChatGPT, or Cursor via MCP to log meals hands-free.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => goTab("settings")}
-                      className="mt-2 text-2xs font-semibold text-ink-dim hover:text-ink block"
-                    >
-                      MCP URL →
-                    </button>
-                  </div>
-                </div>
-                <div className="pt-1 text-center">
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t pt-3" style={{ borderColor: "var(--line-soft)" }}>
+                  <button
+                    type="button"
+                    onClick={() => goTab("settings")}
+                    className="text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
+                  >
+                    Set optional daily targets →
+                  </button>
                   <button
                     type="button"
                     onClick={onOpenShortcuts}
                     className="text-2xs text-ink-faint hover:text-ink"
                   >
-                    Press <kbd className="num border px-1 rounded bg-panel border-line text-ink">?</kbd> anytime for keyboard shortcuts
+                    <kbd className="num border px-1 rounded bg-panel border-line text-ink">?</kbd> shortcuts
                   </button>
                 </div>
               </div>
             ) : entries.length === 0 ? (
-              <div className="panel px-4 py-8 text-center space-y-3">
+              <div className="panel px-4 py-6 text-center">
                 <p className="text-xs text-ink-faint">
                   Nothing logged {date === todayStr() ? "today" : `on ${prettyDate(date)}`}.
                 </p>
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowAdd(true)}
-                    className="btn btn-primary inline-flex items-center gap-1.5 px-4 py-2 text-xs"
-                  >
-                    + Add Food to {meal}
-                  </button>
-                </div>
-                {favorites.length > 0 && (
-                  <div className="pt-3 border-t border-line text-left">
-                    <span className="text-2xs font-semibold uppercase tracking-wider text-ink-faint block mb-1.5">
-                      Or quick-add a favorite:
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {favorites.slice(0, 4).map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => {
-                            setShowAdd(true);
-                          }}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded border border-line bg-panel-2 text-2xs hover:border-accent transition-colors"
-                        >
-                          <span className="font-medium text-ink">{f.name}</span>
-                          <span className="num text-ink-faint">{f.calories} kcal</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <p className="text-2xs text-ink-faint pt-1">
-                  Log in seconds here, or tell your AI assistant to log meals via MCP.
+                <p className="mt-2 text-2xs text-ink-faint">
+                  {quickItems.length > 0
+                    ? "Quick add is ready above. Open Log food to search or adjust an amount."
+                    : "Open Log food to search, scan, or enter an item."}
                 </p>
               </div>
             ) : (
@@ -574,7 +658,7 @@ export default function FoodTab({
                 {MEALS.filter((m) => !entries.some((e) => e.mealType === m)).length > 0 &&
                   MEALS.filter((m) => !entries.some((e) => e.mealType === m)).length < MEALS.length && (
                     <div className="flex items-center justify-between gap-2 px-1 pt-0.5 text-2xs text-ink-faint">
-                      <span>Unlogged meals:</span>
+                      <span>Add another meal:</span>
                       <div className="flex gap-2">
                         {MEALS.filter((m) => !entries.some((e) => e.mealType === m)).map((m) => (
                           <button
@@ -595,6 +679,14 @@ export default function FoodTab({
               </>
             )}
           </section>
+
+          {/* Weight remains available, but the day’s actual food record comes first. */}
+          <WeightCard
+            date={date}
+            logs={weightLogs}
+            weightUnit={goals.weightUnit || "kg"}
+            onLogsChange={onWeightLogsChange}
+          />
 
           {/* Trends & Analysis */}
           <Panel

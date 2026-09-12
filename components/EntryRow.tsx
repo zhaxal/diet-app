@@ -310,7 +310,11 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
               {formatQuantity(entry.quantity, entry.quantityUnit ?? "g")}
             </span>}
             <span className="num">{clockTime(entry.consumedAt)}</span>
-            {entry.source === "mcp" && <span title="Logged by the assistant">ai</span>}
+            {entry.source === "mcp" && (
+              <span className="font-medium tracking-wide text-ink-dim" aria-label="Logged by assistant">
+                SRC: AI
+              </span>
+            )}
           </span>
         </div>
         <Pencil

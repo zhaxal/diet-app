@@ -86,6 +86,17 @@ function MotionRegion({ motionKey, children }: { motionKey: string; children: Re
 const TABS: Tab[] = ["food", "workout", "settings"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+function isCalendarDate(value: string): boolean {
+  if (!DATE_RE.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
 export default function Page() {
   return (
     // useSearchParams needs a boundary; the shell renders instantly either way.
@@ -108,7 +119,11 @@ function Dashboard() {
   const tabParam = params.get("tab");
   const tab: Tab = tabParam === "workout" || tabParam === "settings" ? tabParam : "food";
   const dParam = params.get("d");
-  const date = dParam && DATE_RE.test(dParam) ? dParam : todayStr();
+  const currentDay = todayStr();
+  // A day navigator that cannot show its selected day is worse than no
+  // navigator. The native date field already prevents future choices; this
+  // guards links, bookmarks, and hand-edited URLs as well.
+  const date = dParam && isCalendarDate(dParam) && dParam <= currentDay ? dParam : currentDay;
 
   const writeParams = useCallback(
     (next: { tab?: Tab; d?: string }, mode: "push" | "replace" = "push") => {
@@ -121,6 +136,10 @@ function Dashboard() {
   );
   const goTab = useCallback((t: Tab) => writeParams({ tab: t }), [writeParams]);
   const setDate = useCallback((d: string) => writeParams({ d }), [writeParams]);
+
+  useEffect(() => {
+    if (dParam !== null && dParam !== date) writeParams({ d: date }, "replace");
+  }, [dParam, date, writeParams]);
   const [workoutRefreshKey, setWorkoutRefreshKey] = useState(0);
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -176,6 +195,16 @@ function Dashboard() {
   dateRef.current = date;
   const [dayReads] = useState(() => createLatestRequest(() => dateRef.current));
   useEffect(() => () => dayReads.invalidate(), [dayReads]);
+
+  const refreshQuickAdd = useCallback(async () => {
+    try {
+      const { favorites: favs, recent: rec } = await api.listFavorites();
+      setFavorites(favs);
+      setRecent(rec);
+    } catch {
+      // A new entry remains valid even if the convenience rail cannot refresh.
+    }
+  }, []);
 
   // Everything a snapshot needs beyond the day itself, held in a ref so that
   // writing one does not change `loadDay`'s identity — which would re-run the
@@ -601,10 +630,7 @@ function Dashboard() {
     setEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
     // Use the same guarded read as navigation, including the offline snapshot.
     void loadDay(date);
-    api.listFavorites().then(({ favorites: favs, recent: rec }) => {
-      setFavorites(favs);
-      setRecent(rec);
-    }).catch(() => {});
+    void refreshQuickAdd();
   }
 
   const mcpUrl = apiKey ? `${origin}/api/mcp?key=${apiKey}` : "";
@@ -801,7 +827,7 @@ function Dashboard() {
           recent={recent}
           copied={copied}
           dropCopy={dropCopy}
-          setFavorites={setFavorites}
+          onQuickAddDataChanged={refreshQuickAdd}
           trends={trends}
           trendsError={trendsError}
           trendRange={trendRange}
