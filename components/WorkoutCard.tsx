@@ -34,18 +34,29 @@ interface WorkoutCardProps {
   onWorkoutSaved?: () => void;
 }
 
+interface CachedWorkoutSession {
+  workout: ClientWorkout | null;
+  title: string;
+  rawNote: string;
+  exerciseStats: Record<string, ExerciseStats>;
+  saveStatus: "saved" | "saving" | "unsaved";
+}
+
+const workoutSessionCache = new Map<string, CachedWorkoutSession>();
+
 export default function WorkoutCard({
   date,
   weightUnit,
   onToast,
   onWorkoutSaved,
 }: WorkoutCardProps) {
-  const [workout, setWorkout] = useState<ClientWorkout | null>(null);
-  const [title, setTitle] = useState<string>("Workout");
-  const [rawNote, setRawNote] = useState<string>("");
-  const [exerciseStats, setExerciseStats] = useState<Record<string, ExerciseStats>>({});
-  const [loading, setLoading] = useState<boolean>(true);
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
+  const cached = workoutSessionCache.get(date);
+  const [workout, setWorkout] = useState<ClientWorkout | null>(cached ? cached.workout : null);
+  const [title, setTitle] = useState<string>(cached ? cached.title : "Workout");
+  const [rawNote, setRawNote] = useState<string>(cached ? cached.rawNote : "");
+  const [exerciseStats, setExerciseStats] = useState<Record<string, ExerciseStats>>(cached ? cached.exerciseStats : {});
+  const [loading, setLoading] = useState<boolean>(!cached);
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(cached ? cached.saveStatus : "saved");
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
   const [suggestedExercises, setSuggestedExercises] = useState<
     Array<{ id: string; name: string; normalized: string; muscleGroup?: string }>
@@ -90,7 +101,9 @@ export default function WorkoutCard({
 
   // Load workout from server or local draft
   const loadWorkout = useCallback(() => {
-    setLoading(true);
+    if (!workoutSessionCache.has(date)) {
+      setLoading(true);
+    }
     setConfirmDelete(false);
     api
       .getWorkout(date)
@@ -101,26 +114,39 @@ export default function WorkoutCard({
           setRawNote(res.workout.rawNote);
           setExerciseStats(res.exerciseStats || {});
           setSaveStatus("saved");
+          workoutSessionCache.set(date, {
+            workout: res.workout,
+            title: res.workout.title,
+            rawNote: res.workout.rawNote,
+            exerciseStats: res.exerciseStats || {},
+            saveStatus: "saved",
+          });
         } else {
           // Check local storage draft
+          let nextTitle = "Workout";
+          let nextNote = "";
+          let nextStatus: "saved" | "saving" | "unsaved" = "saved";
           const localDraft = localStorage.getItem(draftKey);
           if (localDraft) {
             try {
               const d = JSON.parse(localDraft);
-              setTitle(d.title || "Workout");
-              setRawNote(d.rawNote || "");
-              setSaveStatus("unsaved");
-            } catch {
-              setTitle("Workout");
-              setRawNote("");
-            }
-          } else {
-            setWorkout(null);
-            setTitle("Workout");
-            setRawNote("");
-            setSaveStatus("saved");
+              nextTitle = d.title || "Workout";
+              nextNote = d.rawNote || "";
+              nextStatus = "unsaved";
+            } catch {}
           }
+          setWorkout(null);
+          setTitle(nextTitle);
+          setRawNote(nextNote);
+          setSaveStatus(nextStatus);
           setExerciseStats(res.exerciseStats || {});
+          workoutSessionCache.set(date, {
+            workout: null,
+            title: nextTitle,
+            rawNote: nextNote,
+            exerciseStats: res.exerciseStats || {},
+            saveStatus: nextStatus,
+          });
         }
         setLoading(false);
       })
@@ -177,6 +203,13 @@ export default function WorkoutCard({
         setWorkout(res.workout);
         setExerciseStats(res.exerciseStats || {});
         setSaveStatus("saved");
+        workoutSessionCache.set(date, {
+          workout: res.workout,
+          title: titleToSave,
+          rawNote: noteToSave,
+          exerciseStats: res.exerciseStats || {},
+          saveStatus: "saved",
+        });
         localStorage.removeItem(draftKey);
         onWorkoutSaved?.();
       } catch (err) {
@@ -238,6 +271,7 @@ export default function WorkoutCard({
     setTitle("Workout");
     setRawNote("");
     setSaveStatus("saved");
+    workoutSessionCache.delete(date);
     setConfirmDelete(false);
     onToast("Workout deleted");
     onWorkoutSaved?.();
@@ -364,7 +398,7 @@ export default function WorkoutCard({
     return (
       <div
         key={`${date}:empty`}
-        className="motion-day-surface panel p-4 space-y-3 transition-colors"
+        className="panel p-4 space-y-3 transition-colors"
         style={{ background: "var(--panel)", borderColor: "var(--line)" }}
       >
         <div

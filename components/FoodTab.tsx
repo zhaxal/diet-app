@@ -549,7 +549,7 @@ export default function FoodTab({
         )}
       </div>
 
-      <DayTransition transitionKey={`${date}:${daySurface}`}>
+      <DayTransition transitionKey={date}>
       {loadedDate !== date ? (
         <FoodDaySkeleton date={date} />
       ) : dayError ? (

@@ -58,6 +58,13 @@ export default function DayTransition({
         const priorDate = prior.transitionKey.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? "";
         const nextDate = transitionKey.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? "";
 
+        // If an animation is already running and the calendar date has not changed,
+        // do not interrupt the in-flight slide animation.
+        if (priorDate && nextDate && priorDate === nextDate && snapshot != null) {
+          prev.current = { transitionKey, content: children };
+          return;
+        }
+
         // If the date itself changed, slide directionally. If only the surface
         // state changed (loading→ready on the same day), fall back to a plain
         // opacity cross-fade by using "right" as a default.

@@ -202,7 +202,6 @@ function Dashboard() {
     [params],
   );
   const goTab = useCallback((t: Tab) => writeParams({ tab: t }), [writeParams]);
-  const setDate = useCallback((d: string) => writeParams({ d }), [writeParams]);
 
   useEffect(() => {
     if (dParam !== null && dParam !== date) writeParams({ d: date }, "replace");
@@ -221,6 +220,9 @@ function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loadedDate, setLoadedDate] = useState<string | null>(null);
   const loadedDateRef = useRef<string | null>(null);
+  const dayCacheRef = useRef<Map<string, { entries: FoodEntry[]; summary: Summary | null }>>(
+    new Map(),
+  );
 
   const [goals, setGoals] = useState<Goals>({ dailyCalories: null, dailyProtein: null, dailyCarbs: null, dailyFat: null, dailyFiber: null, dailySugar: null, dailySodium: null, weightUnit: "kg", timezone: "UTC", sex: null, birthYear: null, heightCm: null });
   const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]);
@@ -301,6 +303,7 @@ function Dashboard() {
       // it would mean the next offline launch could not show the current day,
       // which is the only thing the offline launch is for.
       if (!userId || d !== todayStr()) return;
+      dayCacheRef.current.set(d, { entries: dayEntries, summary: sum });
       const aux = auxRef.current;
       writeSnapshot({
         userId,
@@ -330,10 +333,34 @@ function Dashboard() {
     }
   }, []);
 
+  const setDate = useCallback(
+    (d: string) => {
+      const cached = dayCacheRef.current.get(d);
+      if (cached) {
+        setEntries(cached.entries);
+        applySummary(d, cached.summary);
+        loadedDateRef.current = d;
+        setLoadedDate(d);
+        setDayError(null);
+      }
+      writeParams({ d });
+    },
+    [writeParams, applySummary],
+  );
+
   const loadDay = useCallback(async (d: string) => {
+    const cached = dayCacheRef.current.get(d);
+    if (cached && loadedDateRef.current !== d) {
+      setEntries(cached.entries);
+      applySummary(d, cached.summary);
+      loadedDateRef.current = d;
+      setLoadedDate(d);
+      setDayError(null);
+    }
     await dayReads.run(d,
       () => Promise.all([api.listEntries(d), api.summary(d)]),
       ([{ entries: rows }, sum]) => {
+        dayCacheRef.current.set(d, { entries: rows, summary: sum });
         setEntries(rows);
         applySummary(d, sum);
         loadedDateRef.current = d;
@@ -620,6 +647,7 @@ function Dashboard() {
   async function clearMeal(m: Meal, items: FoodEntry[]) {
     if (items.length === 0) return;
     const doomed = [...items];
+    dayCacheRef.current.delete(date);
     try {
       for (const item of doomed) {
         await api.deleteEntry(item.id);
@@ -665,6 +693,7 @@ function Dashboard() {
 
   async function removeEntry(id: string) {
     const doomed = entries.find((e) => e.id === id);
+    dayCacheRef.current.delete(date);
     try {
       await api.deleteEntry(id);
       await loadDay(date);
@@ -704,6 +733,7 @@ function Dashboard() {
 
   function updateEntry(updated: FoodEntry) {
     if (date !== dateRef.current) return;
+    dayCacheRef.current.delete(date);
     setEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
     // Use the same guarded read as navigation, including the offline snapshot.
     void loadDay(date);
@@ -834,6 +864,7 @@ function Dashboard() {
     clearSnapshot();
     clearTray();
     clearFoodDrafts();
+    dayCacheRef.current.clear();
     try {
       await api.logout();
     } catch {
