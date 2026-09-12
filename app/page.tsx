@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useId, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -65,6 +65,22 @@ function weekEnding(end: string): string[] {
  */
 function stripEnding(selected: string, today: string): string {
   return selected > shiftDate(today, -6) ? today : selected;
+}
+
+// Tabs and days are URL state, so a short transition helps a new reading land
+// without resetting the forms nested inside it. Alternating animation names
+// restarts the CSS animation while preserving the rendered child tree.
+function MotionRegion({ motionKey, children }: { motionKey: string; children: ReactNode }) {
+  const [phase, setPhase] = useState<"a" | "b">("a");
+  const previousKey = useRef(motionKey);
+
+  useEffect(() => {
+    if (previousKey.current === motionKey) return;
+    previousKey.current = motionKey;
+    setPhase((current) => (current === "a" ? "b" : "a"));
+  }, [motionKey]);
+
+  return <div className={`motion-view motion-view--${phase}`}>{children}</div>;
 }
 
 const TABS: Tab[] = ["food", "workout", "settings"];
@@ -650,6 +666,7 @@ function Dashboard() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -750,6 +767,7 @@ function Dashboard() {
 
   return (
     <div className="mx-auto max-w-2xl px-3 pb-32 pt-3">
+      <MotionRegion motionKey={tab === "settings" ? tab : `${tab}:${date}`}>
       {tab === "food" && (
         <FoodTab
           date={date}
@@ -843,6 +861,7 @@ function Dashboard() {
           logout={logout}
         />
       )}
+      </MotionRegion>
 
       {showWorkoutImportModal && (
         <WorkoutImportModal

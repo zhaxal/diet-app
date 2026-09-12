@@ -23,12 +23,9 @@ export default function WorkoutSummaryCard({
   refreshTrigger = 0,
 }: WorkoutSummaryCardProps) {
   const [data, setData] = useState<SummaryData | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     api
       .getWorkoutSummary(30)
       .then((res) => {
@@ -36,10 +33,7 @@ export default function WorkoutSummaryCard({
           setData(res.summary);
         }
       })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .catch(() => {});
 
     return () => {
       cancelled = true;
@@ -59,16 +53,6 @@ export default function WorkoutSummaryCard({
         <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
           30-Day Training Summary
         </h3>
-
-        <button
-          type="button"
-          onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-1.5 text-2xs uppercase tracking-wider text-ink-faint hover:text-ink transition-colors"
-          aria-expanded={expanded}
-        >
-          <span>{expanded ? "Hide details" : "Details"}</span>
-          <span className="num text-xs font-mono">{expanded ? "−" : "+"}</span>
-        </button>
       </div>
 
       {/* Primary Metrics Row - Unified Hairline Panel */}
@@ -99,41 +83,6 @@ export default function WorkoutSummaryCard({
           <div className="num text-sm font-bold text-ink mt-0.5">{data.totalReps}</div>
         </div>
       </div>
-
-      {/* Expanded Muscle Group Distribution */}
-      {expanded && (
-        <div className="mt-3 pt-2.5 border-t space-y-2" style={{ borderColor: "var(--line-soft)" }}>
-          <div className="text-2xs font-semibold uppercase tracking-wider text-ink-faint">
-            Sets by Muscle Group
-          </div>
-          <div className="space-y-2">
-            {Object.entries(data.muscleGroups)
-              .sort(([, a], [, b]) => b.sets - a.sets)
-              .map(([group, info]) => (
-                <div key={group} className="space-y-1">
-                  <div className="flex justify-between items-baseline text-2xs">
-                    <span className="text-ink font-medium">{group}</span>
-                    <span className="num text-ink-dim">
-                      {info.sets} sets ({info.percentage}%)
-                    </span>
-                  </div>
-                  <div
-                    className="h-1 w-full overflow-hidden rounded-sm"
-                    style={{ background: "var(--line-soft)" }}
-                  >
-                    <div
-                      className="h-full"
-                      style={{
-                        width: `${info.percentage}%`,
-                        background: "var(--accent)",
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

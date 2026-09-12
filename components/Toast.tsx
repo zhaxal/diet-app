@@ -85,7 +85,7 @@ function ToastMessage({ toast: t, onDismiss }: { toast: Toast; onDismiss: (id: n
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setFocused(true)}
       onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}
-      className={`pointer-events-auto flex w-full max-w-xl items-center gap-2 rounded px-3 py-2 text-sm font-medium shadow-lg ${t.kind === "success" ? "bg-accent" : t.kind === "error" ? "bg-over" : "bg-ink"} text-panel`}
+      className={`motion-toast pointer-events-auto flex w-full max-w-xl items-center gap-2 rounded px-3 py-2 text-sm font-medium shadow-lg ${t.kind === "success" ? "bg-accent" : t.kind === "error" ? "bg-over" : "bg-ink"} text-panel`}
     >
       <span className="min-w-0 flex-1 break-words">{failure ?? t.message}</span>
       {t.action && <button onClick={act} disabled={pending} className="shrink-0 border-l px-2 text-xs font-semibold" style={{ borderColor: "currentColor" }}>

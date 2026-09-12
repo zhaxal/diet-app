@@ -38,8 +38,8 @@ export default function BottomNav({ active, onChange }: { active: Tab; onChange:
               key={id}
               onClick={() => onChange(id)}
               aria-current={isActive ? "page" : undefined}
-              className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-2xs font-medium tracking-wider transition-colors ${
-                isActive ? "text-accent" : "text-ink-faint"
+              className={`motion-nav-tab flex flex-1 flex-col items-center gap-1 py-2.5 text-2xs font-medium tracking-wider transition-colors ${
+                isActive ? "motion-nav-tab--active text-accent" : "text-ink-faint"
               }`}
             >
               {/* Colour and stroke weight carry the state; the system has no

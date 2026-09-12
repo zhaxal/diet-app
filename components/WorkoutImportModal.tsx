@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { X, UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { useState, useRef } from "react";
+import { UploadCloud, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
+import { Dialog } from "@/components/Dialog";
 
 interface WorkoutImportModalProps {
   onClose: () => void;
@@ -26,6 +27,7 @@ export default function WorkoutImportModal({
   const [markdownText, setMarkdownText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [preview, setPreview] = useState<{
     totalWorkouts: number;
     totalExercises: number;
@@ -34,14 +36,13 @@ export default function WorkoutImportModal({
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Close on Escape
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  function requestClose() {
+    if (markdownText.trim()) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  }
 
   // Handle file reading
   const handleFile = (file: File) => {
@@ -105,7 +106,6 @@ export default function WorkoutImportModal({
 
       if (res.ok) {
         onSuccess(res.total || 0);
-        onClose();
       } else {
         setError("Import failed to save workouts");
       }
@@ -117,49 +117,70 @@ export default function WorkoutImportModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-      style={{ background: "color-mix(in srgb, var(--ink) 65%, transparent)" }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="import-modal-title"
-        className="relative flex flex-col w-full max-w-xl max-h-[92dvh] sm:max-h-[85vh] overflow-hidden rounded-t sm:rounded border"
-        style={{
-          background: "var(--panel)",
-          borderColor: "var(--line)",
-          paddingBottom: "env(safe-area-inset-bottom)",
-        }}
-      >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between border-b px-4 py-3"
-          style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
-        >
-          <div>
-            <h2 id="import-modal-title" className="text-sm font-semibold tracking-wide text-ink">
-              Import Workouts
-            </h2>
-            <p className="text-2xs text-ink-faint uppercase tracking-wider">
-              Obsidian Markdown · Bulk Notes
-            </p>
+    <Dialog
+      open
+      onClose={requestClose}
+      title="Import Workouts"
+      description="Obsidian Markdown · Bulk Notes"
+      size="lg"
+      bodyClassName="p-4"
+      footer={
+        confirmDiscard ? (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-over">Discard the import text and preview?</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDiscard(false)}
+                className="btn btn-ghost"
+              >
+                Keep editing
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="btn border border-over text-over hover:bg-over hover:text-panel"
+              >
+                Discard import
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded text-ink-faint hover:text-ink transition-colors"
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </div>
+        ) : (
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={requestClose}
+              className="btn btn-ghost px-3 py-1.5 text-xs text-ink-dim"
+            >
+              Cancel
+            </button>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs">
+            {!preview ? (
+              <button
+                type="button"
+                disabled={loading || !markdownText.trim()}
+                onClick={() => runDryRun(markdownText)}
+                className="btn btn-primary flex items-center gap-1.5 px-4 py-1.5 text-xs"
+              >
+                {loading && <Loader2 size={13} className="animate-spin" />}
+                <span>Preview Import</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={handleCommitImport}
+                className="btn btn-primary flex items-center gap-1.5 px-4 py-1.5 text-xs"
+              >
+                {loading && <Loader2 size={13} className="animate-spin" />}
+                <span>Confirm & Import ({preview.totalWorkouts})</span>
+              </button>
+            )}
+          </div>
+        )
+      }
+    >
+      <div className="space-y-3.5 text-xs">
           <p className="text-ink-dim leading-relaxed">
             Paste your Obsidian workout notes below or upload a <code className="font-mono text-2xs px-1 py-0.5 rounded border" style={{ borderColor: "var(--line)" }}>.md</code> file. Multi-day journals with dated headers (e.g. <span className="font-mono text-ink font-semibold">## 2026-09-08 Push Day</span>) are automatically split and mapped to dates.
           </p>
@@ -198,6 +219,7 @@ export default function WorkoutImportModal({
               onChange={(e) => {
                 setMarkdownText(e.target.value);
                 setPreview(null);
+                setConfirmDiscard(false);
               }}
               placeholder={`## 2026-09-08 Push Day\nBench Press\n- 80${weightUnit} x 8\n- 80${weightUnit} x 8\n\n## 2026-09-10 Pull Day\nPullups\n- BW x 10`}
               rows={8}
@@ -254,44 +276,7 @@ export default function WorkoutImportModal({
               </div>
             </div>
           )}
-        </div>
-
-        {/* Footer Actions */}
-        <div
-          className="flex items-center justify-end gap-2 border-t p-3"
-          style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
-        >
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn btn-ghost px-3 py-1.5 text-xs text-ink-dim"
-          >
-            Cancel
-          </button>
-
-          {!preview ? (
-            <button
-              type="button"
-              disabled={loading || !markdownText.trim()}
-              onClick={() => runDryRun(markdownText)}
-              className="btn btn-primary px-4 py-1.5 text-xs flex items-center gap-1.5"
-            >
-              {loading && <Loader2 size={13} className="animate-spin" />}
-              <span>Preview Import</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={loading}
-              onClick={handleCommitImport}
-              className="btn btn-primary px-4 py-1.5 text-xs flex items-center gap-1.5"
-            >
-              {loading && <Loader2 size={13} className="animate-spin" />}
-              <span>Confirm & Import ({preview.totalWorkouts})</span>
-            </button>
-          )}
-        </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

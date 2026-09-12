@@ -15,7 +15,7 @@ import type { CopiedItem } from "@/lib/copied";
 import type { Tab } from "@/components/BottomNav";
 import { prettyDate, todayStr, clockTime, weekEnding } from "@/lib/time-client";
 import { Panel } from "@/components/Panel";
-import { Meter } from "@/components/Meter";
+import { Meter, MeterFill } from "@/components/Meter";
 import WeightCard from "@/components/WeightCard";
 import AddFood from "@/components/AddFood";
 import EntryRow from "@/components/EntryRow";
@@ -154,7 +154,7 @@ export default function FoodTab({
                       ? ", nothing logged"
                       : ""
               }`}
-              className="flex-1 border-r pt-1.5 text-center last:border-r-0 transition-colors"
+              className="motion-segment flex-1 border-r pt-1.5 text-center last:border-r-0 transition-colors"
               style={{
                 borderColor: "var(--line)",
                 background: active ? "var(--ink)" : "transparent",
@@ -174,16 +174,9 @@ export default function FoodTab({
                       : "var(--line-soft)",
                   }}
                 >
-                  <div
-                    className="h-full transition-[width] duration-500 ease-out"
-                    style={{
-                      width: `${pct}%`,
-                      background: active
-                        ? "var(--panel)"
-                        : dayOver
-                          ? "var(--over)"
-                          : "var(--accent)",
-                    }}
+                  <MeterFill
+                    progress={pct}
+                    color={active ? "var(--panel)" : dayOver ? "var(--over)" : "var(--accent)"}
                   />
                 </div>
               ) : (
@@ -315,13 +308,7 @@ export default function FoodTab({
                 className="mt-2 w-full overflow-hidden rounded-sm"
                 style={{ height: 8, background: "var(--line-soft)" }}
               >
-                <div
-                  className="h-full transition-[width] duration-500 ease-out"
-                  style={{
-                    width: `${calPct}%`,
-                    background: calOver ? "var(--over)" : "var(--accent)",
-                  }}
-                />
+                <MeterFill progress={calPct} over={calOver} />
               </div>
             ) : (
               <div
@@ -333,7 +320,7 @@ export default function FoodTab({
           </section>
 
           {/* Secondary macros */}
-          <section className="panel mt-2 grid grid-cols-3 gap-2 p-3 min-[480px]:grid-cols-6">
+          <section className="panel mt-2 grid grid-cols-3 gap-2 p-3">
             {[
               { label: "protein", cur: total.protein, goal: goals.dailyProtein, unit: "g" },
               { label: "carbs", cur: total.carbs, goal: goals.dailyCarbs, unit: "g" },
@@ -386,7 +373,7 @@ export default function FoodTab({
                   key={m}
                   onClick={() => setMeal(m)}
                   aria-pressed={active}
-                  className="flex-1 border-r py-2 text-2xs font-semibold uppercase tracking-wider transition-colors last:border-r-0"
+                  className="motion-segment flex-1 border-r py-2 text-2xs font-semibold uppercase tracking-wider transition-colors last:border-r-0"
                   style={{
                     borderColor: "var(--line)",
                     background: active ? "var(--ink)" : "transparent",

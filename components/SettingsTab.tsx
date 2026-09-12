@@ -8,6 +8,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import GoalsCard from "@/components/GoalsCard";
 import ProductsCard from "@/components/ProductsCard";
 import { Header, Panel } from "@/components/Panel";
+import { AlertDialog } from "@/components/Dialog";
 
 interface Props {
   email: string;
@@ -89,7 +90,7 @@ export default function SettingsTab({
 
         {showMcpDetails && (
           <div
-            className="mt-2 space-y-1.5 border-b pb-2.5 text-2xs text-ink-faint"
+            className="motion-disclosure-content mt-2 space-y-1.5 border-b pb-2.5 text-2xs text-ink-faint"
             style={{ borderColor: "var(--line-soft)" }}
           >
             <p>
@@ -127,35 +128,24 @@ export default function SettingsTab({
           <span className="text-ink-faint">
             Timezone <span className="num text-ink-dim">{goals.timezone}</span>
           </span>
-          {confirmingRegenerate ? (
-            <span className="flex items-center gap-2">
-              <span className="text-over">Invalidates current key?</span>
-              <button
-                type="button"
-                onClick={regenerateKey}
-                className="font-semibold text-over underline hover:no-underline"
-              >
-                Confirm
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmingRegenerate(false)}
-                className="text-ink-dim hover:text-ink"
-              >
-                Cancel
-              </button>
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmingRegenerate(true)}
-              className="text-ink-faint hover:text-over"
-            >
-              Regenerate key
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setConfirmingRegenerate(true)}
+            className="text-ink-faint hover:text-over"
+          >
+            Regenerate key
+          </button>
         </div>
       </section>
+
+      <AlertDialog
+        open={confirmingRegenerate}
+        onClose={() => setConfirmingRegenerate(false)}
+        title="Regenerate connector key?"
+        description="The current connector URL will stop working immediately. Every connected assistant will need the new URL."
+        confirmLabel="Regenerate key"
+        onConfirm={regenerateKey}
+      />
 
       <Panel title="Product catalog" hint="labels you can log by amount" defaultOpen={false}>
         <ProductsCard />
@@ -179,7 +169,7 @@ export default function SettingsTab({
 
         {showImportExportDetails && (
           <div
-            className="mt-2 space-y-1 border-b pb-2.5 text-2xs text-ink-faint"
+            className="motion-disclosure-content mt-2 space-y-1 border-b pb-2.5 text-2xs text-ink-faint"
             style={{ borderColor: "var(--line-soft)" }}
           >
             <p>

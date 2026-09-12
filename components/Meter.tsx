@@ -1,5 +1,36 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
+export function MeterFill({
+  progress,
+  over = false,
+  color,
+}: {
+  progress: number;
+  over?: boolean;
+  color?: string;
+}) {
+  const boundedProgress = Math.min(100, Math.max(0, progress));
+  const [renderedProgress, setRenderedProgress] = useState(0);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setRenderedProgress(boundedProgress));
+    return () => window.cancelAnimationFrame(frame);
+  }, [boundedProgress]);
+
+  return (
+    <div
+      aria-hidden="true"
+      className="motion-meter-fill h-full w-full"
+      style={{
+        transform: `scaleX(${renderedProgress / 100})`,
+        background: color ?? (over ? "var(--over)" : "var(--accent)"),
+      }}
+    />
+  );
+}
+
 // Horizontal readout: label, value/goal, and a thin bar. Packs far more per
 // screen than a ring and reads left-to-right like an instrument scale.
 export function Meter({
@@ -44,13 +75,7 @@ export function Meter({
           className="mt-1 w-full overflow-hidden rounded-sm"
           style={{ height: lg ? 6 : 4, background: "var(--line-soft)" }}
         >
-          <div
-            className="h-full transition-[width] duration-500 ease-out"
-            style={{
-              width: `${pct}%`,
-              background: over ? "var(--over)" : "var(--accent)",
-            }}
-          />
+          <MeterFill progress={pct} over={over} />
         </div>
       ) : (
         <div

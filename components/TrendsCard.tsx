@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { type Goals, type Meal, type TrendDay, type TrendRange, type Trends } from "@/lib/api-client";
 import { BarChart, LineChart } from "./MiniChart";
-import { Meter } from "./Meter";
+import { Meter, MeterFill } from "./Meter";
 
 interface Props {
   trends: Trends;
@@ -62,7 +62,7 @@ function Segmented<T extends string | number>({
             key={String(o)}
             onClick={() => onChange(o)}
             aria-pressed={active}
-            className={`${grow ? "flex-1" : ""} border-r px-2.5 py-1 text-2xs font-semibold uppercase tracking-wider transition-colors last:border-r-0`}
+            className={`motion-segment ${grow ? "flex-1" : ""} border-r px-2.5 py-1 text-2xs font-semibold uppercase tracking-wider transition-colors last:border-r-0`}
             style={{
               borderColor: "var(--line)",
               background: active ? "var(--ink)" : "transparent",
@@ -424,10 +424,7 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
                     className="mt-1 w-full overflow-hidden rounded-sm"
                     style={{ height: 4, background: "var(--line-soft)" }}
                   >
-                    <div
-                      className="h-full transition-[width] duration-500 ease-out"
-                      style={{ width: `${share}%`, background: "var(--accent)" }}
-                    />
+                    <MeterFill progress={share} />
                   </div>
                 </li>
               );

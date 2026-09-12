@@ -187,9 +187,9 @@ export default function RestTimer({ onTimerEnd }: RestTimerProps) {
     >
       {/* Background progress track */}
       <div
-        className="absolute bottom-0 left-0 top-0 opacity-15 transition-all duration-300 pointer-events-none"
+        className="absolute bottom-0 left-0 top-0 w-full origin-left opacity-15 transition-transform duration-300 pointer-events-none"
         style={{
-          width: `${progress}%`,
+          transform: `scaleX(${progress / 100})`,
           background: isComplete ? "var(--ok)" : "var(--accent)",
         }}
       />

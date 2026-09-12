@@ -96,7 +96,7 @@ test.describe("Visual Regression Tests", () => {
     await takeFullPageScreenshot(page, "workout-note-mode.png");
   });
 
-  test("Workout Tab - Interactive Cards Mode", async ({ page }) => {
+  test("Workout Tab - Add Exercise Dialog", async ({ page }) => {
     await page.goto("/?tab=workout&d=2026-09-30");
     await page.waitForSelector('button:has-text("Chest, Delts, Triceps")');
 
@@ -104,12 +104,16 @@ test.describe("Visual Regression Tests", () => {
     await page.locator('button:has-text("Chest, Delts, Triceps")').click();
     await expect(page.locator('text=Bench Press').first()).toBeVisible();
 
-    // Switch to Cards mode
-    await page.locator('button[aria-label="Interactive Cards Mode"]').click();
-    await expect(page.locator('text=Add Set').first()).toBeVisible();
+    // Cards mode is gone; exercise selection is now a focused dialog.
+    await expect(page.locator('button[aria-label="Interactive Cards Mode"]')).toHaveCount(0);
+    await page.getByRole("button", { name: "Add exercise from database" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add Exercise" });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Search exercises" })).toBeFocused();
 
-    // Take visual snapshot of cards mode
-    await takeFullPageScreenshot(page, "workout-cards-mode.png");
+    await expect(page).toHaveScreenshot("workout-add-exercise-dialog.png", {
+      animations: "disabled",
+    });
   });
 
   test("Settings Tab - Clean MCP & Consolidated Import/Export", async ({ page }) => {
@@ -134,6 +138,21 @@ test.describe("Visual Regression Tests", () => {
 
     // Verify standalone Calculate goals panel is NOT present
     await expect(page.locator("text=Calculate goals")).toHaveCount(0);
+
+    // Rare irreversible actions use a proper alert dialog.
+    await page.getByRole("button", { name: "Regenerate key" }).click();
+    const keyDialog = page.getByRole("alertdialog", { name: "Regenerate connector key?" });
+    await expect(keyDialog).toBeVisible();
+    await expect(keyDialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(keyDialog).toBeHidden();
+
+    // Bulk import uses the same accessible dialog foundation.
+    await page.getByRole("button", { name: "Import Workouts (Markdown)" }).click();
+    const importDialog = page.getByRole("dialog", { name: "Import Workouts" });
+    await expect(importDialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(importDialog).toBeHidden();
 
     // Take visual snapshot of settings tab
     await takeFullPageScreenshot(page, "settings-tab.png");
@@ -175,6 +194,23 @@ test.describe("Visual Regression Tests", () => {
 
     // Take snapshot of Food tab
     await takeFullPageScreenshot(page, "food-tab.png");
+  });
+
+  test("Food Tab - Manual Entry Dialog", async ({ page }) => {
+    await page.goto("/?tab=food&d=2026-09-30");
+    await page.getByRole("button", { name: "Add food to dinner" }).click();
+    await page.getByRole("button", { name: "+ Custom food entry" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Manual Food Entry" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("textbox").first()).toBeVisible();
+
+    await expect(page).toHaveScreenshot("food-manual-entry-dialog.png", {
+      animations: "disabled",
+    });
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
   });
 
   test("Food Tab - Trends & Analysis Expanded View", async ({ page }) => {

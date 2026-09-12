@@ -4,25 +4,16 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import {
   Copy,
   Plus,
-  Check,
-  History,
   ChevronRight,
   Search,
   X,
-  Dumbbell,
-  AlertCircle,
 } from "lucide-react";
 import {
   api,
   type ClientWorkout,
   type ExerciseStats,
 } from "@/lib/api-client";
-import {
-  parseWorkoutNote,
-  formatWorkoutNote,
-  calculateSessionStats,
-  normalizeExerciseName,
-} from "@/lib/workout-parser";
+import { parseWorkoutNote, formatWorkoutNote, calculateSessionStats } from "@/lib/workout-parser";
 import {
   MUSCLE_GROUPS,
   type MuscleGroupFilter,
@@ -32,6 +23,7 @@ import { WORKOUT_TEMPLATES } from "@/lib/workout-templates";
 import { prettyDate } from "@/lib/time-client";
 import RestTimer from "./RestTimer";
 import ExerciseHistoryModal from "./ExerciseHistoryModal";
+import { AlertDialog, Dialog } from "./Dialog";
 
 interface WorkoutCardProps {
   date: string;
@@ -39,8 +31,6 @@ interface WorkoutCardProps {
   onToast: (msg: string) => void;
   onWorkoutSaved?: () => void;
 }
-
-type ViewMode = "note" | "cards";
 
 export default function WorkoutCard({
   date,
@@ -54,7 +44,6 @@ export default function WorkoutCard({
   const [exerciseStats, setExerciseStats] = useState<Record<string, ExerciseStats>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
-  const [viewMode, setViewMode] = useState<ViewMode>("note");
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
   const [suggestedExercises, setSuggestedExercises] = useState<
     Array<{ id: string; name: string; normalized: string; muscleGroup?: string }>
@@ -63,31 +52,15 @@ export default function WorkoutCard({
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<MuscleGroupFilter>("All");
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState<string>("");
   const [searchingExercises, setSearchingExercises] = useState<boolean>(false);
-  const [completedSets, setCompletedSets] = useState<Record<string, boolean>>({});
   const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
-  const [deleting, setDeleting] = useState<boolean>(false);
   const [lastSessionInfo, setLastSessionInfo] = useState<{ date: string; title: string } | null>(null);
 
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const exerciseSearchRef = useRef<HTMLInputElement | null>(null);
 
   // Local storage keys
   const draftKey = `workout_draft_${date}`;
-  const completedKey = `workout_completed_${date}`;
-
-  // Restore completed sets from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(completedKey);
-      if (stored) {
-        setCompletedSets(JSON.parse(stored));
-      } else {
-        setCompletedSets({});
-      }
-    } catch {
-      setCompletedSets({});
-    }
-  }, [completedKey]);
 
   // Load previous session metadata for quick "Copy from last session"
   useEffect(() => {
@@ -241,7 +214,6 @@ export default function WorkoutCard({
 
   // Delete Workout
   const handleDeleteWorkout = async () => {
-    setDeleting(true);
     try {
       if (workout?.id) {
         await api.deleteWorkout({ id: workout.id, date });
@@ -254,7 +226,6 @@ export default function WorkoutCard({
 
     try {
       localStorage.removeItem(draftKey);
-      localStorage.removeItem(completedKey);
     } catch {}
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -262,10 +233,8 @@ export default function WorkoutCard({
     setWorkout(null);
     setTitle("Workout");
     setRawNote("");
-    setCompletedSets({});
     setSaveStatus("saved");
     setConfirmDelete(false);
-    setDeleting(false);
     onToast("Workout deleted");
     onWorkoutSaved?.();
   };
@@ -320,24 +289,6 @@ export default function WorkoutCard({
     }
   };
 
-  // Toggle set completion, persist to localStorage, and auto-start rest timer
-  const handleToggleSet = (setKey: string) => {
-    setCompletedSets((prev) => {
-      const nextDone = !prev[setKey];
-      const nextState = { ...prev, [setKey]: nextDone };
-      try {
-        localStorage.setItem(completedKey, JSON.stringify(nextState));
-      } catch {}
-
-      if (nextDone) {
-        window.dispatchEvent(
-          new CustomEvent("start-rest-timer", { detail: { seconds: 90 } }),
-        );
-      }
-      return nextState;
-    });
-  };
-
   // One-tap format
   const handleFormatNote = () => {
     const parsed = parseWorkoutNote(rawNote, weightUnit as "kg" | "lb");
@@ -365,7 +316,6 @@ export default function WorkoutCard({
     setTitle(tmpl.name);
     handleNoteChange(content);
     onToast(`Loaded ${tmpl.name} template`);
-    setViewMode("note");
   };
 
   // One-tap copy last session
@@ -378,58 +328,12 @@ export default function WorkoutCard({
         setTitle(res.workout.title || "Workout");
         handleNoteChange(res.workout.rawNote);
         onToast(`Copied ${res.workout.title || "workout"} from ${lastSessionInfo.date}`);
-        setViewMode("note");
       }
     } catch {
       onToast("Could not copy previous workout");
     } finally {
       setLoading(false);
     }
-  };
-
-  // Quick "+ Set" action inside Cards Mode
-  const handleAddSetToExercise = (exerciseName: string, currentSets: Array<{ weight: number; reps: number; unit: string }>) => {
-    const lastSet = currentSets.length > 0 ? currentSets[currentSets.length - 1] : null;
-    const w = lastSet ? lastSet.weight : 0;
-    const r = lastSet ? lastSet.reps : 10;
-    const u = lastSet ? lastSet.unit : weightUnit;
-    const setLine = `- ${w}${u} x ${r}`;
-
-    const lines = rawNote.split("\n");
-    let exIdx = -1;
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i].trim();
-      if (normalizeExerciseName(l) === normalizeExerciseName(exerciseName)) {
-        exIdx = i;
-        break;
-      }
-    }
-
-    if (exIdx !== -1) {
-      let insertIdx = exIdx + 1;
-      while (
-        insertIdx < lines.length &&
-        (lines[insertIdx].trim().startsWith("-") ||
-          lines[insertIdx].trim().startsWith("*") ||
-          lines[insertIdx].trim().length === 0)
-      ) {
-        if (
-          lines[insertIdx].trim().length === 0 &&
-          insertIdx + 1 < lines.length &&
-          !lines[insertIdx + 1].trim().startsWith("-") &&
-          !lines[insertIdx + 1].trim().startsWith("*")
-        ) {
-          break;
-        }
-        insertIdx++;
-      }
-      lines.splice(insertIdx, 0, setLine);
-      handleNoteChange(lines.join("\n"));
-    } else {
-      const updated = rawNote.trimEnd() ? `${rawNote.trimEnd()}\n\n${exerciseName}\n${setLine}` : `${exerciseName}\n${setLine}`;
-      handleNoteChange(updated);
-    }
-    onToast(`Added set to ${exerciseName}`);
   };
 
   // Parse current exercises for live badge preview and session volume stats
@@ -439,7 +343,9 @@ export default function WorkoutCard({
   // Collect muscle groups targeted in this session
   const sessionMuscles = Array.from(
     new Set(
-      parsedPreview.exercises.map((ex) => lookupMuscleGroup(ex.normalized)),
+      parsedPreview.exercises
+        .map((ex) => lookupMuscleGroup(ex.normalized))
+        .filter((muscle): muscle is string => Boolean(muscle)),
     ),
   );
 
@@ -515,7 +421,6 @@ export default function WorkoutCard({
               onClick={() => {
                 setRawNote("Bench Press\n- ");
                 handleNoteChange("Bench Press\n- ");
-                setViewMode("note");
               }}
               className="btn btn-ghost text-xs text-ink-dim hover:text-ink"
             >
@@ -533,7 +438,7 @@ export default function WorkoutCard({
       className="flex flex-col rounded border overflow-hidden transition-colors"
       style={{ background: "var(--panel)", borderColor: "var(--line)" }}
     >
-      {/* Top Bar: Title, Mode Switcher, Save State & Delete Action */}
+      {/* Top Bar: Title, Save State & Delete Action */}
       <div
         className="flex items-center justify-between gap-2 border-b px-3 py-2"
         style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
@@ -550,39 +455,6 @@ export default function WorkoutCard({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {/* Mode Switcher */}
-          <div
-            className="flex items-center rounded border p-0.5"
-            style={{ borderColor: "var(--line)", background: "var(--panel)" }}
-          >
-            <button
-              type="button"
-              onClick={() => setViewMode("note")}
-              aria-label="Markdown Note Mode"
-              aria-pressed={viewMode === "note"}
-              className={`rounded px-2 py-0.5 text-2xs uppercase tracking-wider transition-colors ${
-                viewMode === "note"
-                  ? "bg-ink text-panel font-semibold"
-                  : "text-ink-faint hover:text-ink"
-              }`}
-            >
-              Note
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("cards")}
-              aria-label="Interactive Cards Mode"
-              aria-pressed={viewMode === "cards"}
-              className={`rounded px-2 py-0.5 text-2xs uppercase tracking-wider transition-colors ${
-                viewMode === "cards"
-                  ? "bg-ink text-panel font-semibold"
-                  : "text-ink-faint hover:text-ink"
-              }`}
-            >
-              Cards
-            </button>
-          </div>
-
           {/* Save Status telemetry */}
           <span
             className="num text-2xs font-mono uppercase tracking-wider shrink-0 whitespace-nowrap"
@@ -593,36 +465,15 @@ export default function WorkoutCard({
             {saveStatus === "saving" ? "· saving…" : saveStatus === "saved" ? "· saved" : "· draft"}
           </span>
 
-          {/* Delete Workout Action */}
-          {confirmDelete ? (
-            <div className="flex items-center gap-1 shrink-0" role="group" aria-label="Confirm workout deletion">
-              <button
-                type="button"
-                onClick={handleDeleteWorkout}
-                disabled={deleting}
-                className="px-2 py-0.5 rounded text-2xs font-semibold text-over border border-over hover:bg-over/10 transition-colors"
-              >
-                {deleting ? "…" : "delete"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="px-2 py-0.5 rounded text-2xs text-ink-faint border border-line hover:text-ink"
-              >
-                cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              aria-label="Delete this workout"
-              title="Delete this workout"
-              className="glyph-btn text-2xs text-ink-faint hover:text-over transition-colors"
-            >
-              ✕
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(true)}
+            aria-label="Delete this workout"
+            title="Delete this workout"
+            className="glyph-btn text-2xs text-ink-faint hover:text-over transition-colors"
+          >
+            ✕
+          </button>
         </div>
       </div>
 
@@ -664,8 +515,7 @@ export default function WorkoutCard({
       )}
 
       {/* Main Body */}
-      {viewMode === "note" ? (
-        <div className="flex flex-col flex-1 p-3 space-y-2.5">
+      <div className="flex flex-1 flex-col space-y-2.5 p-3">
           {/* Exercise Badges in single horizontal scroll strip */}
           {parsedPreview.exercises.length > 0 && (
             <div
@@ -777,32 +627,35 @@ export default function WorkoutCard({
                 </button>
 
                 {showAddMenu && (
-                  <>
+                  <Dialog
+                    open
+                    onClose={() => {
+                      setShowAddMenu(false);
+                      setExerciseSearchQuery("");
+                    }}
+                    title="Add Exercise"
+                    description="Search the exercise catalog"
+                    size="md"
+                    initialFocusRef={exerciseSearchRef}
+                    bodyClassName="p-0"
+                  >
                     <div
-                      className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] sm:bg-transparent sm:backdrop-blur-none"
-                      onClick={() => {
-                        setShowAddMenu(false);
-                        setExerciseSearchQuery("");
-                      }}
-                      aria-hidden="true"
-                    />
-                    <div
-                      className="fixed inset-x-3 bottom-20 z-50 sm:absolute sm:inset-auto sm:left-0 sm:bottom-10 sm:w-[330px] rounded border shadow-lg flex flex-col max-h-[360px] overflow-hidden"
-                      style={{ background: "var(--panel)", borderColor: "var(--line)" }}
+                      className="flex min-h-0 flex-col overflow-hidden"
+                      style={{ background: "var(--panel)" }}
                     >
-                      {/* Search Bar & Mobile Header */}
+                      {/* Search Bar */}
                       <div
                         className="p-2 border-b flex items-center gap-2"
                         style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
                       >
                         <Search size={13} className="text-ink-faint shrink-0" aria-hidden="true" />
                         <input
+                          ref={exerciseSearchRef}
                           type="text"
                           value={exerciseSearchQuery}
                           onChange={(e) => setExerciseSearchQuery(e.target.value)}
                           placeholder="Search 65+ exercises..."
                           aria-label="Search exercises"
-                          autoFocus
                           className="flex-1 min-w-0 bg-transparent text-base sm:text-xs text-ink placeholder:text-ink-faint focus:outline-none"
                         />
                         {exerciseSearchQuery && (
@@ -815,17 +668,6 @@ export default function WorkoutCard({
                             <X size={12} aria-hidden="true" />
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowAddMenu(false);
-                            setExerciseSearchQuery("");
-                          }}
-                          aria-label="Close exercise picker"
-                          className="glyph-btn text-ink-faint hover:text-ink sm:hidden -mr-1"
-                        >
-                          ✕
-                        </button>
                       </div>
 
                       {/* Muscle Group Filter Strip */}
@@ -853,7 +695,7 @@ export default function WorkoutCard({
                       </div>
 
                       {/* Exercises Scroll List */}
-                      <div className="overflow-y-auto divide-y max-h-56" style={{ borderColor: "var(--line-soft)" }}>
+                      <div className="max-h-[55dvh] overflow-y-auto divide-y" style={{ borderColor: "var(--line-soft)" }}>
                         {suggestedExercises.length > 0 ? (
                           suggestedExercises.map((s) => (
                             <button
@@ -880,7 +722,7 @@ export default function WorkoutCard({
                         )}
                       </div>
                     </div>
-                  </>
+                  </Dialog>
                 )}
               </div>
             </div>
@@ -901,154 +743,19 @@ export default function WorkoutCard({
               </button>
             </div>
           </div>
-        </div>
-      ) : (
-        /* Cards Mode */
-        <div className="p-3 space-y-3">
-          {parsedPreview.exercises.length === 0 ? (
-            <div className="py-8 text-center text-xs text-ink-faint">
-              No exercises parsed yet. Switch to Note mode to write down your workout!
-            </div>
-          ) : (
-            parsedPreview.exercises.map((ex, exIdx) => {
-              const stat = exerciseStats[ex.normalized];
-              return (
-                <div
-                  key={exIdx}
-                  className="rounded border overflow-hidden"
-                  style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
-                >
-                  {/* Exercise Header */}
-                  <div
-                    className="flex items-center justify-between px-3.5 py-2.5 border-b"
-                    style={{ borderColor: "var(--line)" }}
-                  >
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (stat?.exerciseId) setActiveExerciseId(stat.exerciseId);
-                        }}
-                        aria-label={`View history for ${ex.name}`}
-                        className="font-bold text-xs text-ink hover:text-accent flex items-center gap-1.5 transition-colors"
-                      >
-                        {ex.name}
-                        <History size={12} className="text-ink-faint" aria-hidden="true" />
-                      </button>
-                      {stat?.lastPerformance && (
-                        <div className="text-2xs font-mono text-ink-faint mt-0.5">
-                          Last session: {stat.lastPerformance}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-2xs uppercase tracking-wider font-mono opacity-60 text-ink">
-                        {lookupMuscleGroup(ex.normalized)}
-                      </span>
-                      {stat?.bestWeightKg ? (
-                        <span className="flex items-center gap-1 text-2xs text-accent font-semibold whitespace-nowrap">
-                          <span className="num uppercase tracking-wider">PR</span>
-                          <span className="num text-ink">{stat.bestWeightKg}{weightUnit}</span>
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {/* Sets List */}
-                  <div className="divide-y" style={{ borderColor: "var(--line-soft)" }}>
-                    {ex.sets.map((set, setIdx) => {
-                      const setKey = `${ex.name}_${set.setNumber}`;
-                      const isDone = completedSets[setKey] ?? false;
-
-                      return (
-                        <div
-                          key={setIdx}
-                          className="flex items-center justify-between px-3.5 py-1.5 text-xs"
-                        >
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleSet(setKey)}
-                              aria-label={`Mark set ${set.setNumber} complete`}
-                              aria-pressed={isDone}
-                              className="min-h-[40px] min-w-[40px] -ml-2 flex items-center justify-center transition-colors"
-                            >
-                              <span
-                                className={`flex items-center justify-center h-5 w-5 rounded border transition-colors ${
-                                  isDone
-                                    ? "bg-ok border-ok text-panel"
-                                    : "border-ink-faint hover:border-accent"
-                                }`}
-                              >
-                                {isDone && <Check size={12} strokeWidth={3} aria-hidden="true" />}
-                              </span>
-                            </button>
-                            <span className="num text-2xs text-ink-faint w-5">
-                              #{set.setNumber}
-                            </span>
-                            <span
-                              className={`num text-xs font-semibold ${
-                                isDone ? "line-through text-ink-faint" : "text-ink"
-                              }`}
-                            >
-                              {set.isBodyweight
-                                ? set.weight > 0
-                                  ? `+${set.weight}${weightUnit} × ${set.reps}`
-                                  : set.weight < 0
-                                    ? `${set.weight}${weightUnit} × ${set.reps}`
-                                    : `BW × ${set.reps}`
-                                : `${set.weight}${weightUnit} × ${set.reps}`}
-                            </span>
-                            {set.isWarmup && (
-                              <span
-                                className="text-2xs text-ink-faint bg-panel px-1.5 py-0.5 rounded border"
-                                style={{ borderColor: "var(--line)" }}
-                              >
-                                Warmup
-                              </span>
-                            )}
-                          </div>
-
-                          {set.rpe && (
-                            <span className="num text-2xs text-ink-faint">
-                              @{set.rpe}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Add Set Quick Button directly on Card */}
-                  <button
-                    type="button"
-                    onClick={() => handleAddSetToExercise(ex.name, ex.sets)}
-                    className="w-full py-1.5 px-3 flex items-center justify-center gap-1 text-2xs font-medium text-ink-dim hover:text-ink hover:bg-panel transition-colors border-t"
-                    style={{ borderColor: "var(--line-soft)" }}
-                  >
-                    <Plus size={11} aria-hidden="true" />
-                    <span>Add Set</span>
-                  </button>
-                </div>
-              );
-            })
-          )}
-
-          <div className="pt-1 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setViewMode("note")}
-              className="btn btn-ghost text-xs text-ink-dim hover:text-ink"
-            >
-              Edit Note
-            </button>
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* Embedded Rest Timer */}
       <RestTimer onTimerEnd={() => onToast("Rest time is up! Ready for next set.")} />
+
+      <AlertDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title="Delete workout?"
+        description={`Delete ${title || "this workout"} from ${prettyDate(date).toLowerCase()}? This removes the entire session and cannot be undone.`}
+        confirmLabel="Delete workout"
+        onConfirm={handleDeleteWorkout}
+      />
 
       {/* Exercise History Modal */}
       {activeExerciseId && (

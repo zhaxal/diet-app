@@ -35,6 +35,7 @@ import {
   type ServingUnit,
 } from "@/lib/units";
 import BarcodeScanner, { isBarcodeScanningSupported } from "./BarcodeScanner";
+import { Dialog } from "./Dialog";
 import Select from "./Select";
 import { useToast } from "./Toast";
 
@@ -149,6 +150,7 @@ export default function AddFood({
   const [origin, setOrigin] = useState<Origin | null>(initialDraft?.origin ?? null);
   const [showTrace, setShowTrace] = useState(initialDraft?.showTrace ?? false);
   const [showManual, setShowManual] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const hasDraft = !!(q || name || amount || Object.values(vals).some((v) => v !== ""));
   const isComposing = Boolean(name.trim() || vals.calories.trim() || origin || showManual);
@@ -259,7 +261,6 @@ export default function AddFood({
       : null);
   }, [draftReady, userId, date, hasDraft, q, name, vals, reference, amount, unit, multiple, serving, productId, origin, showTrace, meal]);
 
-  const composeRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
   // Quick add hands its query over rather than searching twice. Focus follows
@@ -347,12 +348,7 @@ export default function AddFood({
   // ── Loading something into the form ──────────────────────────────────────
 
   function focusCompose() {
-    // The compose block sits below a results list that can be taller than the
-    // screen, so a pick that only changed state off-screen would read as a tap
-    // that did nothing.
-    requestAnimationFrame(() =>
-      composeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }),
-    );
+    setComposerOpen(true);
   }
 
   function reset() {
@@ -369,6 +365,7 @@ export default function AddFood({
     setOrigin(null);
     setShowTrace(false);
     setShowManual(false);
+    setComposerOpen(false);
   }
 
   function pickCopied(item: CopiedItem) {
@@ -1095,38 +1092,35 @@ export default function AddFood({
       )}
 
       {/* ── Compose ───────────────────────────────────────────────────────── */}
-      {!isComposing ? (
-        <div className="flex items-center justify-between border-t border-line-soft pt-2">
-          <button
-            type="button"
-            onClick={() => {
-              setShowManual(true);
-              focusCompose();
-            }}
-            className="text-2xs font-semibold uppercase tracking-wider text-ink-dim hover:text-accent hover:underline"
-          >
-            + Custom food entry
-          </button>
-          <span className="text-2xs text-ink-faint">Or search / pick above</span>
-        </div>
-      ) : (
-        <div ref={composeRef}>
+      <div className="flex items-center justify-between border-t border-line-soft pt-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (!isComposing) setShowManual(true);
+            setComposerOpen(true);
+          }}
+          className="text-2xs font-semibold uppercase tracking-wider text-ink-dim hover:text-accent hover:underline"
+        >
+          {isComposing ? "Resume food draft" : "+ Custom food entry"}
+        </button>
+        <span className="text-2xs text-ink-faint">
+          {isComposing ? "Draft retained" : "Or search / pick above"}
+        </span>
+      </div>
+
+      {isComposing && (
+        <Dialog
+          open={composerOpen}
+          onClose={() => {
+            setComposerOpen(false);
+            if (!hasDraft) setShowManual(false);
+          }}
+          title={origin ? "Confirm & Scale" : "Manual Food Entry"}
+          description={`${meal} · ${whenLabel(date)}`}
+          size="md"
+          bodyClassName="p-3"
+        >
           <form onSubmit={log} className="grid grid-cols-2 gap-1.5 min-[360px]:grid-cols-4">
-            <div className="col-span-full flex items-center justify-between">
-              <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-                {origin ? "Confirm & Scale" : "Manual entry"}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  reset();
-                  setShowManual(false);
-                }}
-                className="text-2xs text-ink-faint hover:text-over"
-              >
-                close
-              </button>
-            </div>
           <label className="col-span-full block">
             <span className="block text-2xs uppercase tracking-wider text-ink-faint">Food</span>
             <input
@@ -1281,7 +1275,7 @@ export default function AddFood({
           {/* What the row will say, before it says it. Under a label this is the
               only place the arithmetic is visible. */}
           <div
-            className="col-span-full flex items-baseline gap-2 border-t pt-2.5 pb-1"
+            className="sticky bottom-0 col-span-full -mx-3 -mb-3 flex items-baseline gap-2 border-t px-3 pb-3 pt-2.5"
             style={{ borderColor: "var(--line-soft)", background: "var(--panel)" }}
           >
             {!touched ? (
@@ -1313,7 +1307,7 @@ export default function AddFood({
             </button>
           </div>
         </form>
-      </div>
+      </Dialog>
       )}
     </div>
   );

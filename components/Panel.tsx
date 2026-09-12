@@ -41,7 +41,7 @@ export function Panel({
         onClick={toggle}
         aria-expanded={isOpen}
         aria-controls={bodyId}
-        className="flex min-h-[44px] w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-panel-2"
+        className="motion-press flex min-h-[44px] w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-panel-2"
       >
         <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
           {title}
@@ -56,7 +56,7 @@ export function Panel({
       {isOpen && (
         <div
           id={bodyId}
-          className={bare ? "" : "border-t px-3 py-2.5"}
+          className={`motion-disclosure-content ${bare ? "" : "border-t px-3 py-2.5"}`}
           style={bare ? undefined : { borderColor: "var(--line)" }}
         >
           {children}

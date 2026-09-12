@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { X, TrendingUp, Calendar, Award } from "lucide-react";
+import { useEffect, useState } from "react";
+import { TrendingUp, Calendar, Award } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { LineChart } from "@/components/MiniChart";
+import { Dialog } from "@/components/Dialog";
 
 interface ExerciseHistoryModalProps {
   exerciseId: string;
@@ -51,24 +52,15 @@ export default function ExerciseHistoryModal({
 }: ExerciseHistoryModalProps) {
   const [data, setData] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [loadKey, setLoadKey] = useState(0);
   const [metric, setMetric] = useState<"weight" | "1rm">("weight");
-  const modalRef = useRef<HTMLDivElement | null>(null);
-
-  // Close on Escape key press
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
 
   // Fetch exercise history
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setError(null);
     api
       .getExerciseHistory(exerciseId)
       .then((res) => {
@@ -80,6 +72,7 @@ export default function ExerciseHistoryModal({
       .catch((err) => {
         if (!cancelled) {
           console.error("Failed to load exercise history", err);
+          setError(err instanceof Error ? err.message : "Could not load exercise history");
           setLoading(false);
         }
       });
@@ -87,51 +80,18 @@ export default function ExerciseHistoryModal({
     return () => {
       cancelled = true;
     };
-  }, [exerciseId]);
+  }, [exerciseId, loadKey]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-      style={{ background: "color-mix(in srgb, var(--ink) 65%, transparent)" }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Dialog
+      open
+      onClose={onClose}
+      title={data ? data.exercise.name : "Exercise Progression"}
+      description="Performance record"
+      size="md"
+      bodyClassName="p-4"
     >
-      <div
-        ref={modalRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="exercise-modal-title"
-        className="relative flex flex-col w-full max-w-lg max-h-[92dvh] sm:max-h-[85vh] overflow-hidden rounded-t sm:rounded border"
-        style={{
-          background: "var(--panel)",
-          borderColor: "var(--line)",
-          paddingBottom: "env(safe-area-inset-bottom)",
-        }}
-      >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between border-b px-3.5 py-2.5 sm:px-4 sm:py-3"
-          style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
-        >
-          <div>
-            <h2 id="exercise-modal-title" className="text-sm font-semibold tracking-wide text-ink">
-              {data ? data.exercise.name : "Exercise Progression"}
-            </h2>
-            <p className="text-2xs text-ink-faint uppercase tracking-wider">Performance Record</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded text-ink-faint hover:text-ink transition-colors"
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="space-y-4">
           {loading && (
             <div className="py-12 text-center text-xs text-ink-faint">
               Loading exercise history...
@@ -139,8 +99,15 @@ export default function ExerciseHistoryModal({
           )}
 
           {!loading && !data && (
-            <div className="py-8 text-center text-xs text-ink-faint">
-              Could not load history for this exercise.
+            <div className="py-8 text-center text-xs text-ink-faint" role="alert">
+              <p>{error ?? "Could not load history for this exercise."}</p>
+              <button
+                type="button"
+                onClick={() => setLoadKey((key) => key + 1)}
+                className="btn btn-primary mt-3"
+              >
+                Retry
+              </button>
             </div>
           )}
 
@@ -293,8 +260,7 @@ export default function ExerciseHistoryModal({
               </div>
             </>
           )}
-        </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

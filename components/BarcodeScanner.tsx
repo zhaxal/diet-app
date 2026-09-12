@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, Loader2, X } from "lucide-react";
+import { Camera, Loader2 } from "lucide-react";
+import { Dialog } from "./Dialog";
 
 /*
  * Cross-browser barcode scanner:
@@ -57,9 +58,7 @@ export default function BarcodeScanner({
   onDetected: (barcode: string) => void;
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const onCloseRef = useRef(onClose);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -70,54 +69,9 @@ export default function BarcodeScanner({
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState("");
 
-  onCloseRef.current = onClose;
-
   const stop = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-  }, []);
-
-  // Modal accessibility: trap focus, support Escape, restore focus upon close.
-  useEffect(() => {
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const priorOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    closeButtonRef.current?.focus();
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-      if (event.key !== "Tab" || !dialogRef.current) return;
-
-      const focusable = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      );
-      if (focusable.length === 0) {
-        event.preventDefault();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = priorOverflow;
-      previous?.focus();
-    };
   }, []);
 
   // Camera lifecycle effect
@@ -277,33 +231,15 @@ export default function BarcodeScanner({
   }
 
   return (
-    <div
-      ref={dialogRef}
-      className="fixed inset-0 z-50 flex flex-col"
-      style={{ background: "color-mix(in srgb, var(--bg) 94%, transparent)" }}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Scan a barcode"
+    <Dialog
+      open
+      onClose={onClose}
+      title="Scan a barcode"
+      variant="fullscreen"
+      initialFocusRef={closeButtonRef}
+      bodyClassName="flex items-center justify-center p-3"
     >
-      <div
-        className="flex items-center justify-between border-b px-3 py-2"
-        style={{ borderColor: "var(--line)", background: "var(--panel)" }}
-      >
-        <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-          Scan a barcode
-        </span>
-        <button
-          ref={closeButtonRef}
-          onClick={onClose}
-          className="glyph-btn text-ink-faint hover:text-ink"
-          aria-label="Close scanner"
-        >
-          <X size={16} strokeWidth={1.75} />
-        </button>
-      </div>
-
-      <div className="flex flex-1 items-center justify-center p-3 overflow-y-auto">
-        <div className="w-full max-w-sm space-y-3">
+      <div className="w-full max-w-sm space-y-3">
           <input
             ref={fileInputRef}
             type="file"
@@ -382,8 +318,7 @@ export default function BarcodeScanner({
               </p>
             )}
           </div>
-        </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

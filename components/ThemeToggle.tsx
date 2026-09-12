@@ -46,7 +46,7 @@ export default function ThemeToggle() {
             key={t}
             onClick={() => apply(t)}
             aria-pressed={active}
-            className="flex items-center gap-1.5 border-r px-2.5 py-1 text-2xs font-semibold uppercase tracking-wider transition-colors last:border-r-0"
+            className="motion-segment flex items-center gap-1.5 border-r px-2.5 py-1 text-2xs font-semibold uppercase tracking-wider transition-colors last:border-r-0"
             style={{
               borderColor: "var(--line)",
               background: active ? "var(--ink)" : "transparent",

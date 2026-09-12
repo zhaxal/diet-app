@@ -203,7 +203,7 @@ export default function WeightCard({ date, logs, weightUnit, onLogsChange }: Pro
 
       {/* History & Trend Chart Disclosure */}
       {showHistory && logs.length > 0 && (
-        <div className="mt-3 border-t pt-2.5" style={{ borderColor: "var(--line)" }}>
+        <div className="motion-disclosure-content mt-3 border-t pt-2.5" style={{ borderColor: "var(--line)" }}>
           {chartData.length >= 2 ? (
             <div className="h-24 overflow-hidden">
               <LineChart

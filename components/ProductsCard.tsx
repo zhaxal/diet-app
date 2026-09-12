@@ -14,6 +14,7 @@ import {
 } from "@/lib/units";
 import Select from "./Select";
 import { useToast } from "./Toast";
+import { Dialog } from "./Dialog";
 
 /**
  * The label catalog.
@@ -97,6 +98,7 @@ export default function ProductsCard() {
   }
 
   const base = (p: Product) => baseUnitFor(p.basis as Basis);
+  const activeProduct = products.find((product) => product.id === editing) ?? null;
 
   return (
     <div>
@@ -122,19 +124,7 @@ export default function ProductsCard() {
         </p>)
       ) : (
         <ul className="mt-2 divide-y" style={{ borderColor: "var(--line-soft)" }}>
-          {products.map((p) =>
-            editing === p.id ? (
-              <ProductEditor
-                key={p.id}
-                product={p}
-                onCancel={() => setEditing(null)}
-                onSaved={(updated) => {
-                  setProducts((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
-                  setEditing(null);
-                  toast(`Updated ${updated.name}`);
-                }}
-              />
-            ) : (
+          {products.map((p) => (
               <li key={p.id} className="py-2">
                 <div className="flex items-baseline justify-between gap-2">
                   <button
@@ -164,9 +154,20 @@ export default function ProductsCard() {
                   {p.source !== "manual" ? ` · ${p.source}` : ""}
                 </p>
               </li>
-            ),
-          )}
+          ))}
         </ul>
+      )}
+
+      {activeProduct && (
+        <ProductEditor
+          product={activeProduct}
+          onCancel={() => setEditing(null)}
+          onSaved={(updated) => {
+            setProducts((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+            setEditing(null);
+            toast(`Updated ${updated.name}`);
+          }}
+        />
       )}
     </div>
   );
@@ -216,17 +217,31 @@ function ProductEditor({
   }
 
   return (
-    <li className="px-2 py-2" style={{ background: "var(--panel-2)" }}>
-      <div className="grid grid-cols-4 gap-1.5">
-        <label className="col-span-4 block">
+    <Dialog
+      open
+      onClose={onCancel}
+      title={`Edit ${product.name}`}
+      description={`Saved label · values per ${product.basis === "100ml" ? "100 ml" : "100 g"}`}
+      size="md"
+      bodyClassName="p-3"
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+        className="grid grid-cols-2 gap-1.5 min-[420px]:grid-cols-4"
+      >
+        <label className="col-span-2 block min-[420px]:col-span-4">
           <span className="block text-2xs uppercase tracking-wider text-ink-faint">Name</span>
           <input
+            required
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="field mt-0.5 w-full"
           />
         </label>
-        <label className="col-span-2 block">
+        <label className="block">
           <span className="block text-2xs uppercase tracking-wider text-ink-faint">Brand</span>
           <input
             value={brand}
@@ -234,7 +249,7 @@ function ProductEditor({
             className="field mt-0.5 w-full"
           />
         </label>
-        <label className="col-span-2 block">
+        <label className="block">
           <span className="block text-2xs uppercase tracking-wider text-ink-faint">
             Values per
           </span>
@@ -287,13 +302,18 @@ function ProductEditor({
             </option>
           ))}
         </Select>
-        <button onClick={save} disabled={saving} className="btn btn-primary self-end">
-          {saving ? "…" : "Save"}
-        </button>
-        <button onClick={onCancel} className="btn btn-ghost self-end">
-          Cancel
-        </button>
-      </div>
-    </li>
+        <div
+          className="sticky bottom-0 col-span-2 -mx-3 -mb-3 mt-1 flex gap-2 border-t px-3 pb-3 pt-2 min-[420px]:col-span-4"
+          style={{ borderColor: "var(--line)", background: "var(--panel)" }}
+        >
+          <button type="submit" disabled={saving || !name.trim()} className="btn btn-primary flex-1">
+            {saving ? "Saving…" : "Save label"}
+          </button>
+          <button type="button" onClick={onCancel} className="btn btn-ghost flex-1">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

@@ -77,7 +77,7 @@ export default function WorkoutNavigator({
               aria-label={`${prettyDate(d)}${
                 session ? `, ${session.title} (${session.setsCount} sets)` : ", no workout"
               }`}
-              className="flex-1 border-r pt-1.5 text-center last:border-r-0 transition-colors"
+              className="motion-segment flex-1 border-r pt-1.5 text-center last:border-r-0 transition-colors"
               style={{
                 borderColor: "var(--line)",
                 background: active ? "var(--ink)" : "transparent",

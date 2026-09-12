@@ -9,6 +9,7 @@ import { macroStrings } from "@/lib/macros";
 import { resizePortion, restateAmount } from "@/lib/entry-portion";
 import Select from "./Select";
 import { useToast } from "./Toast";
+import { Dialog } from "./Dialog";
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 
@@ -107,14 +108,21 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
     }
   }
 
-  if (editing) {
+  const editDialog = editing ? (() => {
     const units = comparableUnits((entry.quantityUnit ?? "g") as QuantityUnit);
     const amountNum = Number(form.quantity);
     const amountInvalid =
       hasOriginalAmount && !customNutrients && (!Number.isFinite(amountNum) || amountNum <= 0);
 
     return (
-      <li className="px-3 py-2.5 border-y border-line" style={{ background: "var(--panel-2)" }}>
+      <Dialog
+        open
+        onClose={() => setEditing(false)}
+        title={`Edit ${entry.name}`}
+        description={`${entry.mealType} · ${clockTime(entry.consumedAt)}`}
+        size="md"
+        bodyClassName="p-3"
+      >
         <form onSubmit={save} className="space-y-2">
           {/* Food name */}
           <div>
@@ -263,7 +271,10 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
           )}
 
           {/* Action buttons */}
-          <div className="flex gap-2 pt-1">
+          <div
+            className="sticky bottom-0 -mx-3 -mb-3 flex gap-2 border-t px-3 pb-3 pt-2"
+            style={{ borderColor: "var(--line)", background: "var(--panel)" }}
+          >
             <button
               type="submit"
               disabled={saving || Boolean(amountInvalid)}
@@ -280,12 +291,13 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
             </button>
           </div>
         </form>
-      </li>
+      </Dialog>
     );
-  }
+  })() : null;
 
   return (
-    <li className="entry-row group flex items-center gap-2 px-3 py-2">
+    <>
+      <li className="entry-row motion-list-item group flex items-center gap-2 px-3 py-2">
       <button
         onClick={beginEdit}
         className="entry-identity min-w-0 flex-1 text-left text-sm text-ink hover:text-accent flex items-center justify-between gap-2"
@@ -337,6 +349,8 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
           ✕
         </button>
       </div>
-    </li>
+      </li>
+      {editDialog}
+    </>
   );
 }
