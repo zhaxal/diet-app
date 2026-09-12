@@ -53,7 +53,6 @@ export default function WorkoutNavigator({
     };
   }, [refreshTrigger]);
 
-  const activeSession = sessions.find((s) => s.date === currentDate);
   const isToday = currentDate === todayDate;
   const stripEnd = stripEnding(currentDate, todayDate);
   const weekDays = weekEnding(stripEnd);
@@ -120,11 +119,6 @@ export default function WorkoutNavigator({
           <span className="num text-2xs uppercase tracking-wider text-ink-faint shrink-0">
             {prettyDate(currentDate)}
           </span>
-          {activeSession && (
-            <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim truncate">
-              · {activeSession.title}
-            </span>
-          )}
         </div>
 
         <div className="flex items-center gap-2 shrink-0">

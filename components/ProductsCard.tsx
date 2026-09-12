@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createLatestRequest } from "@/lib/latest-request";
 import { api, type Product } from "@/lib/api-client";
 import { macroStrings, parseMacros, type MacroStrings } from "@/lib/macros";
@@ -158,49 +158,81 @@ export default function ProductsCard() {
         </ul>
       )}
 
-      {activeProduct && (
-        <ProductEditor
-          product={activeProduct}
-          onCancel={() => setEditing(null)}
-          onSaved={(updated) => {
-            setProducts((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
-            setEditing(null);
-            toast(`Updated ${updated.name}`);
-          }}
-        />
-      )}
+      {/* Always rendered (not gated on activeProduct) so closing it
+          animates out — conditionally mounting would remove Dialog from the
+          tree the instant editing clears, before it gets a frame to play
+          its exit. */}
+      <ProductEditor
+        product={activeProduct}
+        open={editing !== null}
+        onCancel={() => setEditing(null)}
+        onSaved={(updated) => {
+          setProducts((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+          setEditing(null);
+          toast(`Updated ${updated.name}`);
+        }}
+      />
     </div>
   );
 }
 
 function ProductEditor({
   product,
+  open,
   onCancel,
   onSaved,
 }: {
-  product: Product;
+  product: Product | null;
+  open: boolean;
   onCancel: () => void;
   onSaved: (p: Product) => void;
 }) {
   const toast = useToast();
-  const [name, setName] = useState(product.name);
-  const [brand, setBrand] = useState(product.brand ?? "");
-  const [basis, setBasis] = useState<Basis>(product.basis as Basis);
-  const [vals, setVals] = useState<MacroStrings>(macroStrings(product));
-  const [servingSize, setServingSize] = useState(
-    product.servingSize != null ? String(product.servingSize) : "",
-  );
-  const [servingUnit, setServingUnit] = useState<ServingUnit>(
-    (product.servingUnit ?? baseUnitFor(product.basis as Basis)) as ServingUnit,
-  );
+  // Retained across a close so the panel still has something to show while
+  // it fades out, rather than going blank the instant `product` clears.
+  const [activeProduct, setActiveProduct] = useState(product);
+  const [name, setName] = useState("");
+  const [brand, setBrand] = useState("");
+  const [basis, setBasis] = useState<Basis>("100g");
+  const [vals, setVals] = useState<MacroStrings>({
+    calories: "", protein: "", carbs: "", fat: "", fiber: "", sugar: "", sodium: "",
+  });
+  const [servingSize, setServingSize] = useState("");
+  const [servingUnit, setServingUnit] = useState<ServingUnit>("g");
   const [saving, setSaving] = useState(false);
+  // Which product id the fields currently hold, so a background list
+  // refresh (same id, new object reference) never clobbers an in-progress
+  // edit, but reopening — even the same product — loads its current values.
+  const loadedId = useRef<string | null>(null);
+
+  // Layout effect, not a passive one: the fields must be populated in the
+  // same commit `open` turns true, or the dialog opens empty for a frame
+  // before this catches up.
+  useLayoutEffect(() => {
+    if (!open) {
+      loadedId.current = null;
+      return;
+    }
+    if (!product || loadedId.current === product.id) return;
+    loadedId.current = product.id;
+    setActiveProduct(product);
+    setName(product.name);
+    setBrand(product.brand ?? "");
+    setBasis(product.basis as Basis);
+    setVals(macroStrings(product));
+    setServingSize(product.servingSize != null ? String(product.servingSize) : "");
+    setServingUnit((product.servingUnit ?? baseUnitFor(product.basis as Basis)) as ServingUnit);
+  }, [open, product]);
+
+  if (!activeProduct) return null;
 
   async function save() {
+    if (!activeProduct) return;
     setSaving(true);
     try {
       const size = Number(servingSize);
       const hasServing = servingSize.trim() !== "" && Number.isFinite(size) && size > 0;
-      const { product: updated } = await api.updateProduct(product.id, {
+      const { product: updated } = await api.updateProduct(activeProduct.id, {
         name: name.trim(),
         brand: brand.trim() || null,
         basis,
@@ -218,10 +250,10 @@ function ProductEditor({
 
   return (
     <Dialog
-      open
+      open={open}
       onClose={onCancel}
-      title={`Edit ${product.name}`}
-      description={`Saved label · values per ${product.basis === "100ml" ? "100 ml" : "100 g"}`}
+      title={`Edit ${activeProduct.name}`}
+      description={`Saved label · values per ${activeProduct.basis === "100ml" ? "100 ml" : "100 g"}`}
       size="md"
       bodyClassName="p-3"
     >

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import PageTransition from "@/components/PageTransition";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import "./globals.css";
 
@@ -73,7 +74,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
-        {children}
+        <PageTransition>{children}</PageTransition>
         <ServiceWorkerRegistrar />
       </body>
     </html>

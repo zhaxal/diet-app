@@ -919,17 +919,19 @@ function Dashboard() {
       )}
       </MotionRegion>
 
-      {showWorkoutImportModal && (
-        <WorkoutImportModal
-          weightUnit={goals.weightUnit || "kg"}
-          onClose={() => setShowWorkoutImportModal(false)}
-          onSuccess={(count) => {
-            toast(`Successfully imported ${count} workout${count === 1 ? "" : "s"}`);
-            setShowWorkoutImportModal(false);
-            setWorkoutRefreshKey((k) => k + 1);
-          }}
-        />
-      )}
+      {/* Always rendered (not gated on showWorkoutImportModal) so closing it
+          animates out — conditionally mounting would remove Dialog from the
+          tree before it gets a frame to exit. */}
+      <WorkoutImportModal
+        open={showWorkoutImportModal}
+        weightUnit={goals.weightUnit || "kg"}
+        onClose={() => setShowWorkoutImportModal(false)}
+        onSuccess={(count) => {
+          toast(`Successfully imported ${count} workout${count === 1 ? "" : "s"}`);
+          setShowWorkoutImportModal(false);
+          setWorkoutRefreshKey((k) => k + 1);
+        }}
+      />
 
       <ShortcutsModal
         isOpen={showShortcuts}

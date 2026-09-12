@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { TrendingUp, Calendar, Award } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { LineChart } from "@/components/MiniChart";
 import { Dialog } from "@/components/Dialog";
 
 interface ExerciseHistoryModalProps {
-  exerciseId: string;
+  exerciseId: string | null;
   onClose: () => void;
   unit: string;
 }
@@ -50,19 +50,29 @@ export default function ExerciseHistoryModal({
   onClose,
   unit,
 }: ExerciseHistoryModalProps) {
+  // Retained across a close so the panel still has something to show while
+  // it fades out, rather than going blank the instant exerciseId clears.
+  const [activeId, setActiveId] = useState(exerciseId);
   const [data, setData] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadKey, setLoadKey] = useState(0);
   const [metric, setMetric] = useState<"weight" | "1rm">("weight");
 
+  // Layout effect, not a passive one: this must land in the same commit
+  // exerciseId turns non-null, or the dialog opens on a stale/empty id.
+  useLayoutEffect(() => {
+    if (exerciseId) setActiveId(exerciseId);
+  }, [exerciseId]);
+
   // Fetch exercise history
   useEffect(() => {
+    if (!activeId) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
     api
-      .getExerciseHistory(exerciseId)
+      .getExerciseHistory(activeId)
       .then((res) => {
         if (!cancelled) {
           setData(res as HistoryData);
@@ -80,11 +90,13 @@ export default function ExerciseHistoryModal({
     return () => {
       cancelled = true;
     };
-  }, [exerciseId, loadKey]);
+  }, [activeId, loadKey]);
+
+  if (!activeId) return null;
 
   return (
     <Dialog
-      open
+      open={exerciseId !== null}
       onClose={onClose}
       title={data ? data.exercise.name : "Exercise Progression"}
       description="Performance record"

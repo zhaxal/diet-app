@@ -6,6 +6,7 @@ import { api } from "@/lib/api-client";
 import { Dialog } from "@/components/Dialog";
 
 interface WorkoutImportModalProps {
+  open: boolean;
   onClose: () => void;
   onSuccess: (importedCount: number) => void;
   weightUnit: string;
@@ -20,6 +21,7 @@ interface DryRunWorkout {
 }
 
 export default function WorkoutImportModal({
+  open,
   onClose,
   onSuccess,
   weightUnit,
@@ -118,7 +120,7 @@ export default function WorkoutImportModal({
 
   return (
     <Dialog
-      open
+      open={open}
       onClose={requestClose}
       title="Import Workouts"
       description="Obsidian Markdown · Bulk Notes"

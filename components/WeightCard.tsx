@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, type WeightLog } from "@/lib/api-client";
 import { prettyDate, todayStr } from "@/lib/time-client";
+import { useAnimatedDisclosure } from "@/lib/useAnimatedDisclosure";
 import { LineChart } from "./MiniChart";
 import { useToast } from "./Toast";
 
@@ -30,6 +31,7 @@ export default function WeightCard({ date, logs, weightUnit, onLogsChange }: Pro
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const history = useAnimatedDisclosure(showHistory && logs.length > 0);
 
   // Find entries matching the currently selected day
   const dayLogs = logs.filter((l) => toLocalDateStr(l.loggedAt) === date);
@@ -202,8 +204,12 @@ export default function WeightCard({ date, logs, weightUnit, onLogsChange }: Pro
       )}
 
       {/* History & Trend Chart Disclosure */}
-      {showHistory && logs.length > 0 && (
-        <div className="motion-disclosure-content mt-3 border-t pt-2.5" style={{ borderColor: "var(--line)" }}>
+      {history.rendered && (
+        <div
+          onAnimationEnd={history.onAnimationEnd}
+          className={`motion-disclosure-content ${history.closing ? "motion-disclosure-content--closing" : ""} mt-3 border-t pt-2.5`}
+          style={{ borderColor: "var(--line)" }}
+        >
           {chartData.length >= 2 ? (
             <div className="h-24 overflow-hidden">
               <LineChart

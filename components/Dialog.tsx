@@ -5,11 +5,19 @@ import {
   useId,
   useRef,
   useState,
+  type AnimationEvent,
   type ReactNode,
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+
+type DialogPhase = "closed" | "open" | "closing";
+
+function motionIsAllowed() {
+  return typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
+}
 
 type DialogSize = "sm" | "md" | "lg" | "xl";
 type DialogVariant = "responsive" | "center" | "fullscreen";
@@ -71,6 +79,7 @@ export function Dialog({
   bodyClassName = "p-3 sm:p-4",
 }: DialogProps) {
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+  const [phase, setPhase] = useState<DialogPhase>(open ? "open" : "closed");
   const titleId = useId();
   const descriptionId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -80,8 +89,40 @@ export function Dialog({
 
   useEffect(() => setPortalRoot(getPortalRoot()), []);
 
+  // `open` flipping false does not unmount immediately: staying mounted
+  // through `closing` is what lets the panel and scrim animate out instead
+  // of cutting. Reduced motion skips straight to closed, same as a caller
+  // that was never open.
   useEffect(() => {
-    if (!open || !portalRoot) return;
+    if (open) {
+      setPhase("open");
+      return;
+    }
+    setPhase((p) => (p === "closed" ? "closed" : motionIsAllowed() ? "closing" : "closed"));
+  }, [open]);
+
+  // Fallback if the browser drops the animationend event (an interrupted
+  // paint, devtools, etc.) — never leave the dialog stuck mid-close.
+  useEffect(() => {
+    if (phase !== "closing") return;
+    const timeout = window.setTimeout(() => setPhase("closed"), 220);
+    return () => window.clearTimeout(timeout);
+  }, [phase]);
+
+  function handlePanelAnimationEnd(event: AnimationEvent<HTMLDivElement>) {
+    if (event.target !== event.currentTarget) return;
+    if (phase === "closing") setPhase("closed");
+  }
+
+  // Keyed on `active`, not `open`: the lock/focus-trap effect must stay
+  // mounted through the closing animation (nothing in the background should
+  // become clickable while the panel is still visibly there) and must not
+  // re-run when `open` flips to false, which would refocus nothing and tear
+  // the trap down before the exit animation plays.
+  const active = phase !== "closed";
+
+  useEffect(() => {
+    if (!active || !portalRoot) return;
 
     const previousFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -147,9 +188,9 @@ export function Dialog({
       }
       previousFocus?.focus();
     };
-  }, [initialFocusRef, open, portalRoot]);
+  }, [active, initialFocusRef, portalRoot]);
 
-  if (!open || !portalRoot) return null;
+  if (phase === "closed" || !portalRoot) return null;
 
   const overlayClass =
     variant === "fullscreen"
@@ -164,9 +205,11 @@ export function Dialog({
         ? `max-h-[88dvh] w-full rounded border ${SIZE[size]}`
         : `max-h-[92dvh] w-full rounded-t border sm:max-h-[86dvh] sm:rounded ${SIZE[size]}`;
 
+  const isClosing = phase === "closing";
+
   return createPortal(
     <div
-      className={`motion-dialog-scrim fixed inset-0 z-[60] flex ${overlayClass}`}
+      className={`motion-dialog-scrim ${isClosing ? "motion-dialog-scrim--closing" : ""} fixed inset-0 z-[60] flex ${overlayClass}`}
       onPointerDown={(event) => {
         if (closeOnBackdrop && event.target === event.currentTarget) onClose();
       }}
@@ -178,7 +221,8 @@ export function Dialog({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`motion-dialog-panel ${variant === "fullscreen" ? "motion-dialog-panel--fullscreen" : ""} flex min-h-0 flex-col overflow-hidden ${panelClass}`}
+        onAnimationEnd={handlePanelAnimationEnd}
+        className={`motion-dialog-panel ${variant === "fullscreen" ? "motion-dialog-panel--fullscreen" : ""} ${isClosing ? "motion-dialog-panel--closing" : ""} flex min-h-0 flex-col overflow-hidden ${panelClass}`}
         style={{
           background: "var(--panel)",
           borderColor: "var(--line)",

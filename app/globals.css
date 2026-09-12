@@ -94,19 +94,62 @@ body {
 }
 
 /* Only daily evidence cross-fades. The navigator remains still, which keeps
-   the user's selected date anchored while its reading changes. */
+   the user's selected date anchored while its reading changes.
+
+   The entering/current layer is the only one that sizes this container —
+   the leaving layer is lifted out of flow with `position: absolute` so it
+   overlaps on top instead of sharing a grid track with it. A grid-stack of
+   both (each sized by its own content) sizes the shared track to whichever
+   is taller, then snaps to the survivor's height the instant the leaving
+   layer unmounts — a real layout jump on days whose entry counts differ,
+   which reads as the transition itself being jittery. */
 .motion-day-transition {
-  display: grid;
+  position: relative;
   min-width: 0;
 }
 
 .motion-day-transition__layer {
-  grid-area: 1 / 1;
   min-width: 0;
+}
+
+.motion-day-transition__layer--leaving {
+  position: absolute;
+  inset: 0;
 }
 
 .motion-day-transition__layer--entering,
 .motion-day-transition__layer--leaving {
+  pointer-events: none;
+}
+
+/* Real route changes (dashboard ↔ login ↔ register) otherwise cut instantly:
+   each is a separate page with its own chrome, and the outgoing one simply
+   unmounts. Cross-fading it, like the day reading above, replaces the cut
+   with a settling handoff. Opacity only, deliberately: a transformed
+   ancestor would create a new containing block and drag the dashboard's
+   fixed bottom nav along with the animation instead of leaving it pinned to
+   the viewport. */
+.motion-page-transition {
+  position: relative;
+  min-width: 0;
+}
+
+.motion-page-transition__layer {
+  min-width: 0;
+}
+
+/* Absolute, not grid-stacked: see the day-transition comment above — a
+   shared grid track sized to the taller of the two pages snaps to the
+   survivor's height the instant the leaving one unmounts. `position` does
+   not create a containing block for the fixed bottom nav the way `transform`
+   would, so this does not reopen the problem that comment describes. */
+.motion-page-transition__layer--leaving {
+  position: absolute;
+  inset: 0;
+}
+
+.motion-page-transition__layer--entering,
+.motion-page-transition__layer--leaving {
   pointer-events: none;
 }
 
@@ -125,6 +168,13 @@ body {
   background: rgb(4 8 13 / 48%);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
+}
+
+/* A dialog mid-close is still visible but already decided; nothing in it
+   should be tappable while it fades out from under the user's next tap. */
+.motion-dialog-scrim--closing,
+.motion-dialog-panel--closing {
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -179,6 +229,14 @@ body {
     animation: day-surface-leave 110ms ease-in both;
   }
 
+  .motion-page-transition__layer--entering {
+    animation: day-surface-enter 170ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .motion-page-transition__layer--leaving {
+    animation: day-surface-leave 110ms ease-in both;
+  }
+
   .motion-press:not(:disabled):active,
   .motion-segment:not(:disabled):active,
   .motion-nav-tab:not(:disabled):active,
@@ -207,6 +265,13 @@ body {
     animation: disclosure-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
+  /* Exit faster than entrance, and pointer-events: none so a hidden field
+     cannot be tabbed or clicked into while it is on its way out. */
+  .motion-disclosure-content--closing {
+    animation: disclosure-leave 130ms ease-in both;
+    pointer-events: none;
+  }
+
   .motion-dialog-scrim {
     animation: dialog-scrim-enter 160ms ease-out both;
   }
@@ -217,6 +282,20 @@ body {
 
   .motion-dialog-panel--fullscreen {
     animation: dialog-fullscreen-enter 180ms ease-out both;
+  }
+
+  /* Exit faster than entrance, and quicker than the day/page cross-fades —
+     a dialog closing is a direct dismissal, not a reading settling in. */
+  .motion-dialog-scrim--closing {
+    animation: dialog-scrim-leave 110ms ease-in both;
+  }
+
+  .motion-dialog-panel--closing {
+    animation: dialog-sheet-leave 170ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
+
+  .motion-dialog-panel--closing.motion-dialog-panel--fullscreen {
+    animation: dialog-fullscreen-leave 130ms ease-in both;
   }
 
   .motion-toast {
@@ -252,18 +331,24 @@ body {
   .motion-dialog-panel:not(.motion-dialog-panel--fullscreen) {
     animation-name: dialog-pop-enter;
   }
+
+  .motion-dialog-panel--closing:not(.motion-dialog-panel--fullscreen) {
+    animation-name: dialog-pop-leave;
+  }
 }
 
+/* Opacity + transform only, deliberately: this plays across a whole tab's
+   content (meter grid, charts, entry lists), and clip-path over a tree that
+   size does not stay smooth — it forces a repaint of the clipped region on
+   every frame instead of compositing on the GPU like these two do. */
 @keyframes reading-enter-a {
   from {
     opacity: 0.66;
     transform: translateY(6px);
-    clip-path: inset(0 0 8% 0);
   }
   to {
     opacity: 1;
     transform: translateY(0);
-    clip-path: inset(0);
   }
 }
 
@@ -271,12 +356,10 @@ body {
   from {
     opacity: 0.66;
     transform: translateY(6px);
-    clip-path: inset(0 0 8% 0);
   }
   to {
     opacity: 1;
     transform: translateY(0);
-    clip-path: inset(0);
   }
 }
 
@@ -290,6 +373,19 @@ body {
     opacity: 1;
     transform: translateY(0);
     clip-path: inset(0);
+  }
+}
+
+@keyframes disclosure-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0);
+  }
+  to {
+    opacity: 0.02;
+    transform: translateY(-3px);
+    clip-path: inset(0 0 12% 0);
   }
 }
 
@@ -328,6 +424,44 @@ body {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes dialog-scrim-leave {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes dialog-sheet-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes dialog-pop-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+@keyframes dialog-fullscreen-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
   }
 }
 

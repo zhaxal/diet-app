@@ -108,7 +108,10 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
     }
   }
 
-  const editDialog = editing ? (() => {
+  // Always rendered (not gated on `editing`) so closing it animates out —
+  // conditionally mounting would remove Dialog from the tree the instant
+  // `editing` flips false, before it gets a frame to play its exit.
+  const editDialog = (() => {
     const units = comparableUnits((entry.quantityUnit ?? "g") as QuantityUnit);
     const amountNum = Number(form.quantity);
     const amountInvalid =
@@ -116,7 +119,7 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
 
     return (
       <Dialog
-        open
+        open={editing}
         onClose={() => setEditing(false)}
         title={`Edit ${entry.name}`}
         description={`${entry.mealType} · ${clockTime(entry.consumedAt)}`}
@@ -293,7 +296,7 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
         </form>
       </Dialog>
     );
-  })() : null;
+  })();
 
   return (
     <>

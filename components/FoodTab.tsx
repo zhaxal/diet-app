@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { RefreshCw, Search, X } from "lucide-react";
+import { MoreHorizontal, RefreshCw, Search, X } from "lucide-react";
 import type {
   FoodEntry,
   Summary,
@@ -102,6 +102,95 @@ function QuickAddRow({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Collapses a meal-group header's three actions (add, copy all, clear) behind
+ * one glyph so the header reads as a label and a total, not a toolbar. Not a
+ * Dialog: these are quick, low-stakes picks anchored to their trigger, not a
+ * focused task worth a scrim.
+ */
+function MealActionsMenu({
+  mealName,
+  onAdd,
+  onCopyAll,
+  onClear,
+}: {
+  mealName: Meal;
+  onAdd: () => void;
+  onCopyAll: () => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const triggerRef = React.useRef<HTMLButtonElement | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  function act(fn: () => void) {
+    setOpen(false);
+    fn();
+  }
+
+  const itemClass =
+    "block min-h-[36px] w-full px-3 py-2 text-left text-2xs font-semibold uppercase tracking-wider text-ink-dim transition-colors hover:bg-panel-2 hover:text-accent";
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`${mealName} actions`}
+        className="glyph-btn text-ink-faint transition-colors hover:text-ink"
+      >
+        <MoreHorizontal size={14} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label={`${mealName} actions`}
+          className="motion-state-enter absolute right-0 top-full z-20 mt-1 w-32 overflow-hidden rounded border"
+          style={{ background: "var(--panel)", borderColor: "var(--line)" }}
+        >
+          <button type="button" role="menuitem" onClick={() => act(onAdd)} className={itemClass}>
+            + Add
+          </button>
+          <button type="button" role="menuitem" onClick={() => act(onCopyAll)} className={itemClass}>
+            Copy all
+          </button>
+          <span className="block h-px" style={{ background: "var(--line)" }} aria-hidden="true" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => act(onClear)}
+            className={`${itemClass} hover:text-over`}
+          >
+            Clear
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -841,42 +930,30 @@ export default function FoodTab({
                   const items = entries.filter((e) => e.mealType === mealName);
                   if (items.length === 0) return null;
                   return (
-                    <div key={mealName} className="panel mb-2 overflow-hidden">
+                    <div key={mealName} className="panel mb-2">
+                      {/* rounded-t self-clips the header's own fill instead of
+                          relying on the panel's overflow-hidden, which would
+                          also clip the actions menu below it. */}
                       <div
-                        className="flex items-baseline justify-between border-b px-3 py-1.5"
+                        className="flex items-baseline justify-between rounded-t border-b px-3 py-1.5"
                         style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
                       >
                         <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
                           {mealName}
                         </h3>
-                        <div className="flex items-baseline gap-2">
+                        <div className="flex items-center gap-2">
                           <span className="num text-2xs text-ink-faint">
                             {Math.round(summary?.byMeal[mealName]?.calories ?? 0)} kcal
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => {
+                          <MealActionsMenu
+                            mealName={mealName}
+                            onAdd={() => {
                               setMeal(mealName);
                               setShowAdd(true);
                             }}
-                            className="text-2xs font-semibold uppercase tracking-wider text-ink-faint transition-colors hover:text-accent"
-                          >
-                            + add
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => copyMeal(mealName, items)}
-                            className="text-2xs font-semibold uppercase tracking-wider text-ink-faint transition-colors hover:text-accent"
-                          >
-                            copy all
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => clearMeal(mealName, items)}
-                            className="text-2xs font-semibold uppercase tracking-wider text-ink-faint transition-colors hover:text-over"
-                          >
-                            clear
-                          </button>
+                            onCopyAll={() => copyMeal(mealName, items)}
+                            onClear={() => clearMeal(mealName, items)}
+                          />
                         </div>
                       </div>
                       <ul className="divide-y" style={{ borderColor: "var(--line-soft)" }}>

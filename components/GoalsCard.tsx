@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, type Goals } from "@/lib/api-client";
+import { useAnimatedDisclosure } from "@/lib/useAnimatedDisclosure";
 import Select from "./Select";
 import TdeeCard from "./TdeeCard";
 import { useToast } from "./Toast";
@@ -95,6 +96,8 @@ export default function GoalsCard({ goals, latestWeight, onGoalsChange }: Props)
     goals.dailyFiber || goals.dailySugar || goals.dailySodium
   );
   const [showMicros, setShowMicros] = useState(hasMicrosSet);
+  const micros = useAnimatedDisclosure(showMicros);
+  const calculator = useAnimatedDisclosure(showCalculator);
 
   const PRIMARY_FIELDS = [
     { label: "kcal", key: "dailyCalories", max: 100000 },
@@ -164,9 +167,10 @@ export default function GoalsCard({ goals, latestWeight, onGoalsChange }: Props)
           )}
         </button>
 
-        {showMicros && (
+        {micros.rendered && (
           <div
-            className="mt-2 grid grid-cols-3 gap-1.5 border-t pt-2"
+            onAnimationEnd={micros.onAnimationEnd}
+            className={`motion-disclosure-content ${micros.closing ? "motion-disclosure-content--closing" : ""} mt-2 grid grid-cols-3 gap-1.5 border-t pt-2`}
             style={{ borderColor: "var(--line-soft)" }}
           >
             {MICRO_FIELDS.map(({ label, key, max }) => (
@@ -201,8 +205,12 @@ export default function GoalsCard({ goals, latestWeight, onGoalsChange }: Props)
           <span className="num text-xs text-ink-faint">{showCalculator ? "−" : "+"}</span>
         </button>
 
-        {showCalculator && (
-          <div className="mt-2 border-t pt-2.5" style={{ borderColor: "var(--line-soft)" }}>
+        {calculator.rendered && (
+          <div
+            onAnimationEnd={calculator.onAnimationEnd}
+            className={`motion-disclosure-content ${calculator.closing ? "motion-disclosure-content--closing" : ""} mt-2 border-t pt-2.5`}
+            style={{ borderColor: "var(--line-soft)" }}
+          >
             <TdeeCard
               goals={goals}
               latestWeight={latestWeight}

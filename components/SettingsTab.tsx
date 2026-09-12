@@ -9,6 +9,8 @@ import GoalsCard from "@/components/GoalsCard";
 import ProductsCard from "@/components/ProductsCard";
 import { Header, Panel } from "@/components/Panel";
 import { AlertDialog } from "@/components/Dialog";
+import InstallPwaCard from "@/components/InstallPwaCard";
+import { useAnimatedDisclosure } from "@/lib/useAnimatedDisclosure";
 
 interface Props {
   email: string;
@@ -55,6 +57,8 @@ export default function SettingsTab({
 }: Props) {
   const [showMcpDetails, setShowMcpDetails] = useState(false);
   const [showImportExportDetails, setShowImportExportDetails] = useState(false);
+  const mcpDetails = useAnimatedDisclosure(showMcpDetails);
+  const importExportDetails = useAnimatedDisclosure(showImportExportDetails);
 
   return (
     <>
@@ -64,6 +68,8 @@ export default function SettingsTab({
         <span className="text-2xs uppercase tracking-wider text-ink-dim">Appearance</span>
         <ThemeToggle />
       </div>
+
+      <InstallPwaCard />
 
       <GoalsCard
         goals={goals}
@@ -88,9 +94,10 @@ export default function SettingsTab({
           </button>
         </div>
 
-        {showMcpDetails && (
+        {mcpDetails.rendered && (
           <div
-            className="motion-disclosure-content mt-2 space-y-1.5 border-b pb-2.5 text-2xs text-ink-faint"
+            onAnimationEnd={mcpDetails.onAnimationEnd}
+            className={`motion-disclosure-content ${mcpDetails.closing ? "motion-disclosure-content--closing" : ""} mt-2 space-y-1.5 border-b pb-2.5 text-2xs text-ink-faint`}
             style={{ borderColor: "var(--line-soft)" }}
           >
             <p>
@@ -167,9 +174,10 @@ export default function SettingsTab({
           </button>
         </div>
 
-        {showImportExportDetails && (
+        {importExportDetails.rendered && (
           <div
-            className="motion-disclosure-content mt-2 space-y-1 border-b pb-2.5 text-2xs text-ink-faint"
+            onAnimationEnd={importExportDetails.onAnimationEnd}
+            className={`motion-disclosure-content ${importExportDetails.closing ? "motion-disclosure-content--closing" : ""} mt-2 space-y-1 border-b pb-2.5 text-2xs text-ink-faint`}
             style={{ borderColor: "var(--line-soft)" }}
           >
             <p>

@@ -6,6 +6,7 @@ import {
   Plus,
   ChevronRight,
   Search,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 import {
@@ -54,6 +55,7 @@ export default function WorkoutCard({
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState<string>("");
   const [searchingExercises, setSearchingExercises] = useState<boolean>(false);
   const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
+  const [showDetails, setShowDetails] = useState<boolean>(false);
   const [copyingLastSession, setCopyingLastSession] = useState(false);
   const [lastSessionInfo, setLastSessionInfo] = useState<{ date: string; title: string } | null>(null);
 
@@ -464,15 +466,37 @@ export default function WorkoutCard({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {/* Save Status telemetry */}
+          {/* Save Status telemetry. `relative top-px`: the monospace face
+              sits ~1px higher than the sans-serif "Details" label beside it
+              at matching box heights — same font size, different ascent —
+              so a centered flex row leaves them a pixel out of true. */}
           <span
-            className="num text-2xs font-mono uppercase tracking-wider shrink-0 whitespace-nowrap"
+            className="num relative top-px text-2xs font-mono uppercase tracking-wider shrink-0 whitespace-nowrap"
             style={{
               color: saveStatus === "saved" ? "var(--ink-faint)" : "var(--warn)",
             }}
           >
             {saveStatus === "saving" ? "· saving…" : saveStatus === "saved" ? "· saved" : "· draft"}
           </span>
+
+          {parsedPreview.exercises.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowDetails(true)}
+                aria-label="Session details: sets, reps, volume, muscle groups, PRs"
+                title="Session details"
+                className="glyph-btn flex items-center gap-1 text-2xs text-ink-faint hover:text-ink transition-colors"
+              >
+                <SlidersHorizontal size={12} aria-hidden="true" />
+                <span className="uppercase tracking-wider">Details</span>
+              </button>
+              {/* Hairline separation between safe Details and destructive delete,
+                  matching EntryRow's copy/delete divider — prevents tap collisions
+                  on a pair of adjacent glyph buttons. */}
+              <span className="w-px h-3.5 bg-line shrink-0" aria-hidden="true" />
+            </>
+          )}
 
           <button
             type="button"
@@ -486,49 +510,15 @@ export default function WorkoutCard({
         </div>
       </div>
 
-      {/* Session Instrument Metrics Bar */}
-      {parsedPreview.exercises.length > 0 && (
-        <div
-          className="flex items-center justify-between gap-2 border-b px-3 py-1.5 text-2xs"
-          style={{ borderColor: "var(--line)", background: "var(--panel)" }}
-        >
-          <div className="flex items-center gap-2 num text-ink-dim overflow-x-auto no-scrollbar">
-            <span>
-              <strong className="text-ink">{sessionStats.totalVolume.toLocaleString()}</strong> {weightUnit}
-            </span>
-            <span className="text-ink-faint/40">·</span>
-            <span>
-              <strong className="text-ink">{sessionStats.totalSets}</strong> sets
-            </span>
-            <span className="text-ink-faint/40">·</span>
-            <span>
-              <strong className="text-ink">{sessionStats.totalReps}</strong> reps
-            </span>
-          </div>
-
-          {/* Targeted muscle groups */}
-          {sessionMuscles.length > 0 && (
-            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar shrink-0">
-              {sessionMuscles.slice(0, 3).map((m) => (
-                <span
-                  key={m}
-                  className="px-1 py-0.5 rounded text-2xs uppercase tracking-wider font-mono text-ink-faint"
-                  style={{ background: "var(--panel-2)" }}
-                >
-                  {m}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Main Body */}
-      <div className="flex flex-1 flex-col space-y-2.5 p-3">
+      {/* Main Body. Deliberately uneven rhythm, not a repeated gap: the
+          chips/warning banner are a live reflection of the note below them
+          and sit close to it (hair), while the toolbar is a new zone —
+          actions on the note, not more of it — and gets a wider gap (base). */}
+      <div className="flex flex-1 flex-col p-3">
           {/* Exercise Badges in single horizontal scroll strip */}
           {parsedPreview.exercises.length > 0 && (
             <div
-              className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1.5 border-b"
+              className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-fade-x pb-1.5 border-b"
               style={{ borderColor: "var(--line-soft)" }}
             >
               {parsedPreview.exercises.map((ex, idx) => {
@@ -551,30 +541,11 @@ export default function WorkoutCard({
                     className="flex items-center gap-1 rounded px-2 py-0.5 text-2xs border shrink-0 text-left transition-colors hover:border-accent"
                     style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
                   >
-                    <span className="font-semibold text-ink">{ex.name}</span>
                     <span
-                      className={`num border-l pl-1 text-2xs ${
-                        ex.sets.length > 0 ? "text-ink-dim" : "text-warn font-semibold"
-                      }`}
-                      style={{ borderColor: "var(--line)" }}
+                      className={`font-semibold ${ex.sets.length > 0 ? "text-ink" : "text-warn"}`}
                     >
-                      {ex.sets.length > 0
-                        ? `${ex.sets.length} set${ex.sets.length === 1 ? "" : "s"}`
-                        : "0 sets"}
+                      {ex.name}
                     </span>
-                    {stat?.lastPerformance && (
-                      <span
-                        className="text-ink-dim border-l pl-1 font-mono text-2xs"
-                        style={{ borderColor: "var(--line)" }}
-                      >
-                        {stat.lastPerformance}
-                      </span>
-                    )}
-                    {stat && stat.bestWeightKg > 0 && (
-                      <span className="num text-2xs font-semibold text-accent ml-0.5">
-                        PR
-                      </span>
-                    )}
                     <ChevronRight size={10} className="text-ink-faint" aria-hidden="true" />
                   </button>
                 );
@@ -602,7 +573,7 @@ export default function WorkoutCard({
           )}
 
           {/* Textarea (Obsidian Note Feel) */}
-          <div className="relative flex-1">
+          <div className="relative flex-1 mt-1">
             <textarea
               ref={textareaRef}
               rows={12}
@@ -620,7 +591,7 @@ export default function WorkoutCard({
           </div>
 
           {/* Quick Toolbar */}
-          <div className="flex items-center justify-between pt-1 text-2xs">
+          <div className="flex items-center justify-between mt-2 text-2xs">
             <div className="flex items-center gap-2">
               <div className="relative">
                 <button
@@ -635,9 +606,11 @@ export default function WorkoutCard({
                   <span>Add Exercise</span>
                 </button>
 
-                {showAddMenu && (
-                  <Dialog
-                    open
+                {/* Always rendered (not gated on showAddMenu) so closing it
+                    animates out — conditionally mounting would remove
+                    Dialog from the tree before it gets a frame to exit. */}
+                <Dialog
+                    open={showAddMenu}
                     onClose={() => {
                       setShowAddMenu(false);
                       setExerciseSearchQuery("");
@@ -681,7 +654,7 @@ export default function WorkoutCard({
 
                       {/* Muscle Group Filter Strip */}
                       <div
-                        className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto border-b no-scrollbar"
+                        className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto border-b no-scrollbar scroll-fade-x"
                         style={{ borderColor: "var(--line-soft)", background: "var(--panel)" }}
                       >
                         {MUSCLE_GROUPS.map((m) => {
@@ -732,16 +705,10 @@ export default function WorkoutCard({
                       </div>
                     </div>
                   </Dialog>
-                )}
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {parsedPreview.exercises.length > 0 && (
-                <span className="num text-2xs text-ink-faint">
-                  {parsedPreview.exercises.length} ex · {sessionStats.totalSets} set{sessionStats.totalSets === 1 ? "" : "s"}
-                </span>
-              )}
               <button
                 type="button"
                 onClick={handleFormatNote}
@@ -766,14 +733,99 @@ export default function WorkoutCard({
         onConfirm={handleDeleteWorkout}
       />
 
-      {/* Exercise History Modal */}
-      {activeExerciseId && (
-        <ExerciseHistoryModal
-          exerciseId={activeExerciseId}
-          onClose={() => setActiveExerciseId(null)}
-          unit={weightUnit}
-        />
-      )}
+      {/* Session Details Modal: volume, sets, reps, muscle groups, PRs.
+          Always rendered (not gated on showDetails) so closing it animates
+          out — conditionally mounting would remove Dialog from the tree
+          before it gets a frame to exit. */}
+      <Dialog
+          open={showDetails}
+          onClose={() => setShowDetails(false)}
+          title="Session Details"
+          description={prettyDate(date)}
+          size="md"
+        >
+          <div
+            className="grid grid-cols-3 gap-px overflow-hidden rounded border border-line"
+            style={{ background: "var(--line)" }}
+          >
+            <div className="p-2.5 text-left" style={{ background: "var(--panel-2)" }}>
+              <div className="text-2xs text-ink-faint uppercase tracking-wider">Volume</div>
+              <div className="num text-sm font-bold text-ink mt-0.5">
+                {sessionStats.totalVolume.toLocaleString()}
+                <span className="text-2xs font-normal text-ink-faint ml-0.5">{weightUnit}</span>
+              </div>
+            </div>
+            <div className="p-2.5 text-left" style={{ background: "var(--panel-2)" }}>
+              <div className="text-2xs text-ink-faint uppercase tracking-wider">Sets</div>
+              <div className="num text-sm font-bold text-ink mt-0.5">{sessionStats.totalSets}</div>
+            </div>
+            <div className="p-2.5 text-left" style={{ background: "var(--panel-2)" }}>
+              <div className="text-2xs text-ink-faint uppercase tracking-wider">Reps</div>
+              <div className="num text-sm font-bold text-ink mt-0.5">{sessionStats.totalReps}</div>
+            </div>
+          </div>
+
+          {sessionMuscles.length > 0 && (
+            <div className="mt-3">
+              <div className="text-2xs text-ink-faint uppercase tracking-wider mb-1.5">
+                Muscle Groups
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {sessionMuscles.map((m) => (
+                  <span
+                    key={m}
+                    className="px-1.5 py-0.5 rounded text-2xs uppercase tracking-wider font-mono text-ink-dim"
+                    style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}
+                  >
+                    {m}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {parsedPreview.exercises.length > 0 && (
+            <div className="mt-3">
+              <div className="text-2xs text-ink-faint uppercase tracking-wider mb-1.5">
+                Exercises
+              </div>
+              <div className="divide-y rounded border" style={{ borderColor: "var(--line)" }}>
+                {parsedPreview.exercises.map((ex, idx) => {
+                  const stat = exerciseStats[ex.normalized];
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between gap-2 px-2.5 py-2 text-xs"
+                      style={{ borderColor: "var(--line-soft)" }}
+                    >
+                      <span className="font-semibold text-ink truncate">{ex.name}</span>
+                      <div className="flex items-center gap-2 shrink-0 num text-2xs text-ink-dim">
+                        <span className={ex.sets.length > 0 ? "" : "text-warn font-semibold"}>
+                          {ex.sets.length} set{ex.sets.length === 1 ? "" : "s"}
+                        </span>
+                        {stat?.lastPerformance && (
+                          <span className="font-mono text-ink-faint">{stat.lastPerformance}</span>
+                        )}
+                        {stat && stat.bestWeightKg > 0 && (
+                          <span className="font-semibold text-accent">PR</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </Dialog>
+
+      {/* Exercise History Modal. Always rendered (not gated on
+          activeExerciseId) — ExerciseHistoryModal retains the last id it
+          was given so its own Dialog can animate out on close. */}
+      <ExerciseHistoryModal
+        exerciseId={activeExerciseId}
+        onClose={() => setActiveExerciseId(null)}
+        unit={weightUnit}
+      />
     </div>
   );
 }

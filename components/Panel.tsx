@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useId } from "react";
+import { useAnimatedDisclosure } from "@/lib/useAnimatedDisclosure";
 
 export function Header({ children, sub }: { children: React.ReactNode; sub?: string }) {
   return (
@@ -33,6 +34,7 @@ export function Panel({
   const isOpen = open ?? selfOpen;
   const toggle = onToggle ?? (() => setSelfOpen((s) => !s));
   const bodyId = `panel-${useId()}`;
+  const { rendered, closing, onAnimationEnd } = useAnimatedDisclosure(isOpen);
 
   return (
     <section className="panel mt-2">
@@ -53,10 +55,11 @@ export function Panel({
           </span>
         </span>
       </button>
-      {isOpen && (
+      {rendered && (
         <div
           id={bodyId}
-          className={`motion-disclosure-content ${bare ? "" : "border-t px-3 py-2.5"}`}
+          onAnimationEnd={onAnimationEnd}
+          className={`motion-disclosure-content ${closing ? "motion-disclosure-content--closing" : ""} ${bare ? "" : "border-t px-3 py-2.5"}`}
           style={bare ? undefined : { borderColor: "var(--line)" }}
         >
           {children}
