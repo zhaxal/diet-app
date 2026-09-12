@@ -1,6 +1,6 @@
 import { prettyDate } from "@/lib/time-client";
 
-function SkeletonBar({ className }: { className: string }) {
+export function SkeletonBar({ className }: { className: string }) {
   return <span aria-hidden="true" className={`loading-skeleton ${className}`} />;
 }
 
@@ -125,6 +125,39 @@ export function WorkoutDaySkeleton({ date }: { date: string }) {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+/**
+ * The app's first paint, before the initial account fetch resolves. Matches
+ * the week strip's exact box model (flex-1 cells, border-r, pt-1.5) so nothing
+ * shifts when the real strip mounts in its place, and reuses FoodDaySkeleton
+ * for the body since Food is the tab a fresh load always lands on. This
+ * replaces a bare "Loading" string on an otherwise empty page — the shell was
+ * there, then a completely different, richer page reads as broken, not
+ * merely a swap.
+ */
+export function DashboardSkeleton({ date }: { date: string }) {
+  return (
+    <div role="status" aria-label="Loading your account" aria-busy="true">
+      <span className="sr-only">Loading your account</span>
+
+      <nav className="panel flex overflow-x-auto" aria-hidden="true">
+        {Array.from({ length: 7 }, (_, i) => (
+          <div
+            key={i}
+            className="flex-1 border-r pt-1.5 text-center last:border-r-0"
+            style={{ borderColor: "var(--line)" }}
+          >
+            <SkeletonBar className="mx-auto h-2 w-4" />
+            <SkeletonBar className="mx-auto mt-1 h-4 w-5" />
+            <div className="mb-1.5" />
+          </div>
+        ))}
+      </nav>
+
+      <FoodDaySkeleton date={date} />
     </div>
   );
 }

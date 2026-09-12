@@ -43,6 +43,7 @@ import WorkoutNavigator from "@/components/WorkoutNavigator";
 import WorkoutSummaryCard from "@/components/WorkoutSummaryCard";
 import WorkoutImportModal from "@/components/WorkoutImportModal";
 import DayTransition from "@/components/DayTransition";
+import { DashboardSkeleton } from "@/components/DayLoadingSkeleton";
 
 // The meal a one-tap log lands in follows the clock, not a stale select. Whatever
 // this returns is shown on screen before anything is logged, never inferred silently.
@@ -793,9 +794,9 @@ function Dashboard() {
   }
 
   if (!ready) {
-    return (
-      <main className="flex min-h-safe items-center justify-center p-3">
-        {loadError ? (
+    if (loadError) {
+      return (
+        <main className="flex min-h-safe items-center justify-center p-3">
           <div className="panel w-full max-w-sm p-3 text-center">
             <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
               Cannot reach the server
@@ -808,17 +809,24 @@ function Dashboard() {
               Retry
             </button>
           </div>
-        ) : (
-          <span className="num text-xs uppercase tracking-widest text-ink-faint">
-            Loading
-          </span>
-        )}
-      </main>
+        </main>
+      );
+    }
+
+    // Same shell and column the ready tree below uses (nav, width, padding),
+    // so nothing shifts when the account fetch resolves and swaps this for
+    // the real page — a skeleton settling into data, not a blank screen
+    // replaced by an unrelated, richer one.
+    return (
+      <div className="mx-auto max-w-2xl px-3 pb-32 pt-3">
+        <DashboardSkeleton date={date} />
+        <BottomNav active={tab} onChange={goTab} />
+      </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-3 pb-32 pt-3">
+    <div className="motion-day-surface mx-auto max-w-2xl px-3 pb-32 pt-3">
       <MotionRegion motionKey={tab}>
       {tab === "food" && (
         <FoodTab
