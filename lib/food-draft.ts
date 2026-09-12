@@ -15,7 +15,10 @@ const draftSchema = z.object({
   productId: z.string().nullable(),
   origin: z.object({ label: z.string(), detail: z.string() }).nullable(),
   showTrace: z.boolean(),
-  meal: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+  // Older drafts always carried a meal. New drafts can intentionally leave it
+  // blank while someone is filling a historical-day entry, so reopening one
+  // cannot turn a clock-derived default into a confirmed choice.
+  meal: z.enum(["breakfast", "lunch", "dinner", "snack"]).nullable(),
 });
 export type FoodDraft = z.infer<typeof draftSchema>;
 const storeSchema = z.object({ userId: z.string(), days: z.record(draftSchema) });

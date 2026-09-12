@@ -174,7 +174,17 @@ function Dashboard() {
 
   // The copy tray. Device state, not a record - see lib/copied.ts.
   const [copied, setCopied] = useState<CopiedItem[]>([]);
-  const [meal, setMeal] = useState<Meal>(mealForNow);
+  // A clock is useful for today, but it is not evidence of what someone ate on
+  // a previous day. Keep confirmed choices by date so a historical log begins
+  // with an intentional meal rather than inheriting the current hour.
+  const [mealsByDate, setMealsByDate] = useState<Partial<Record<string, Meal>>>({});
+  const meal = mealsByDate[date] ?? mealForNow();
+  const mealConfirmed = date === currentDay || mealsByDate[date] !== undefined;
+  const setMeal = useCallback((next: Meal) => {
+    setMealsByDate((previous) => (
+      previous[date] === next ? previous : { ...previous, [date]: next }
+    ));
+  }, [date]);
   const [showAdd, setShowAdd] = useState(false);
   const [exporting, setExporting] = useState<"json" | "csv" | null>(null);
   const [lastLoaded, setLastLoaded] = useState<number | null>(null);
@@ -819,6 +829,7 @@ function Dashboard() {
           stripEnd={stripEnd}
           dayTotals={dayTotals}
           meal={meal}
+          mealConfirmed={mealConfirmed}
           setMeal={setMeal}
           showAdd={showAdd}
           setShowAdd={setShowAdd}

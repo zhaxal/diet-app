@@ -24,6 +24,11 @@ test("drafts retain the intended meal and remain separate for each day", () => {
   assert.equal(readFoodDraft("owner", "2026-09-05")?.meal, "dinner");
   assert.equal(readFoodDraft("someone-else", "2026-09-06"), null);
 });
+test("an unfinished historical draft does not invent a meal", () => {
+  const unresolved = { ...draft, meal: null };
+  writeFoodDraft("owner", "2026-09-05", unresolved);
+  assert.deepEqual(readFoodDraft("owner", "2026-09-05"), unresolved);
+});
 test("persisted drafts restore their nutrition basis after a fresh session", () => {
   writeFoodDraft("owner", "2026-09-06", draft);
   const stored = data.get("diet.food-drafts.v1")!;

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Search, X } from "lucide-react";
 import type {
   FoodEntry,
   Summary,
@@ -41,6 +41,69 @@ function quickItemDetail(item: QuickItem) {
     : "last portion";
 }
 
+function QuickAddRow({
+  id,
+  label,
+  items,
+  isPastDay,
+  date,
+  meal,
+  quickLoggingName,
+  onRequestQuickLog,
+}: {
+  id: string;
+  label: string;
+  items: QuickItem[];
+  isPastDay: boolean;
+  date: string;
+  meal: Meal;
+  quickLoggingName: string | null;
+  onRequestQuickLog: (item: QuickItem) => void;
+}) {
+  return (
+    <div className="mt-1.5">
+      <h3 id={id} className="text-2xs uppercase tracking-wider text-ink-faint">
+        {label}
+      </h3>
+      <div
+        className="no-scrollbar scroll-fade-x mt-1 flex gap-2 overflow-x-auto pb-0.5"
+        role="group"
+        aria-labelledby={id}
+        aria-describedby="quick-add-hint"
+      >
+        {items.map((item) => {
+          const { food } = item;
+          const isLogging = quickLoggingName === food.name;
+          return (
+            <button
+              key={`${item.kind}:${"id" in food ? food.id : food.name}`}
+              type="button"
+              onClick={() => onRequestQuickLog(item)}
+              disabled={quickLoggingName !== null}
+              aria-busy={isLogging || undefined}
+              aria-label={
+                isPastDay
+                  ? `Choose a meal before logging ${food.name}, ${Math.round(food.calories)} calories, on ${prettyDate(date)}`
+                  : `Log ${food.name}, ${Math.round(food.calories)} calories, to ${meal}`
+              }
+              className="motion-press flex min-h-[40px] max-w-64 shrink-0 items-center gap-1.5 rounded border border-line bg-panel-2 px-2.5 py-1.5 text-left transition-colors hover:border-accent disabled:cursor-wait disabled:opacity-60"
+            >
+              <span className={`min-w-0 truncate text-xs font-medium ${item.kind === "favorite" ? "text-accent" : "text-ink"}`}>
+                {isLogging ? "Logging…" : `${item.kind === "favorite" ? "★ " : ""}${food.name}`}
+              </span>
+              {!isLogging && (
+                <span className="num shrink-0 text-2xs text-ink-faint">
+                  {Math.round(food.calories)} kcal · {quickItemDetail(item)}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   date: string;
   setDate: (d: string) => void;
@@ -65,6 +128,7 @@ interface Props {
   stripEnd: string;
   dayTotals: Map<string, { calories: number; count: number }>;
   meal: Meal;
+  mealConfirmed: boolean;
   setMeal: (m: Meal) => void;
   showAdd: boolean;
   setShowAdd: React.Dispatch<React.SetStateAction<boolean>>;
@@ -108,6 +172,7 @@ export default function FoodTab({
   stripEnd,
   dayTotals,
   meal,
+  mealConfirmed,
   setMeal,
   showAdd,
   setShowAdd,
@@ -145,22 +210,57 @@ export default function FoodTab({
   const [datePickerOpen, setDatePickerOpen] = React.useState(false);
   const [quickLoggingName, setQuickLoggingName] = React.useState<string | null>(null);
   const quickLoggingRef = React.useRef(false);
-  const quickItems = React.useMemo<QuickItem[]>(() => {
+  const [quickQuery, setQuickQuery] = React.useState("");
+  const [quickSearchSeed, setQuickSearchSeed] = React.useState("");
+  const [focusQuickSearch, setFocusQuickSearch] = React.useState(false);
+  const [pendingQuickAdd, setPendingQuickAdd] = React.useState<Favorite | RecentFood | null>(null);
+  const quickMealChooserRef = React.useRef<HTMLDivElement | null>(null);
+  const quickFavorites = React.useMemo<QuickItem[]>(() => {
+    return favorites.map((food) => ({ kind: "favorite" as const, food }));
+  }, [favorites]);
+  const quickRecents = React.useMemo<QuickItem[]>(() => {
     const favoriteNames = new Set(favorites.map((food) => food.name.toLocaleLowerCase()));
-    return [
-      ...favorites.map((food) => ({ kind: "favorite" as const, food })),
-      ...rankRecent(recent, meal)
-        .filter((food) => !favoriteNames.has(food.name.toLocaleLowerCase()))
-        .map((food) => ({ kind: "recent" as const, food })),
-    ].slice(0, 4);
+    return rankRecent(recent, meal)
+      .filter((food) => !favoriteNames.has(food.name.toLocaleLowerCase()))
+      .map((food) => ({ kind: "recent" as const, food }));
   }, [favorites, recent, meal]);
+  const allQuickItems = React.useMemo(
+    () => [...quickFavorites, ...quickRecents],
+    [quickFavorites, quickRecents],
+  );
+  const filteredQuickItems = React.useMemo(() => {
+    const query = quickQuery.trim().toLocaleLowerCase();
+    return query
+      ? allQuickItems.filter(({ food }) => food.name.toLocaleLowerCase().includes(query))
+      : [];
+  }, [allQuickItems, quickQuery]);
+  const isPastDay = date !== todayStr();
+
+  React.useEffect(() => {
+    setPendingQuickAdd(null);
+    setQuickSearchSeed("");
+    setFocusQuickSearch(false);
+  }, [date]);
+
+  React.useEffect(() => {
+    if (!pendingQuickAdd) return;
+    // Let the click that opened this chooser finish first, then make the
+    // required decision visible and keyboard-ready even when it originated
+    // from a quick item inside the expanded composer.
+    const frame = window.requestAnimationFrame(() => {
+      const chooser = quickMealChooserRef.current;
+      chooser?.scrollIntoView({ block: "nearest" });
+      chooser?.querySelector<HTMLButtonElement>('[role="group"] button:not(:disabled)')?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [pendingQuickAdd]);
 
   function refreshFoodLog() {
     void loadDay(date);
     void onQuickAddDataChanged();
   }
 
-  async function quickLog(food: Favorite | RecentFood) {
+  async function quickLog(food: Favorite | RecentFood, targetMeal: Meal = meal) {
     if (quickLoggingRef.current) return;
     quickLoggingRef.current = true;
     setQuickLoggingName(food.name);
@@ -175,13 +275,13 @@ export default function FoodTab({
         fiber: food.fiber,
         sugar: food.sugar,
         sodium: food.sodium,
-        mealType: meal,
+        mealType: targetMeal,
         productId: isRecent ? food.productId ?? null : null,
         quantity: isRecent ? food.quantity ?? null : null,
         quantityUnit: isRecent ? food.quantityUnit ?? null : null,
         consumedAt: consumedAtFor(date),
       });
-      toast(`Added ${food.name} to ${meal}`, "success", {
+      toast(`Added ${food.name} to ${targetMeal}`, "success", {
         label: "Undo",
         onAct: async () => {
           await api.deleteEntry(entry.id);
@@ -195,6 +295,35 @@ export default function FoodTab({
       quickLoggingRef.current = false;
       setQuickLoggingName(null);
     }
+  }
+
+  function requestQuickLog(item: QuickItem) {
+    if (isPastDay) {
+      setPendingQuickAdd(item.food);
+      return;
+    }
+    void quickLog(item.food);
+  }
+
+  async function requestComposerQuickLog(food: Favorite | RecentFood) {
+    if (isPastDay) {
+      setPendingQuickAdd(food);
+      return;
+    }
+    await quickLog(food);
+  }
+
+  function chooseQuickAddMeal(targetMeal: Meal) {
+    if (!pendingQuickAdd) return;
+    setMeal(targetMeal);
+    setPendingQuickAdd(null);
+    void quickLog(pendingQuickAdd, targetMeal);
+  }
+
+  function openQuickSearch() {
+    setQuickSearchSeed(quickQuery);
+    setShowAdd(true);
+    setFocusQuickSearch(true);
   }
 
   return (
@@ -357,7 +486,9 @@ export default function FoodTab({
               onClick={() => setShowAdd((open) => !open)}
               aria-expanded={showAdd}
               aria-controls="food-composer"
-              aria-label={`${showAdd ? "Close" : "Open"} food composer for ${meal}`}
+              aria-label={mealConfirmed
+                ? `${showAdd ? "Close" : "Open"} food composer for ${meal}`
+                : `${showAdd ? "Close" : "Open"} food composer — choose a meal first`}
               className={`motion-press flex min-h-[56px] w-full items-center justify-between gap-3 px-3 text-left transition-colors ${
                 showAdd ? "bg-panel-2 text-ink hover:bg-bg" : "bg-ink text-panel hover:opacity-95"
               }`}
@@ -369,7 +500,11 @@ export default function FoodTab({
                 <span
                   className={`mt-0.5 block text-2xs ${showAdd ? "text-ink-faint" : "text-panel/70"}`}
                 >
-                  {showAdd ? `Adding to ${meal}` : `${meal} · ${date === todayStr() ? "today" : prettyDate(date)}`}
+                  {showAdd
+                    ? mealConfirmed ? `Adding to ${meal}` : "Choose a meal before logging"
+                    : mealConfirmed
+                      ? `${meal} · ${date === todayStr() ? "today" : prettyDate(date)}`
+                      : `Choose a meal · ${prettyDate(date)}`}
                 </span>
               </span>
               <span className="num text-lg leading-none" aria-hidden="true">
@@ -377,45 +512,139 @@ export default function FoodTab({
               </span>
             </button>
 
-            {quickItems.length > 0 && (
+            {allQuickItems.length > 0 && (
               <div className="border-t px-3 py-2.5" style={{ borderColor: "var(--line)" }}>
                 <div className="mb-1.5 flex items-baseline justify-between gap-2">
                   <h2 id="quick-add-heading" className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
                     Quick add
                   </h2>
-                  <span id="quick-add-hint" className="text-2xs text-ink-faint">1 tap · Undo</span>
+                  <span id="quick-add-hint" className="text-2xs text-ink-faint">
+                    {isPastDay ? "Choose meal" : "1 tap · Undo"}
+                  </span>
                 </div>
-                <div
-                  className="no-scrollbar flex gap-2 overflow-x-auto pb-0.5"
-                  role="group"
-                  aria-labelledby="quick-add-heading"
-                  aria-describedby="quick-add-hint"
+                <label htmlFor="quick-add-filter" className="mb-1 block text-2xs uppercase tracking-wider text-ink-faint">
+                  Find food
+                </label>
+                <form
+                  className="relative"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    openQuickSearch();
+                  }}
                 >
-                  {quickItems.map((item) => {
-                    const { food } = item;
-                    const isLogging = quickLoggingName === food.name;
-                    return (
+                  <Search
+                    size={14}
+                    strokeWidth={1.75}
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint"
+                  />
+                  <input
+                    id="quick-add-filter"
+                    value={quickQuery}
+                    onChange={(e) => setQuickQuery(e.target.value)}
+                    className="field w-full pl-8 pr-10 text-xs"
+                    placeholder="Filter favorites and recent foods"
+                  />
+                  {quickQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setQuickQuery("")}
+                      className="glyph-btn absolute right-0 top-1/2 -translate-y-1/2 text-ink-faint transition-colors hover:text-ink"
+                      aria-label="Clear quick add filter"
+                    >
+                      <X size={14} strokeWidth={1.75} aria-hidden="true" />
+                    </button>
+                  )}
+                </form>
+                {quickQuery ? (
+                  filteredQuickItems.length > 0 ? (
+                    <QuickAddRow
+                      id="quick-add-matches-heading"
+                      label="Matches"
+                      items={filteredQuickItems}
+                      isPastDay={isPastDay}
+                      date={date}
+                      meal={meal}
+                      quickLoggingName={quickLoggingName}
+                      onRequestQuickLog={requestQuickLog}
+                    />
+                  ) : (
+                    <p className="mt-1.5 text-2xs text-ink-faint">No matches in Quick add.</p>
+                  )
+                ) : (
+                  <>
+                    {quickFavorites.length > 0 && (
+                      <QuickAddRow
+                        id="quick-add-favorites-heading"
+                        label="Favorites"
+                        items={quickFavorites}
+                        isPastDay={isPastDay}
+                        date={date}
+                        meal={meal}
+                        quickLoggingName={quickLoggingName}
+                        onRequestQuickLog={requestQuickLog}
+                      />
+                    )}
+                    {quickRecents.length > 0 && (
+                      <QuickAddRow
+                        id="quick-add-recents-heading"
+                        label="Recent"
+                        items={quickRecents}
+                        isPastDay={isPastDay}
+                        date={date}
+                        meal={meal}
+                        quickLoggingName={quickLoggingName}
+                        onRequestQuickLog={requestQuickLog}
+                      />
+                    )}
+                  </>
+                )}
+                {quickQuery && (
+                  <button
+                    type="button"
+                    onClick={openQuickSearch}
+                    className="mt-1.5 text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
+                  >
+                    Search all foods →
+                  </button>
+                )}
+                {pendingQuickAdd && (
+                  <div
+                    ref={quickMealChooserRef}
+                    className="mt-2 border-t pt-2"
+                    style={{ borderColor: "var(--line-soft)" }}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="min-w-0 truncate text-2xs text-ink-dim">
+                        Quick-add <span className="font-semibold text-ink">{pendingQuickAdd.name}</span> to
+                      </p>
                       <button
-                        key={`${item.kind}:${"id" in food ? food.id : food.name}`}
                         type="button"
-                        onClick={() => void quickLog(food)}
-                        disabled={quickLoggingName !== null}
-                        aria-busy={isLogging || undefined}
-                        aria-label={`Log ${food.name}, ${Math.round(food.calories)} calories, to ${meal}`}
-                        className="motion-press flex min-h-[40px] shrink-0 items-center gap-1.5 rounded border border-line bg-panel-2 px-2.5 py-1.5 text-left transition-colors hover:border-accent disabled:cursor-wait disabled:opacity-60"
+                        onClick={() => setPendingQuickAdd(null)}
+                        className="shrink-0 text-2xs text-ink-faint hover:text-ink"
                       >
-                        <span className={`truncate text-xs font-medium ${item.kind === "favorite" ? "text-accent" : "text-ink"}`}>
-                          {isLogging ? "Logging…" : `${item.kind === "favorite" ? "★ " : ""}${food.name}`}
-                        </span>
-                        {!isLogging && (
-                          <span className="num shrink-0 text-2xs text-ink-faint">
-                            {Math.round(food.calories)} kcal · {quickItemDetail(item)}
-                          </span>
-                        )}
+                        Cancel
                       </button>
-                    );
-                  })}
-                </div>
+                    </div>
+                    <div
+                      className="mt-1.5 grid grid-cols-2 gap-1.5 min-[360px]:grid-cols-4"
+                      role="group"
+                      aria-label={`Choose a meal for ${pendingQuickAdd.name}`}
+                    >
+                      {MEALS.map((targetMeal) => (
+                        <button
+                          key={targetMeal}
+                          type="button"
+                          onClick={() => chooseQuickAddMeal(targetMeal)}
+                          disabled={quickLoggingName !== null}
+                          className="btn btn-ghost min-h-[36px] px-2 text-2xs capitalize"
+                        >
+                          {targetMeal}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -424,15 +653,18 @@ export default function FoodTab({
                 <div className="mb-3 flex items-end justify-between gap-3 border-b pb-2" style={{ borderColor: "var(--line-soft)" }}>
                   <div>
                     <p className="text-2xs uppercase tracking-wider text-ink-faint">Logging to</p>
-                    <p className="mt-0.5 text-xs font-semibold capitalize text-ink">{meal}</p>
+                    <p className="mt-0.5 text-xs font-semibold capitalize text-ink">
+                      {mealConfirmed ? meal : "Choose a meal"}
+                    </p>
                   </div>
                   <Select
-                    value={meal}
+                    value={mealConfirmed ? meal : ""}
                     onChange={(e) => setMeal(e.target.value as Meal)}
                     aria-label="Meal for this food"
                     className="capitalize text-xs"
                     wrapClassName="w-36 shrink-0"
                   >
+                    <option value="" disabled>Choose a meal</option>
                     {MEALS.map((m) => (
                       <option key={m} value={m}>{m}</option>
                     ))}
@@ -443,6 +675,7 @@ export default function FoodTab({
                   userId={userId}
                   date={date}
                   meal={meal}
+                  mealConfirmed={mealConfirmed}
                   onMealChange={setMeal}
                   favorites={favorites}
                   recent={recent}
@@ -450,8 +683,12 @@ export default function FoodTab({
                   onRemoveCopied={dropCopy}
                   onLogged={refreshFoodLog}
                   onFavoritesChanged={() => { void onQuickAddDataChanged(); }}
-                  onQuickLog={quickLog}
+                  onQuickLog={requestComposerQuickLog}
                   quickLoggingName={quickLoggingName}
+                  seedQuery={quickSearchSeed}
+                  onSeedConsumed={() => setQuickSearchSeed("")}
+                  focusSearch={focusQuickSearch}
+                  onSearchFocusHandled={() => setFocusQuickSearch(false)}
                 />
               </div>
             )}
@@ -592,7 +829,7 @@ export default function FoodTab({
                   Nothing logged {date === todayStr() ? "today" : `on ${prettyDate(date)}`}.
                 </p>
                 <p className="mt-2 text-2xs text-ink-faint">
-                  {quickItems.length > 0
+                  {allQuickItems.length > 0
                     ? "Quick add is ready above. Open Log food to search or adjust an amount."
                     : "Open Log food to search, scan, or enter an item."}
                 </p>

@@ -69,6 +69,7 @@ interface Props {
   userId: string;
   date: string;
   meal: Meal;
+  mealConfirmed: boolean;
   onMealChange: (m: Meal) => void;
   favorites: Favorite[];
   recent: RecentFood[];
@@ -80,6 +81,8 @@ interface Props {
   quickLoggingName: string | null;
   seedQuery?: string;
   onSeedConsumed?: () => void;
+  focusSearch?: boolean;
+  onSearchFocusHandled?: () => void;
 }
 
 const MACRO_FIELDS = [
@@ -114,6 +117,7 @@ export default function AddFood({
   userId,
   date,
   meal,
+  mealConfirmed,
   onMealChange,
   favorites,
   recent,
@@ -125,6 +129,8 @@ export default function AddFood({
   quickLoggingName,
   seedQuery = "",
   onSeedConsumed,
+  focusSearch = false,
+  onSearchFocusHandled,
 }: Props) {
   const toast = useToast();
   const [initialDraft] = useState(() => readFoodDraft(userId, date));
@@ -218,6 +224,10 @@ export default function AddFood({
 
   async function logBatch() {
     if (batchSelection.size === 0) return;
+    if (!mealConfirmed) {
+      toast("Choose a meal before logging this day", "info");
+      return;
+    }
     setSaving(true);
     try {
       const items = Array.from(batchSelection.values());
@@ -258,7 +268,7 @@ export default function AddFood({
   }
 
   useEffect(() => {
-    if (initialDraft) onMealChange(initialDraft.meal);
+    if (initialDraft?.meal) onMealChange(initialDraft.meal);
     setDraftReady(true);
     // Restore once per account/day mount, not whenever the user changes meal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -267,9 +277,9 @@ export default function AddFood({
   useEffect(() => {
     if (!draftReady) return;
     writeFoodDraft(userId, date, hasDraft
-      ? { q, name, vals, reference, amount, unit, multiple, serving, productId, origin, showTrace, meal }
+      ? { q, name, vals, reference, amount, unit, multiple, serving, productId, origin, showTrace, meal: mealConfirmed ? meal : null }
       : null);
-  }, [draftReady, userId, date, hasDraft, q, name, vals, reference, amount, unit, multiple, serving, productId, origin, showTrace, meal]);
+  }, [draftReady, userId, date, hasDraft, q, name, vals, reference, amount, unit, multiple, serving, productId, origin, showTrace, meal, mealConfirmed]);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -281,6 +291,12 @@ export default function AddFood({
     searchRef.current?.focus();
     onSeedConsumed?.();
   }, [seedQuery, onSeedConsumed]);
+
+  useEffect(() => {
+    if (!focusSearch) return;
+    searchRef.current?.focus();
+    onSearchFocusHandled?.();
+  }, [focusSearch, onSearchFocusHandled]);
 
   const query = q.trim();
 
@@ -533,9 +549,13 @@ export default function AddFood({
         : ["g", "oz", "ml", "floz"]
       : ["g", "oz", "ml", "floz", "serving"];
 
-  const perLabel = reference.kind === "per" && reference.amount === 100
-    ? `per 100 ${unitLabel(reference.unit)}`
-    : null;
+  const manualPerUnit =
+    reference.kind === "per"
+      ? reference.unit
+      : dimensionOf(unit) === "volume"
+        ? "ml"
+        : "g";
+  const manualPerLabel = `PER 100 ${unitLabel(manualPerUnit).toUpperCase()}`;
 
   function setPerHundred(on: boolean) {
     if (!on) {
@@ -581,7 +601,9 @@ export default function AddFood({
 
   /** Why nothing can be logged yet, in the words of the control that is wrong. */
   const problem: string | null =
-    factor !== null
+    !mealConfirmed
+      ? "Choose a meal for this day."
+      : factor !== null
       ? null
       : reference.kind === "unitless"
         ? "Enter how many helpings."
@@ -595,10 +617,14 @@ export default function AddFood({
   const touched = name.trim().length > 0 || vals.calories.trim() !== "";
 
   const canLog =
-    name.trim().length > 0 && vals.calories.trim() !== "" && factor !== null && !saving;
+    mealConfirmed && name.trim().length > 0 && vals.calories.trim() !== "" && factor !== null && !saving;
 
   async function log(e: React.FormEvent) {
     e.preventDefault();
+    if (!mealConfirmed) {
+      toast("Choose a meal before logging this day", "info");
+      return;
+    }
     if (factor === null) return;
     setSaving(true);
     try {
@@ -633,6 +659,10 @@ export default function AddFood({
   }
 
   async function saveFavorite() {
+    if (!mealConfirmed) {
+      toast("Choose a meal before saving this favorite", "info");
+      return;
+    }
     try {
       await api.saveFavorite({ name: name.trim(), ...result, mealType: meal });
       onFavoritesChanged();
@@ -730,7 +760,7 @@ export default function AddFood({
     <div className="space-y-2">
       {hasDraft && (
         <div className="flex items-center justify-between gap-2 text-xs text-ink-dim">
-          <span>Draft kept on this device · {meal} · {whenLabel(date)}</span>
+          <span>Draft kept on this device · {mealConfirmed ? meal : "choose a meal"} · {whenLabel(date)}</span>
           <button type="button" onClick={reset} disabled={saving} className="shrink-0 text-ink-dim underline">Discard draft</button>
         </div>
       )}
@@ -902,11 +932,11 @@ export default function AddFood({
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              disabled={batchSelection.size === 0 || saving}
+              disabled={batchSelection.size === 0 || saving || !mealConfirmed}
               onClick={logBatch}
               className="btn btn-primary py-1 text-2xs"
             >
-              {saving ? "Logging…" : `Log to ${meal}`}
+              {saving ? "Logging…" : mealConfirmed ? `Log to ${meal}` : "Choose a meal to log"}
             </button>
             <button
               type="button"
@@ -977,7 +1007,9 @@ export default function AddFood({
                       aria-busy={isLogging || undefined}
                       aria-label={batchMode
                         ? `${isSelected ? "Remove" : "Add"} ${f.name} from the batch`
-                        : `Log ${f.name}, ${Math.round(f.calories)} calories, to ${meal}`}
+                        : mealConfirmed
+                          ? `Log ${f.name}, ${Math.round(f.calories)} calories, to ${meal}`
+                          : `Choose a meal before logging ${f.name}`}
                       className="text-left flex items-center gap-1.5 disabled:cursor-wait disabled:opacity-60"
                     >
                       {batchMode && (
@@ -1086,7 +1118,9 @@ export default function AddFood({
                       aria-busy={isLogging || undefined}
                       aria-label={batchMode
                         ? `${isSelected ? "Remove" : "Add"} ${r.name} from the batch`
-                        : `Log ${r.name}, ${Math.round(r.calories)} calories, to ${meal}`}
+                        : mealConfirmed
+                          ? `Log ${r.name}, ${Math.round(r.calories)} calories, to ${meal}`
+                          : `Choose a meal before logging ${r.name}`}
                       className="text-left flex items-center gap-1.5 disabled:cursor-wait disabled:opacity-60"
                     >
                       {batchMode && (
@@ -1158,7 +1192,7 @@ export default function AddFood({
             if (!hasDraft) setShowManual(false);
           }}
           title={origin ? "Confirm & Scale" : "Manual Food Entry"}
-          description={`${meal} · ${whenLabel(date)}`}
+          description={`${mealConfirmed ? meal : "choose a meal"} · ${whenLabel(date)}`}
           size="md"
           bodyClassName="p-3"
         >
@@ -1166,15 +1200,18 @@ export default function AddFood({
           <div className="col-span-full flex items-end justify-between gap-3 border-b pb-2" style={{ borderColor: "var(--line-soft)" }}>
             <div>
               <span className="block text-2xs uppercase tracking-wider text-ink-faint">Log to</span>
-              <span className="mt-0.5 block text-xs font-semibold capitalize text-ink">{meal}</span>
+              <span className="mt-0.5 block text-xs font-semibold capitalize text-ink">
+                {mealConfirmed ? meal : "Choose a meal"}
+              </span>
             </div>
             <Select
-              value={meal}
+              value={mealConfirmed ? meal : ""}
               onChange={(e) => onMealChange(e.target.value as Meal)}
               aria-label="Meal"
               className="capitalize text-xs"
               wrapClassName="w-36 shrink-0"
             >
+              <option value="" disabled>Choose a meal</option>
               {MEALS.map((m) => (
                 <option key={m} value={m}>
                   {m}
@@ -1194,12 +1231,12 @@ export default function AddFood({
             />
           </label>
 
-          {/* Declare the data basis only when it is relevant. A total for one
-              portion is the useful default; label arithmetic remains explicit
-              for people who need it. */}
-          <div className="col-span-full flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+          {/* A hand-entered food needs an explicit basis before the first
+              nutrition figure. The selected state is visible and named, so
+              label arithmetic never depends on interpreting an inline link. */}
+          <div className="col-span-full">
             {origin ? (
-              <>
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
                 <span className="min-w-0 truncate text-2xs uppercase tracking-wider text-ink-dim">
                   {origin.label}
                   <span className="ml-1.5 normal-case tracking-normal text-ink-faint">
@@ -1213,22 +1250,48 @@ export default function AddFood({
                 >
                   clear
                 </button>
-              </>
+              </div>
             ) : (
-              <>
-                <span className="text-2xs text-ink-faint">
-                  {reference.kind === "per"
-                    ? `Nutrition label: ${perLabel ?? "per 100"} · amount rescales it`
-                    : "Numbers are for this portion"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPerHundred(reference.kind !== "per")}
-                  className="text-2xs font-medium text-ink-dim hover:text-accent hover:underline"
+              <fieldset>
+                <legend className="text-2xs uppercase tracking-wider text-ink-faint">
+                  Nutrition values are
+                </legend>
+                <div
+                  className="mt-1 grid grid-cols-2 overflow-hidden rounded border"
+                  style={{ borderColor: "var(--line)" }}
                 >
-                  {reference.kind === "per" ? "Use portion total" : "+ Use a per 100 label"}
-                </button>
-              </>
+                  <button
+                    type="button"
+                    aria-pressed={reference.kind !== "per"}
+                    onClick={() => setPerHundred(false)}
+                    className={`min-h-[36px] px-2 py-1.5 text-2xs font-semibold uppercase tracking-wider transition-colors ${
+                      reference.kind !== "per"
+                        ? "bg-ink text-panel"
+                        : "bg-panel-2 text-ink-dim hover:text-ink"
+                    }`}
+                  >
+                    As eaten
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={reference.kind === "per"}
+                    onClick={() => setPerHundred(true)}
+                    className={`border-l px-2 py-1.5 text-2xs font-semibold uppercase tracking-wider transition-colors ${
+                      reference.kind === "per"
+                        ? "bg-ink text-panel"
+                        : "bg-panel-2 text-ink-dim hover:text-ink"
+                    }`}
+                    style={{ borderColor: "var(--line)" }}
+                  >
+                    {manualPerLabel}
+                  </button>
+                </div>
+                <p className="mt-1 text-2xs text-ink-faint">
+                  {reference.kind === "per"
+                    ? `Amount scales this ${manualPerLabel.toLocaleLowerCase()} label.`
+                    : "Values describe the portion you ate. An amount records it without scaling."}
+                </p>
+              </fieldset>
             )}
           </div>
 

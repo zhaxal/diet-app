@@ -290,7 +290,9 @@ body {
 
 /* All numerals: monospace + tabular so columns align and digits never jitter. */
 .num {
-  font-family: theme("fontFamily.mono");
+  font-family:
+    ui-monospace, "SFMono-Regular", "SF Mono", Menlo, "Cascadia Mono",
+    "Segoe UI Mono", Consolas, "Liberation Mono", monospace;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
   letter-spacing: -0.01em;

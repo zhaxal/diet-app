@@ -126,6 +126,10 @@ test.describe("Visual Regression Tests", () => {
     await search.fill("bench");
     await searchResponse;
     await expect(dialog.getByRole("button", { name: /Close-Grip Bench Press/ })).toBeVisible();
+    // The row beneath the keyboard pointer can otherwise pick up a transient
+    // hover treatment from the preceding test action and make the baseline
+    // depend on where Playwright last moved the mouse.
+    await page.mouse.move(0, 0);
 
     await expect(dialog).toHaveScreenshot("workout-add-exercise-dialog.png", {
       animations: "disabled",
@@ -207,9 +211,7 @@ test.describe("Visual Regression Tests", () => {
 
     // Verify Trends & Analysis collapsible panel is present
     await expect(page.locator("text=Trends & Analysis")).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /Open food composer for (breakfast|lunch|dinner|snack)/ }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /Open food composer/ })).toBeVisible();
 
     // Take snapshot of Food tab
     await takeFullPageScreenshot(page, "food-tab.png");
@@ -217,19 +219,28 @@ test.describe("Visual Regression Tests", () => {
 
   test("Food Tab - Manual Entry Dialog", async ({ page }) => {
     await page.goto(`/?tab=food&d=${EMPTY_DAY}`);
-    await page.getByRole("button", { name: /Open food composer for (breakfast|lunch|dinner|snack)/ }).click();
+    await page.getByRole("button", { name: /Open food composer/ }).click();
     await page.getByRole("button", { name: "Enter food manually" }).click();
 
     const dialog = page.getByRole("dialog", { name: "Manual Food Entry" });
     await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("combobox", { name: "Meal" })).toHaveValue("");
     await expect(dialog.getByRole("textbox", { name: "Food" })).toBeVisible();
     await expect(dialog.getByRole("spinbutton", { name: "Calories (kcal)" })).toBeVisible();
     await expect(dialog.getByRole("spinbutton", { name: "Protein g" })).toHaveCount(0);
     await expect(dialog.getByRole("button", { name: "+ Protein, carbs & fat" })).toBeVisible();
+    const asEaten = dialog.getByRole("button", { name: "As eaten" });
+    const perHundred = dialog.getByRole("button", { name: "PER 100 G" });
+    await expect(asEaten).toHaveAttribute("aria-pressed", "true");
+    await expect(perHundred).toHaveAttribute("aria-pressed", "false");
 
     await expect(dialog).toHaveScreenshot("food-manual-entry-dialog.png", {
       animations: "disabled",
     });
+
+    await perHundred.click();
+    await expect(perHundred).toHaveAttribute("aria-pressed", "true");
+    await expect(dialog.getByRole("spinbutton", { name: "Amount to log" })).toBeVisible();
 
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -281,6 +292,95 @@ test.describe("Visual Regression Tests", () => {
       await quickAdd.click();
 
       await expect(page.getByRole("status")).toContainText("Added Instant test food");
+      await page.getByRole("button", { name: "Undo" }).click();
+      await expect(page.getByRole("button", { name: "Undo" })).toBeHidden();
+    } finally {
+      await page.evaluate(async (id) => {
+        await fetch(`/api/favorites/${id}`, { method: "DELETE" });
+      }, favorite.favorite.id);
+    }
+  });
+
+  test("Food Tab - Quick add filter hands its query to search", async ({ page }) => {
+    await page.goto("/?tab=food");
+    const favorite = await page.evaluate(async () => {
+      const response = await fetch("/api/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Filter handoff food",
+          calories: 111,
+          protein: 7,
+          carbs: 6,
+          fat: 3,
+          fiber: 1,
+          sugar: 1,
+          sodium: 20,
+          mealType: "lunch",
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json() as Promise<{ favorite: { id: string } }>;
+    });
+
+    try {
+      await page.reload();
+      const filter = page.getByRole("textbox", { name: "Find food" });
+      await expect(filter).toBeVisible();
+      await filter.fill("Filter handoff");
+      await expect(page.getByRole("button", { name: /Log Filter handoff food/ })).toBeVisible();
+      await page.getByRole("button", { name: "Search all foods →" }).click();
+
+      const search = page.getByRole("textbox", { name: "Search foods" });
+      await expect(search).toHaveValue("Filter handoff");
+      await expect(search).toBeFocused();
+    } finally {
+      await page.evaluate(async (id) => {
+        await fetch(`/api/favorites/${id}`, { method: "DELETE" });
+      }, favorite.favorite.id);
+    }
+  });
+
+  test("Food Tab - Historical quick add requires an explicit meal", async ({ page }) => {
+    await page.goto(`/?tab=food&d=${EMPTY_DAY}`);
+    const favorite = await page.evaluate(async () => {
+      const response = await fetch("/api/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Historical meal test food",
+          calories: 135,
+          protein: 8,
+          carbs: 9,
+          fat: 5,
+          fiber: 2,
+          sugar: 1,
+          sodium: 50,
+          mealType: "dinner",
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json() as Promise<{ favorite: { id: string } }>;
+    });
+
+    try {
+      await page.reload();
+      const quickAdd = page.getByRole("button", {
+        name: /Choose a meal before logging Historical meal test food, 135 calories/,
+      });
+      await quickAdd.click();
+
+      const chooser = page.getByRole("group", { name: "Choose a meal for Historical meal test food" });
+      await expect(chooser).toBeVisible();
+      await expect(chooser.getByRole("button", { name: /^breakfast$/i })).toBeFocused();
+      const entryRequest = page.waitForRequest((request) =>
+        new URL(request.url()).pathname === "/api/entries" && request.method() === "POST",
+      );
+      await chooser.getByRole("button", { name: /^breakfast$/i }).click();
+      const request = await entryRequest;
+      expect(JSON.parse(request.postData() ?? "{}")).toMatchObject({ mealType: "breakfast" });
+
+      await expect(page.getByRole("status")).toContainText("Added Historical meal test food to breakfast");
       await page.getByRole("button", { name: "Undo" }).click();
       await expect(page.getByRole("button", { name: "Undo" })).toBeHidden();
     } finally {
