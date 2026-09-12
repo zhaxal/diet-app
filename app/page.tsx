@@ -43,6 +43,7 @@ import WorkoutNavigator from "@/components/WorkoutNavigator";
 import WorkoutSummaryCard from "@/components/WorkoutSummaryCard";
 import WorkoutImportModal from "@/components/WorkoutImportModal";
 import DayTransition from "@/components/DayTransition";
+import CrossFade from "@/components/CrossFade";
 import { DashboardSkeleton } from "@/components/DayLoadingSkeleton";
 
 // The meal a one-tap log lands in follows the clock, not a stale select. Whatever
@@ -793,40 +794,35 @@ function Dashboard() {
     router.replace("/login");
   }
 
-  if (!ready) {
-    if (loadError) {
-      return (
-        <main className="flex min-h-safe items-center justify-center p-3">
-          <div className="panel w-full max-w-sm p-3 text-center">
-            <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-              Cannot reach the server
-            </p>
-            <p className="mt-1 text-xs text-ink-faint">{loadError}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="btn btn-primary mt-3 w-full"
-            >
-              Retry
-            </button>
-          </div>
-        </main>
-      );
-    }
-
-    // Same shell and column the ready tree below uses (nav, width, padding),
-    // so nothing shifts when the account fetch resolves and swaps this for
-    // the real page — a skeleton settling into data, not a blank screen
-    // replaced by an unrelated, richer one.
+  if (!ready && loadError) {
     return (
-      <div className="mx-auto max-w-2xl px-3 pb-32 pt-3">
-        <DashboardSkeleton date={date} />
-        <BottomNav active={tab} onChange={goTab} />
-      </div>
+      <main className="flex min-h-safe items-center justify-center p-3">
+        <div className="panel w-full max-w-sm p-3 text-center">
+          <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+            Cannot reach the server
+          </p>
+          <p className="mt-1 text-xs text-ink-faint">{loadError}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="btn btn-primary mt-3 w-full"
+          >
+            Retry
+          </button>
+        </div>
+      </main>
     );
   }
 
-  return (
-    <div className="motion-day-surface mx-auto max-w-2xl px-3 pb-32 pt-3">
+  // Cross-faded, not just swapped: the skeleton (same shell and column the
+  // ready tree below uses — nav, width, padding, so nothing shifts) settles
+  // into the real page instead of the account fetch resolving as a hard cut.
+  const content = !ready ? (
+    <div className="mx-auto max-w-2xl px-3 pb-32 pt-3">
+      <DashboardSkeleton date={date} />
+      <BottomNav active={tab} onChange={goTab} />
+    </div>
+  ) : (
+    <div className="mx-auto max-w-2xl px-3 pb-32 pt-3">
       <MotionRegion motionKey={tab}>
       {tab === "food" && (
         <FoodTab
@@ -949,4 +945,6 @@ function Dashboard() {
       <BottomNav active={tab} onChange={goTab} />
     </div>
   );
+
+  return <CrossFade transitionKey={ready ? "ready" : "loading"}>{content}</CrossFade>;
 }
