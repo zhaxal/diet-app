@@ -178,6 +178,7 @@ export async function POST(req: NextRequest) {
             isWarmup: s.isWarmup,
             isBodyweight: s.isBodyweight,
             rpe: s.rpe,
+            notes: s.notes,
           })),
         });
       }

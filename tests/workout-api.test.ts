@@ -23,7 +23,7 @@ test("workout database pipeline: creates exercises, logs sets, and computes prog
 
   // 2. Session 1: Last week
   const date1 = new Date("2026-09-01T12:00:00.000Z");
-  const note1 = `# Push Day\n\nBench Press\n- 80kg x 8\n- 80kg x 8\n- 80kg x 7\n`;
+  const note1 = `# Push Day\n\nBench Press\n- 80kg x 8\n- 80kg x 8\n- 80kg x 7 // felt heavy, cut it short\n`;
   const parsed1 = parseWorkoutNote(note1, "kg");
 
   const workout1 = await prisma.workout.create({
@@ -61,6 +61,7 @@ test("workout database pipeline: creates exercises, logs sets, and computes prog
       reps: s.reps,
       isWarmup: s.isWarmup,
       isBodyweight: s.isBodyweight,
+      notes: s.notes,
     })),
   });
 
@@ -69,6 +70,15 @@ test("workout database pipeline: creates exercises, logs sets, and computes prog
   assert.ok(summaryBeforeSession2);
   assert.equal(summaryBeforeSession2.bestWeightKg, 80);
   assert.equal(summaryBeforeSession2.lastPerformance, "80kg × 8, 8, 7");
+
+  // The trailing // comment on the last set was parsed onto that set and
+  // actually persisted, not silently dropped by workoutSet.createMany.
+  const persistedSets = await prisma.workoutSet.findMany({
+    where: { workoutExerciseId: we1.id },
+    orderBy: { setNumber: "asc" },
+  });
+  assert.equal(persistedSets[0].notes, null);
+  assert.equal(persistedSets[2].notes, "felt heavy, cut it short");
 
   // 3. Session 2: Progressive overload hit 85kg!
   const date2 = new Date("2026-09-08T12:00:00.000Z");

@@ -627,7 +627,7 @@ export default function WorkoutCard({
               value={rawNote}
               onChange={(e) => handleNoteChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Bench Press&#10;- 80kg x 8&#10;- 80kg x 8&#10;- 85kg x 6&#10;&#10;Incline DB Press&#10;- 30kg x 10&#10;- 30kg x 8"
+              placeholder="Bench Press&#10;- 80kg x 8&#10;- 80kg x 8 // prev: 75kg x8&#10;- 85kg x 6&#10;&#10;Incline DB Press&#10;- 30kg x 10&#10;- 30kg x 8"
               aria-label="Workout note markdown"
               className="w-full h-full resize-y rounded bg-transparent p-3 font-mono text-base sm:text-xs leading-relaxed text-ink placeholder:text-ink-faint/60 focus:outline-none"
               style={{

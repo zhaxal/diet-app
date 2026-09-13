@@ -1085,6 +1085,7 @@ async function callTool(
                 isWarmup: s.isWarmup,
                 isBodyweight: s.isBodyweight,
                 rpe: s.rpe,
+                notes: s.notes,
               })),
             });
           }
@@ -1342,6 +1343,7 @@ async function callTool(
                   isWarmup: s.isWarmup,
                   isBodyweight: s.isBodyweight,
                   rpe: s.rpe,
+                  notes: s.notes,
                 })),
               });
             }

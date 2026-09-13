@@ -190,6 +190,22 @@ function tryParseCommaSets(
   return results.length > 0 ? results : null;
 }
 
+const NOTES_HEADING = /^#{0,4}\s*notes\s*:?\s*$/i;
+
+/** Appends free text to an exercise's notes if one is open, otherwise to the workout-level notes. */
+function addComment(
+  text: string,
+  currentExercise: ParsedExercise | null,
+  generalNotes: string[],
+): void {
+  if (!text) return;
+  if (currentExercise) {
+    currentExercise.notes = currentExercise.notes ? `${currentExercise.notes}\n${text}` : text;
+  } else {
+    generalNotes.push(text);
+  }
+}
+
 /**
  * Main parser: takes a raw markdown text note and returns structured workout data.
  * Zero crashes, preserves raw text, tolerant of comments and notes.
@@ -205,12 +221,41 @@ export function parseWorkoutNote(
   const exercises: ParsedExercise[] = [];
   let currentExercise: ParsedExercise | null = null;
   const generalNotes: string[] = [];
+  let inNotesSection = false;
 
   for (let i = 0; i < lines.length; i++) {
-    const originalLine = lines[i];
-    const trimmed = originalLine.trim();
+    const rawTrimmed = lines[i].trim();
 
+    if (!rawTrimmed) {
+      continue;
+    }
+
+    // 0. A "## Notes" section (as emitted by formatWorkoutNote) captures every
+    // remaining line as workout-level notes, so it round-trips instead of
+    // being read back as a bogus exercise named "Notes".
+    if (inNotesSection) {
+      generalNotes.push(rawTrimmed);
+      continue;
+    }
+    if (NOTES_HEADING.test(rawTrimmed)) {
+      inNotesSection = true;
+      continue;
+    }
+
+    // 0.5. A comment: "// felt heavy today" or a trailing "// prev: 70kg x8"
+    // on any line. Comments are always free text — a weight/rep-shaped
+    // comment like "// prev: 70kg x8" must never be mistaken for a real set
+    // or spawn a bogus exercise in the catalog. Strip it before any other
+    // line classification runs.
+    let trailingComment: string | undefined;
+    let trimmed = rawTrimmed;
+    const commentIdx = trimmed.indexOf("//");
+    if (commentIdx !== -1) {
+      trailingComment = trimmed.slice(commentIdx + 2).trim() || undefined;
+      trimmed = trimmed.slice(0, commentIdx).trim();
+    }
     if (!trimmed) {
+      addComment(trailingComment ?? "", currentExercise, generalNotes);
       continue;
     }
 
@@ -244,6 +289,9 @@ export function parseWorkoutNote(
           normalized: norm,
           sets: commaSets.map((s, idx) => ({ ...s, setNumber: idx + 1 })),
         };
+        if (trailingComment) {
+          ex.sets[ex.sets.length - 1].notes = trailingComment;
+        }
         exercises.push(ex);
         currentExercise = ex;
         continue;
@@ -262,6 +310,9 @@ export function parseWorkoutNote(
             setNumber: currentExercise.sets.length + 1,
           });
         }
+        if (trailingComment) {
+          currentExercise.sets[currentExercise.sets.length - 1].notes = trailingComment;
+        }
         continue;
       }
 
@@ -271,6 +322,7 @@ export function parseWorkoutNote(
         currentExercise.sets.push({
           ...singleSet,
           setNumber: currentExercise.sets.length + 1,
+          notes: trailingComment,
         });
         continue;
       }
@@ -280,9 +332,7 @@ export function parseWorkoutNote(
     // It's an exercise note or comment (e.g. "- left elbow felt sore")
     if (currentExercise && (trimmed.startsWith("-") || trimmed.startsWith("*") || trimmed.startsWith("•"))) {
       const noteContent = trimmed.replace(/^[-*•\s]+/, "");
-      currentExercise.notes = currentExercise.notes
-        ? `${currentExercise.notes}\n${noteContent}`
-        : noteContent;
+      addComment([noteContent, trailingComment].filter(Boolean).join(" "), currentExercise, generalNotes);
       continue;
     }
 
@@ -305,6 +355,7 @@ export function parseWorkoutNote(
       currentExercise.sets.push({
         ...orphanedSet,
         setNumber: currentExercise.sets.length + 1,
+        notes: trailingComment,
       });
       continue;
     }
@@ -314,6 +365,7 @@ export function parseWorkoutNote(
     currentExercise = {
       name: exerciseNameCandidate,
       normalized: norm,
+      notes: trailingComment,
       sets: [],
     };
     exercises.push(currentExercise);
@@ -343,6 +395,7 @@ export function formatWorkoutNote(workout: {
       isWarmup?: boolean;
       isBodyweight?: boolean;
       rpe?: number;
+      notes?: string;
     }[];
   }[];
 }): string {
@@ -354,7 +407,9 @@ export function formatWorkoutNote(workout: {
   for (const ex of workout.exercises) {
     parts.push(ex.name);
     if (ex.notes) {
-      parts.push(`> ${ex.notes}`);
+      for (const line of ex.notes.split("\n")) {
+        parts.push(`// ${line}`);
+      }
     }
     for (const s of ex.sets) {
       let setStr = "";
@@ -375,6 +430,9 @@ export function formatWorkoutNote(workout: {
       }
       if (s.rpe) {
         setStr += ` @${s.rpe}`;
+      }
+      if (s.notes) {
+        setStr += ` // ${s.notes}`;
       }
       parts.push(`- ${setStr}`);
     }

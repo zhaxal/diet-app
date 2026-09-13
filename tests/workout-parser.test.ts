@@ -126,6 +126,84 @@ gibberish line that should not crash the parser
   assert.equal(parsed.rawNote, note);
 });
 
+test("// comments never become sets or exercises, even when they look like one", () => {
+  const note = `
+// felt sluggish warming up today
+Bench Press
+- 80kg x 8
+// prev: 75kg x8, felt heavier today
+- 82.5kg x 6
+`;
+
+  const parsed = parseWorkoutNote(note, "kg");
+  assert.equal(parsed.notes, "felt sluggish warming up today");
+  assert.equal(parsed.exercises.length, 1);
+  assert.equal(parsed.exercises[0].sets.length, 2);
+  assert.equal(parsed.exercises[0].notes, "prev: 75kg x8, felt heavier today");
+});
+
+test("a bare 'previous: 70kg x8' line without // still creates a real exercise (regression guard)", () => {
+  // Documents the pre-existing colon-shorthand behavior a // comment is meant to avoid:
+  // typing reference info without the marker is still read as "Exercise Name: sets".
+  const note = `previous: 70kg x8`;
+  const parsed = parseWorkoutNote(note, "kg");
+  assert.equal(parsed.exercises.length, 1);
+  assert.equal(parsed.exercises[0].name, "previous");
+});
+
+test("trailing // comment on a set line attaches to that set without corrupting weight/reps", () => {
+  const note = `
+Squat
+- 100kg x 5 // prev: 95kg x5
+- 102.5kg x 5 @8 // matched a PR
+`;
+  const parsed = parseWorkoutNote(note, "kg");
+  const squat = parsed.exercises[0];
+  assert.equal(squat.sets[0].weight, 100);
+  assert.equal(squat.sets[0].reps, 5);
+  assert.equal(squat.sets[0].notes, "prev: 95kg x5");
+  assert.equal(squat.sets[1].rpe, 8);
+  assert.equal(squat.sets[1].notes, "matched a PR");
+});
+
+test("a ## Notes section captures workout-level notes instead of becoming a bogus exercise", () => {
+  const note = `
+Bench Press
+- 80kg x 8
+
+## Notes
+Slept badly, cut the session short.
+`;
+  const parsed = parseWorkoutNote(note, "kg");
+  assert.equal(parsed.exercises.length, 1);
+  assert.equal(parsed.notes, "Slept badly, cut the session short.");
+});
+
+test("formatWorkoutNote round-trips exercise and set comments through //", () => {
+  const structured = {
+    title: "Push Day",
+    notes: "Deload week.",
+    exercises: [
+      {
+        name: "Bench Press",
+        notes: "left shoulder felt tight",
+        sets: [
+          { weight: 80, unit: "kg", reps: 8, notes: "prev: 75kg x8" },
+        ],
+      },
+    ],
+  };
+
+  const formatted = formatWorkoutNote(structured);
+  const reparsed = parseWorkoutNote(formatted, "kg");
+
+  assert.equal(reparsed.exercises.length, 1);
+  assert.equal(reparsed.exercises[0].name, "Bench Press");
+  assert.equal(reparsed.exercises[0].notes, "left shoulder felt tight");
+  assert.equal(reparsed.exercises[0].sets[0].notes, "prev: 75kg x8");
+  assert.equal(reparsed.notes, "Deload week.");
+});
+
 test("calculates estimated 1RM accurately", () => {
   // 1 rep max of 100kg for 1 rep is 100kg
   assert.equal(calculate1RM(100, 1), 100);

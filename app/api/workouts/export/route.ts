@@ -77,6 +77,7 @@ export async function GET(req: NextRequest) {
         isWarmup: s.isWarmup,
         isBodyweight: s.isBodyweight,
         rpe: s.rpe,
+        notes: s.notes,
       })),
     })),
   }));
