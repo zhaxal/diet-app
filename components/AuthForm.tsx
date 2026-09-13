@@ -45,8 +45,8 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           className="flex items-center justify-between border-b px-3 py-1.5"
           style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
         >
-          <span className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-            Diet Tracker // {isLogin ? "Auth" : "Register"}
+          <span className="text-2xs font-semibold tracking-wider text-ink-dim">
+            rationd // {isLogin ? "Auth" : "Register"}
           </span>
           <span className="num text-2xs text-ink-faint">system</span>
         </div>

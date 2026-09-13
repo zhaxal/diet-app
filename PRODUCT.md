@@ -117,7 +117,7 @@ easy to see, verify, and correct.
 
 ## Brand Commitments
 
-Name: **Diet Tracker** (`short_name` "Diet"). Existing self-description:
+Name: **rationd** (`short_name` "rationd"). Existing self-description:
 "Track calories and macros. API-first, MCP & AI-ready."
 
 **No binding visual commitment was made.** The current near-monochrome

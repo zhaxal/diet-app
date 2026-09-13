@@ -1,9 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <rect width="512" height="512" fill="#090c11"/>
-  <rect x="117.8" y="147.5" width="276.5" height="51.1" fill="#1a2029"/>
-  <rect x="117.8" y="147.5" width="237.8" height="51.1" fill="#f59e0b"/>
-  <rect x="117.8" y="230.4" width="276.5" height="51.1" fill="#1a2029"/>
-  <rect x="117.8" y="230.4" width="132.7" height="51.1" fill="#f59e0b"/>
-  <rect x="117.8" y="313.4" width="276.5" height="51.1" fill="#1a2029"/>
-  <rect x="117.8" y="313.4" width="188.0" height="51.1" fill="#f59e0b"/>
+  <rect x="117.8" y="146.8" width="44.0" height="44.0" fill="#1a2029"/>
+  <rect x="117.8" y="205.0" width="44.0" height="44.0" fill="#f59e0b"/>
+  <rect x="117.8" y="263.1" width="44.0" height="44.0" fill="#f59e0b"/>
+  <rect x="117.8" y="321.2" width="44.0" height="44.0" fill="#f59e0b"/>
+  <rect x="175.9" y="146.8" width="44.0" height="44.0" fill="#1a2029"/>
+  <rect x="175.9" y="205.0" width="44.0" height="44.0" fill="#1a2029"/>
+  <rect x="175.9" y="263.1" width="44.0" height="44.0" fill="#1a2029"/>
+  <rect x="175.9" y="321.2" width="44.0" height="44.0" fill="#f59e0b"/>
+  <rect x="234.0" y="146.8" width="44.0" height="44.0" fill="#1a2029"/>
+  <rect x="234.0" y="205.0" width="44.0" height="44.0" fill="#1a2029"/>
+  <rect x="234.0" y="263.1" width="44.0" height="44.0" fill="#f59e0b"/>
+  <rect x="234.0" y="321.2" width="44.0" height="44.0" fill="#f59e0b"/>
+  <rect x="292.2" y="146.8" width="44.0" height="44.0" fill="#f59e0b"/>
+  <rect x="292.2" y="205.0" width="44.0" height="44.0" fill="#f59e0b"/>
+  <rect x="292.2" y="263.1" width="44.0" height="44.0" fill="#f59e0b"/>
+  <rect x="292.2" y="321.2" width="44.0" height="44.0" fill="#f59e0b"/>
+  <rect x="350.3" y="146.8" width="44.0" height="44.0" fill="#1a2029"/>
+  <rect x="350.3" y="205.0" width="44.0" height="44.0" fill="#1a2029"/>
+  <rect x="350.3" y="263.1" width="44.0" height="44.0" fill="#f59e0b"/>
+  <rect x="350.3" y="321.2" width="44.0" height="44.0" fill="#f59e0b"/>
 </svg>

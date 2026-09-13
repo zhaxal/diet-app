@@ -1,9 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <rect width="512" height="512" fill="#090c11"/>
-  <rect x="61.4" y="103.3" width="389.1" height="72.0" fill="#1a2029"/>
-  <rect x="61.4" y="103.3" width="334.6" height="72.0" fill="#f59e0b"/>
-  <rect x="61.4" y="220.0" width="389.1" height="72.0" fill="#1a2029"/>
-  <rect x="61.4" y="220.0" width="186.8" height="72.0" fill="#f59e0b"/>
-  <rect x="61.4" y="336.7" width="389.1" height="72.0" fill="#1a2029"/>
-  <rect x="61.4" y="336.7" width="264.6" height="72.0" fill="#f59e0b"/>
+  <rect x="61.0" y="102.0" width="62.0" height="62.0" fill="#1a2029"/>
+  <rect x="61.0" y="184.0" width="62.0" height="62.0" fill="#f59e0b"/>
+  <rect x="61.0" y="266.0" width="62.0" height="62.0" fill="#f59e0b"/>
+  <rect x="61.0" y="348.0" width="62.0" height="62.0" fill="#f59e0b"/>
+  <rect x="143.0" y="102.0" width="62.0" height="62.0" fill="#1a2029"/>
+  <rect x="143.0" y="184.0" width="62.0" height="62.0" fill="#1a2029"/>
+  <rect x="143.0" y="266.0" width="62.0" height="62.0" fill="#1a2029"/>
+  <rect x="143.0" y="348.0" width="62.0" height="62.0" fill="#f59e0b"/>
+  <rect x="225.0" y="102.0" width="62.0" height="62.0" fill="#1a2029"/>
+  <rect x="225.0" y="184.0" width="62.0" height="62.0" fill="#1a2029"/>
+  <rect x="225.0" y="266.0" width="62.0" height="62.0" fill="#f59e0b"/>
+  <rect x="225.0" y="348.0" width="62.0" height="62.0" fill="#f59e0b"/>
+  <rect x="307.0" y="102.0" width="62.0" height="62.0" fill="#f59e0b"/>
+  <rect x="307.0" y="184.0" width="62.0" height="62.0" fill="#f59e0b"/>
+  <rect x="307.0" y="266.0" width="62.0" height="62.0" fill="#f59e0b"/>
+  <rect x="307.0" y="348.0" width="62.0" height="62.0" fill="#f59e0b"/>
+  <rect x="389.0" y="102.0" width="62.0" height="62.0" fill="#1a2029"/>
+  <rect x="389.0" y="184.0" width="62.0" height="62.0" fill="#1a2029"/>
+  <rect x="389.0" y="266.0" width="62.0" height="62.0" fill="#f59e0b"/>
+  <rect x="389.0" y="348.0" width="62.0" height="62.0" fill="#f59e0b"/>
 </svg>

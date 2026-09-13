@@ -16,7 +16,7 @@ test("MCP initialize returns capabilities for tools and resources, plus instruct
   });
   const res = await POST(req);
   const json = await res.json();
-  assert.equal(json.result.serverInfo.name, "diet-tracker");
+  assert.equal(json.result.serverInfo.name, "rationd");
   assert.deepEqual(json.result.capabilities, { tools: {}, resources: {} });
   assert.ok(typeof json.result.instructions === "string");
   assert.ok(json.result.instructions.includes("save_product"));

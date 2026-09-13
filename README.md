@@ -1,4 +1,4 @@
-# 🥗 Diet Tracker
+# rationd
 
 A simple, API-first calorie & macro tracker built with **Next.js 16**, **Prisma**,
 and **SQLite**. It has a sleek web UI for logging meals and a fully documented

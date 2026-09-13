@@ -2,7 +2,7 @@ import { MEAL_TYPES } from "./validation";
 import { QUANTITY_UNITS, WEIGHT_UNITS } from "./units";
 
 /**
- * Hand-maintained OpenAPI 3.1 description of the Diet Tracker API.
+ * Hand-maintained OpenAPI 3.1 description of the rationd API.
  * Served at /api/openapi.json and rendered at /api-docs.
  *
  * Auth model: call POST /auth/login to obtain a JWT, then send it as
@@ -162,7 +162,7 @@ export function buildOpenApiDocument(baseUrl?: string) {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Diet Tracker API",
+      title: "rationd API",
       version: "1.0.0",
       description:
         "Log and review food entries (calories + macros). Authenticate via " +

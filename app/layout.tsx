@@ -4,7 +4,7 @@ import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Diet Tracker",
+  title: "rationd",
   description: "Track calories and macros. API-first, MCP & AI-ready.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     // and pick legible glyphs for the theme-color underneath it. Nothing in this
     // app bleeds to the top edge, so there is nothing to gain from going under.
     statusBarStyle: "default",
-    title: "Diet Tracker",
+    title: "rationd",
   },
   icons: {
     icon: [

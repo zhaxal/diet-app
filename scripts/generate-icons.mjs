@@ -7,11 +7,10 @@
  * the PNGs can never drift from each other, and so the mark is defined in the
  * design system's own tokens rather than redrawn by hand in two file formats.
  *
- * There is no image library here on purpose. The mark is axis-aligned
- * rectangles, so it rasterises exactly with no anti-aliasing and no dependency —
- * which matters for a project whose whole constraint is surviving on one small
- * box for years. `sharp` happens to be present as a transitive dependency of
- * Next; relying on that for a committed artifact would be borrowing trouble.
+ * There is no image library here on purpose. The mark is axis-aligned squares,
+ * so it rasterises exactly with no anti-aliasing and no dependency — which
+ * matters for a project whose whole constraint is surviving on one small box
+ * for years.
  */
 
 import { deflateSync } from "node:zlib";
@@ -23,42 +22,52 @@ const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 
 // ── The mark ───────────────────────────────────────────────────────────────
 //
-// Three meter bars: the system's signature component, and the structure of the
-// Today screen at a glance. Amber fills of differing length against a sunken
-// track, on the app's own dark ground.
+// rationd: a dot-matrix column chart. The meter bars of the Today screen turned
+// ninety degrees and quantised into cells — five readings, each lit from the
+// bottom up. It is the same data the main screen shows, in the only form that
+// still reads at 16px: whole square cells, never a thin stripe.
 //
-// What it deliberately is not: the ring it replaces. DESIGN.md bans circles
-// ("The Nothing-Is-Round Rule"), bans gradients, and lists progress rings among
-// the things that stand in for content — and the old icon was an emerald
-// gradient ring, in a colour that is not in the palette at all. It was the last
-// place that emerald survived.
+// What it deliberately is not: the emerald gradient ring it replaces. DESIGN.md
+// bans circles ("The Nothing-Is-Round Rule"), bans gradients, and lists progress
+// rings among the things that stand in for content.
 
 const GROUND = [0x09, 0x0c, 0x11]; // --bg, dark. Also the manifest theme_color.
 const TRACK = [0x1a, 0x20, 0x29]; // --line-soft, dark
 const FILL = [0xf5, 0x9e, 0x0b]; // --accent, dark
 
-/** Fill fraction of each bar. Three readings, all still in range. */
-const FILLS = [0.86, 0.48, 0.68];
+/** Grid shape, in whole cell-units so every size lands on the pixel grid. */
+const COLS = 5;
+const ROWS = 4;
+const CELL_U = 31;
+const GAP_U = 10;
+const W_U = COLS * CELL_U + (COLS - 1) * GAP_U; // 195
+const H_U = ROWS * CELL_U + (ROWS - 1) * GAP_U; // 154
+
+/** Lit cells per column, counted from the bottom. Five readings, all in range. */
+const LIT = [3, 1, 2, 4, 2];
 
 /**
- * Bars as fractions of the canvas, so one definition drives every size.
+ * Cells as fractions of the canvas, so one definition drives every size.
  * `spread` is how much of the canvas the mark's bounding box spans.
  */
-function bars(spread) {
-  const width = spread;
-  const barH = (spread * 0.185) / 1;
-  const gap = spread * 0.115;
-  const totalH = 3 * barH + 2 * gap;
-  const x = (1 - width) / 2;
-  const y0 = (1 - totalH) / 2;
+function cells(spread) {
+  const cell = (spread * CELL_U) / W_U;
+  const step = cell + (spread * GAP_U) / W_U;
+  const x0 = (1 - spread) / 2;
+  const y0 = (1 - (spread * H_U) / W_U) / 2;
 
-  return FILLS.map((f, i) => ({
-    x,
-    y: y0 + i * (barH + gap),
-    w: width,
-    h: barH,
-    fill: f,
-  }));
+  const out = [];
+  for (let c = 0; c < COLS; c++) {
+    for (let r = 0; r < ROWS; r++) {
+      out.push({
+        x: x0 + c * step,
+        y: y0 + r * step,
+        s: cell,
+        lit: r >= ROWS - LIT[c],
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -66,14 +75,11 @@ function bars(spread) {
  * has to sit inside that circle — not merely inside an 80% square. The corner
  * of the mark's bounding box is the binding constraint.
  */
-const SPREAD = { any: 0.76, maskable: 0.54 };
+const SPREAD = { any: 0.7617, maskable: 0.54 };
 
 function assertMaskableFits() {
-  const [first] = bars(SPREAD.maskable);
-  const last = bars(SPREAD.maskable)[2];
-  const halfW = first.w / 2;
-  const halfH = (last.y + last.h - first.y) / 2;
-  const corner = Math.hypot(halfW, halfH);
+  const s = SPREAD.maskable;
+  const corner = Math.hypot(s / 2, (s * H_U) / W_U / 2);
   const safe = 0.4; // radius of the guaranteed-visible circle
   if (corner > safe) {
     throw new Error(
@@ -90,17 +96,12 @@ const hex = ([r, g, b]) =>
 
 function svg(variant) {
   const S = 512;
-  const rects = bars(SPREAD[variant])
-    .flatMap((b) => {
+  const rects = cells(SPREAD[variant])
+    .map((b) => {
       const x = (b.x * S).toFixed(1);
       const y = (b.y * S).toFixed(1);
-      const w = (b.w * S).toFixed(1);
-      const h = (b.h * S).toFixed(1);
-      const fw = (b.w * b.fill * S).toFixed(1);
-      return [
-        `  <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${hex(TRACK)}"/>`,
-        `  <rect x="${x}" y="${y}" width="${fw}" height="${h}" fill="${hex(FILL)}"/>`,
-      ];
+      const d = (b.s * S).toFixed(1);
+      return `  <rect x="${x}" y="${y}" width="${d}" height="${d}" fill="${hex(b.lit ? FILL : TRACK)}"/>`;
     })
     .join("\n");
 
@@ -164,9 +165,8 @@ function png(size, variant) {
     }
   };
 
-  for (const b of bars(SPREAD[variant])) {
-    paint(b.x, b.y, b.w, b.h, TRACK);
-    paint(b.x, b.y, b.w * b.fill, b.h, FILL);
+  for (const b of cells(SPREAD[variant])) {
+    paint(b.x, b.y, b.s, b.s, b.lit ? FILL : TRACK);
   }
 
   // Scanlines, each prefixed with filter type 0 (none).

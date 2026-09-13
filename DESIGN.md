@@ -1,5 +1,5 @@
 ---
-name: Diet Tracker
+name: rationd
 description: A terminal readout for the day you ate — hairline panels, tabular numerals, one amber signal.
 colors:
   bg: "#eceef1"
@@ -160,7 +160,7 @@ components:
     padding: "8px 12px"
 ---
 
-# Design System: Diet Tracker
+# Design System: rationd
 
 ## Overview
 

@@ -1,5 +1,5 @@
 /*
- * Diet Tracker service worker.
+ * rationd service worker.
  *
  * Scope, deliberately narrow: this worker caches the application shell so the
  * installed PWA opens without a network. It does NOT cache anything under

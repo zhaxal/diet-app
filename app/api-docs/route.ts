@@ -4,7 +4,7 @@ import { ApiReference } from "@scalar/nextjs-api-reference";
 // at /api/openapi.json. Visit /api-docs in the browser.
 export const GET = ApiReference({
   spec: { url: "/api/openapi.json" },
-  metaData: { title: "Diet Tracker API Reference" },
+  metaData: { title: "rationd API Reference" },
   // The reference used to pull `@latest` from jsDelivr at runtime. Serve the
   // pinned browser bundle from this deployment so the self-hosted app remains
   // deterministic and works without public internet access.

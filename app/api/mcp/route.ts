@@ -1732,8 +1732,8 @@ export async function POST(req: NextRequest) {
         result: {
           protocolVersion: clientVersion,
           capabilities: { tools: {}, resources: {} },
-          serverInfo: { name: "diet-tracker", version: "1.0.0" },
-          instructions: `Diet Tracker MCP Server — Instructions for AI Assistants:
+          serverInfo: { name: "rationd", version: "1.0.0" },
+          instructions: `rationd MCP Server — Instructions for AI Assistants:
 
 1. AUTOMATICALLY SAVE SCANNED NUTRITION TABLES & LABELS:
 - Whenever the user photos, shares, or provides a nutrition facts table or product label:
@@ -1895,10 +1895,10 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   return NextResponse.json(
     {
-      name: "diet-tracker",
+      name: "rationd",
       version: "1.0.0",
       protocol: "MCP 2024-11-05",
-      description: "Diet Tracker MCP Server for AI assistants (Claude, Cursor, Windsurf, ChatGPT, etc.)",
+      description: "rationd MCP Server for AI assistants (Claude, Cursor, Windsurf, ChatGPT, etc.)",
     },
     { headers: CORS },
   );

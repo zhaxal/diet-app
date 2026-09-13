@@ -909,8 +909,8 @@ export default function FoodTab({
             {isFirstRun ? (
               <div className="panel px-4 py-5 text-center">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-widest text-ink">
-                    Welcome to Diet Tracker
+                  <h3 className="text-xs font-semibold tracking-widest text-ink">
+                    Welcome to rationd
                   </h3>
                   <p className="mt-1 text-2xs text-ink-dim max-w-sm mx-auto">
                     Start with one food. You can set targets once you have a day to read.
