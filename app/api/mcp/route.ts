@@ -455,7 +455,13 @@ const TOOLS = [
         title: { type: "string", description: "Workout title, e.g. 'Push Day' or 'Legs'" },
         note: {
           type: "string",
-          description: "Full markdown text of the workout (e.g. 'Bench Press\\n- 80kg x 8\\n- 85kg x 6\\n\\nIncline DB\\n- 30kg x 10')",
+          description:
+            "Obsidian-style markdown: an exercise name on its own line, followed by '- ' set lines. Set syntax: " +
+            "'80kg x 8' (weight x reps), 'BW x 10' (bodyweight), '+15kg x 6' (weighted bodyweight), '-10kg x 8' (assisted), " +
+            "'(warmup)' to flag a warmup set, '@8.5' for RPE, and comma shorthand for several sets at once — either " +
+            "'Exercise: 80kg x 8, 8, 7' inline, or a bare '- 80kg x 8, 80kg x 8' line. " +
+            "Use '// comment' for freeform notes — a set's own '- 80kg x 8 // prev: 75kg x8', a standalone '// felt heavy today' under an exercise, or a workout-level note before the first exercise (or under a trailing '## Notes' heading). Comments are never parsed as sets or exercise names, so they're the safe way to record reference info like previous weight/reps. " +
+            "Example: 'Bench Press\\n- 80kg x 8\\n- 85kg x 6 // matched last week's top set\\n\\nIncline DB\\n- 30kg x 10'.",
         },
       },
     },
@@ -493,11 +499,15 @@ const TOOLS = [
   },
   {
     name: "import_workouts",
-    description: "Bulk import multiple workouts from Obsidian markdown text (e.g. journal with dated headings like '## 2026-09-08 Push Day') or a structured workouts array. Automatically extracts exercises, weights, and sets.",
+    description: "Bulk import multiple workouts from Obsidian markdown text (e.g. journal with dated headings like '## 2026-09-08 Push Day') or a structured workouts array. Automatically extracts exercises, weights, and sets. RECOMMENDED: call once with dryRun: true first to preview the parsed workout/exercise/set counts before committing.",
     inputSchema: {
       type: "object",
       properties: {
-        markdown: { type: "string", description: "Multi-day Obsidian notes markdown string" },
+        markdown: {
+          type: "string",
+          description:
+            "Multi-day Obsidian notes markdown string. Supports '// comment' lines/trailing comments for freeform notes (e.g. previous weight/reps) without them being misread as sets or exercises — see log_workout's note field for the full syntax.",
+        },
         workouts: {
           type: "array",
           description: "Structured array of workout objects",
@@ -507,7 +517,10 @@ const TOOLS = [
             properties: {
               date: { type: "string", description: "YYYY-MM-DD" },
               title: { type: "string" },
-              note: { type: "string" },
+              note: {
+                type: "string",
+                description: "Same Obsidian markdown format and '// comment' syntax as log_workout's note field.",
+              },
             },
           },
         },
@@ -1130,11 +1143,28 @@ async function callTool(
         return `No workout logged for ${targetDateStr}.`;
       }
 
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { weightUnit: true } });
+      const userUnit: WeightUnit = isWeightUnit(user?.weightUnit) ? (user!.weightUnit as WeightUnit) : "kg";
+
       const lines: string[] = [
         `# ${workout.title} (${targetDateStr})`,
         "",
         workout.rawNote,
       ];
+
+      const statLines: string[] = [];
+      for (const we of workout.exercises) {
+        const summary = await getExerciseSummary(userId, we.exerciseId, workout.date, userUnit);
+        if (summary?.lastPerformance) {
+          statLines.push(
+            `• ${we.exercise.name} — previous: ${summary.lastPerformance}${summary.lastDate ? ` (${summary.lastDate})` : ""}`,
+          );
+        }
+      }
+      if (statLines.length > 0) {
+        lines.push("", "Performance vs. previous session:", ...statLines);
+      }
+
       return lines.join("\n");
     }
 
@@ -1768,7 +1798,13 @@ export async function POST(req: NextRequest) {
   • diet://today/entries — all meals and items logged today
   • diet://catalog/products — the user's permanent catalog of saved products
   • diet://user/goals — daily targets (calories, protein, carbs, fat, fiber, etc.)
-  • diet://weight/recent — body weight logs from the last 30 days`,
+  • diet://weight/recent — body weight logs from the last 30 days
+
+6. LOGGING WORKOUTS (GYM):
+- Use 'log_workout' for a single day's session: an exercise name on its own line, then '- weight x reps' set lines (see that tool's schema for the full syntax — warmup, RPE, bodyweight, comma shorthand, and '// comment' for freeform notes like previous weight/reps).
+- For bulk history (an Obsidian vault export, a multi-day training journal), use 'import_workouts' instead of many separate log_workout calls — call it once with dryRun: true to preview before committing.
+- Before drafting a new session for a routine the user has done before, call 'suggest_next_workout' (progressive-overload draft) or 'get_exercise_history' (lifetime bests + recent sessions) rather than guessing at weights.
+- 'get_workout' returns the day's log plus each exercise's performance vs. its previous session. 'get_workout_summary' answers broader questions (total volume, session frequency, muscle group distribution) over a timeframe.`,
         },
       },
       { headers: CORS },
