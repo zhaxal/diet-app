@@ -695,6 +695,123 @@ body {
   }
 }
 
+/* ── The workout note editor ───────────────────────────────────────────────
+   Syntax highlighting on a plain textarea: a <pre> of tokenised spans sits
+   directly under a textarea whose own glyphs are transparent. The caret,
+   selection, undo stack and keyboard stay the platform's, and the note stays
+   the plain text that round-trips to Obsidian — only the colour is ours.
+
+   The illusion holds only while both layers lay their glyphs on exactly the
+   same grid, so every metric that moves a glyph is declared once, for both:
+   font, size, line height, padding, border width, wrapping, and the scrollbar
+   gutter, which is reserved on both so a scrollbar appearing in the textarea
+   cannot re-wrap one layer and not the other.
+
+   The highlight layer carries the field's background and border, because the
+   textarea on top of it must be transparent to show it through. */
+.note-editor__highlight,
+.note-editor__input {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  font-family:
+    ui-monospace, "SFMono-Regular", "SF Mono", Menlo, "Cascadia Mono",
+    "Segoe UI Mono", Consolas, "Liberation Mono", monospace;
+  font-size: 1rem;
+  line-height: 1.625;
+  letter-spacing: normal;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  scrollbar-gutter: stable;
+}
+
+@media (min-width: 640px) {
+  .note-editor__highlight,
+  .note-editor__input {
+    font-size: 0.75rem;
+  }
+}
+
+.note-editor__highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--panel-2);
+  border-color: var(--line-soft);
+  color: var(--ink-dim);
+}
+
+.note-editor__input {
+  /* Block, so the wrapper takes the textarea's height exactly: an inline-block
+     leaves room for a descender under it, and the layer below — which draws the
+     border — would stand a few pixels proud of the field it is tracing. */
+  display: block;
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--ink);
+  outline: none;
+}
+
+.note-editor__input::placeholder {
+  color: var(--ink-faint);
+  opacity: 0.6;
+}
+
+/* The selection has to be translucent — it is painted in the textarea's layer,
+   over glyphs that live in the one below. */
+.note-editor__input::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+/* The accent focus border every other field carries, moved to the layer that
+   draws the border. `focus-within` because the textarea is the only thing in
+   the wrapper that can take focus. */
+.note-editor:focus-within .note-editor__highlight {
+  border-color: var(--accent);
+}
+
+/* Token roles. No hue is introduced for syntax: the note is read tonally, the
+   way every other reading in this instrument is — names and figures in ink,
+   the annotation layer (units, bullets, separators, comments) in faint ink,
+   prose in dim. Amber stays the one signal colour and means what it means
+   everywhere else. */
+.syn-heading {
+  color: var(--ink);
+  font-weight: 700;
+}
+.syn-exercise {
+  color: var(--ink);
+  font-weight: 600;
+}
+.syn-weight {
+  color: var(--ink);
+  font-weight: 600;
+}
+.syn-reps {
+  color: var(--ink);
+}
+.syn-unit,
+.syn-marker {
+  color: var(--ink-faint);
+}
+.syn-rpe,
+.syn-tag {
+  color: var(--ink-dim);
+}
+.syn-comment {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+.syn-note,
+.syn-text {
+  color: var(--ink-dim);
+}
+
 /* ── The iOS zoom floor ────────────────────────────────────────────────────
    Safari zooms the whole viewport whenever a focused field's text is under
    16px, and it does not zoom back out — every tap into every field left the
@@ -712,7 +829,11 @@ body {
   .field,
   input,
   select,
-  textarea {
+  textarea,
+  /* The note editor's highlight layer is not a field, but it is a tracing of
+     one: it has to take every font-size change the textarea above it takes, or
+     the two grids of glyphs drift apart by a character every few words. */
+  .note-editor__highlight {
     font-size: 16px !important;
   }
 }

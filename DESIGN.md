@@ -636,6 +636,28 @@ draft removes that day's draft, and logout clears all account drafts. Date chang
 loading until a reading for the selected day is available; superseded requests cannot
 overwrite it.
 
+### Workout note
+
+The note stays plain text — it is the file that round-trips to an Obsidian vault — and is
+syntax-highlighted in place: a `<pre>` of tokenised spans (`lib/workout-highlight.ts`) sits
+directly under a real `<textarea>` whose own glyphs are transparent, so the caret, selection,
+undo stack and platform keyboard are all still the browser's and nothing can rewrite what was
+typed. The two layers share one set of metrics in `.note-editor__*` — font, size, line height,
+padding, border width, wrapping and scrollbar gutter — because a single pixel of disagreement
+puts every glyph after it out of register. The highlight layer carries the field's background
+and border, including the amber focus border every other field has.
+
+Highlighting introduces **no hue**. The note is read tonally, the way every other reading in
+this instrument is: exercise names and headings bold in `--ink`, the load bold and the reps
+plain in `--ink`, the annotation layer — units, bullets, the `x`, commas, comments — in
+`--ink-faint`, RPE and `(warmup)` tags and free prose in `--ink-dim`. A colour scheme lifted
+from a code editor would put five hues on the one surface that is meant to read as a page of
+figures, and would spend the one signal colour on decoration.
+
+The highlighter asks the parser (`isSetLine`, `isNotesHeading`) what a line is rather than
+carrying a second copy of the grammar, so what the editor colours as a set is exactly what gets
+saved as one — the colour doubles as the linting the note never had.
+
 ### Rest timer
 
 Every reading comes from the wall clock (`Date.now()` against a target stamp), never from
