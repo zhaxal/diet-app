@@ -675,6 +675,18 @@ tap that starts the timer, because autoplay policy unlocks one only on a user ge
 30 seconds re-queues it; dismissing cancels it. Vibration stays on the tick that notices the
 end, since a hidden page is not allowed to vibrate.
 
+The audio clock stops while the platform suspends the context (iOS does on screen lock), so a
+queued note slips by however long the phone was locked. The queue is re-anchored to the wall
+clock when the page comes back, and a note that still has not sounded by the end of the rest is
+replaced by one sounded then — never a silent return followed by a stray chime later.
+
+There is one timer per page, held in a module-level store outside React. The component sits
+inside `WorkoutCard`, which remounts on every day change, tab switch and loading skeleton, and
+`DayTransition` keeps a second copy of the outgoing card mounted while it slides out; timer
+state held per mount finished the same rest twice, or not at all when no copy was mounted.
+Every mounted `RestTimer` renders the store, and completion — chime, buzz and exactly one
+toast — happens once.
+
 ## Do's and Don'ts
 
 ### Do:

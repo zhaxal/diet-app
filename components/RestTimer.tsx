@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { Timer, X, Plus } from "lucide-react";
 
 interface RestTimerProps {
@@ -21,9 +21,22 @@ const STORAGE_KEY = "diet_rest_timer_state";
    sound. One context per page, opened inside the tap that starts a timer:
    autoplay policy unlocks a context only on a user gesture, and one opened
    later — on a hidden page, or from a restored timer — stays suspended and
-   silent. */
+   silent.
+
+   The audio clock is not the wall clock, though: when the platform suspends
+   the context (iOS does on screen lock), `currentTime` stops, and a note
+   queued against it slips by however long the phone was locked. So the queue
+   is re-anchored whenever the page comes back, and a note that still has not
+   sounded by the end of the rest is replaced by one sounded now. */
 let audioContext: AudioContext | null = null;
-let scheduledChime: { at: number; cancel: () => void } | null = null;
+let scheduledChime: {
+  /** `Date.now()` stamp the note is meant for. */
+  at: number;
+  /** Audio-clock time the note is actually queued for. */
+  startAt: number;
+  ctx: AudioContext;
+  cancel: () => void;
+} | null = null;
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -32,10 +45,10 @@ function getAudioContext(): AudioContext | null {
       window.AudioContext ||
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) return null;
-    if (!audioContext) audioContext = new AudioContextClass();
-    // A context can be suspended by the platform whenever the app goes to the
-    // background; resuming is a no-op while it is already running.
-    if (audioContext.state === "suspended") {
+    if (!audioContext || audioContext.state === "closed") audioContext = new AudioContextClass();
+    // A context is suspended — or, on iOS, "interrupted" — by the platform
+    // whenever the app goes to the background; resuming a running one is a no-op.
+    if (audioContext.state !== "running") {
       void audioContext.resume().catch(() => {});
     }
     return audioContext;
@@ -80,6 +93,8 @@ function scheduleChime(targetTime: number): boolean {
 
     const entry = {
       at: targetTime,
+      startAt,
+      ctx,
       cancel: () => {
         try {
           // Stopping before the scheduled start silences a note that has been
@@ -102,175 +117,222 @@ function scheduleChime(targetTime: number): boolean {
   }
 }
 
+/** Seconds of audio time a queued note may trail its wall-clock moment before it counts as slipped. */
+const CHIME_SLIP_SECONDS = 0.25;
+
+/** The queued note has not started, and its audio time is behind where the wall clock says it should be. */
+function chimeHasSlipped(): boolean {
+  const entry = scheduledChime;
+  if (!entry || entry.ctx.currentTime >= entry.startAt) return false;
+  const soundsAt = Date.now() + (entry.startAt - entry.ctx.currentTime) * 1000;
+  return soundsAt - entry.at > CHIME_SLIP_SECONDS * 1000;
+}
+
+/* ── One timer per page, outside React ─────────────────────────────────────
+   The timer sits inside WorkoutCard, which is keyed by date and remounts on
+   every day change, tab switch and loading skeleton — and DayTransition keeps
+   a second copy of the outgoing card mounted while it slides out. Held in
+   component state, each mount had its own countdown: two could finish the same
+   rest (a doubled toast and buzz), and a rest that ended while no copy was
+   mounted was never finished at all. The countdown now lives here, once, and
+   every mounted RestTimer only renders it. */
+
+interface TimerSnapshot {
+  /** `Date.now()` stamp the rest ends at; null when idle or complete. */
+  target: number | null;
+  /** Length of the rest in seconds; null when idle. */
+  total: number | null;
+  remaining: number;
+}
+
+const IDLE: TimerSnapshot = { target: null, total: null, remaining: 0 };
+
+let timer: TimerSnapshot = IDLE;
+let hydrated = false;
+let chimeQueued = false;
+let stopWatching: (() => void) | null = null;
+const listeners = new Set<() => void>();
+const endHandlers = new Set<{ current?: () => void }>();
+
+function secondsLeft(target: number) {
+  return Math.max(0, Math.ceil((target - Date.now()) / 1000));
+}
+
+function setTimer(next: TimerSnapshot) {
+  timer = next;
+  try {
+    if (next.target !== null && next.total !== null) {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ target: next.target, total: next.total }));
+    } else {
+      sessionStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {}
+  listeners.forEach((listener) => listener());
+}
+
+function unwatch() {
+  stopWatching?.();
+  stopWatching = null;
+}
+
+// Every reading is taken from the wall clock, so a throttled or skipped tick
+// costs nothing but a repaint.
+function watch(target: number) {
+  unwatch();
+
+  const tick = () => {
+    if (timer.target === null) return;
+    const remaining = secondsLeft(timer.target);
+    if (remaining <= 0) finishTimer();
+    else if (remaining !== timer.remaining) setTimer({ ...timer, remaining });
+  };
+
+  const onReturn = () => {
+    if (document.visibilityState === "visible" && chimeHasSlipped() && timer.target !== null) {
+      chimeQueued = scheduleChime(timer.target);
+    }
+    tick();
+  };
+
+  // Three ways to notice, because a background tab defeats any one of them:
+  // the interval paints the count while the page is on screen; the timeout
+  // aims at the end of the rest itself, so completion does not wait for the
+  // next quarter-second tick; and the page-visible handlers re-read the clock
+  // the instant the app comes back, which is what turns a stale countdown into
+  // a finished one on return.
+  const interval = window.setInterval(tick, 250);
+  const timeout = window.setTimeout(tick, Math.max(0, target - Date.now()) + 30);
+  document.addEventListener("visibilitychange", onReturn);
+  window.addEventListener("focus", onReturn);
+  window.addEventListener("pageshow", onReturn);
+
+  stopWatching = () => {
+    window.clearInterval(interval);
+    window.clearTimeout(timeout);
+    document.removeEventListener("visibilitychange", onReturn);
+    window.removeEventListener("focus", onReturn);
+    window.removeEventListener("pageshow", onReturn);
+  };
+}
+
+function startTimer(seconds: number) {
+  const target = Date.now() + seconds * 1000;
+  chimeQueued = scheduleChime(target);
+  setTimer({ target, total: seconds, remaining: seconds });
+  watch(target);
+}
+
+function addSeconds(sec: number) {
+  if (timer.target === null) return;
+  const target = timer.target + sec * 1000;
+  // The queued note is pinned to the old moment, so it is re-queued rather
+  // than left to sound 30 seconds early — and the end-of-rest timeout is
+  // re-aimed with it, rather than firing at the old end.
+  chimeQueued = scheduleChime(target);
+  setTimer({ target, total: (timer.total ?? 0) + sec, remaining: secondsLeft(target) });
+  watch(target);
+}
+
+function dismissTimer() {
+  unwatch();
+  cancelScheduledChime();
+  chimeQueued = false;
+  setTimer(IDLE);
+}
+
+function finishTimer() {
+  if (timer.target === null) return;
+  unwatch();
+
+  // Only when Web Audio could not take the note ahead of time, or the note it
+  // took has slipped behind a suspended audio clock — otherwise it has already
+  // sounded, on the beat, however late this tick is.
+  if (!chimeQueued || chimeHasSlipped()) scheduleChime(Date.now());
+  chimeQueued = false;
+
+  setTimer({ target: null, total: timer.total, remaining: 0 });
+
+  try {
+    // Vibration is ignored while the page is hidden, so it lands here, on the
+    // tick that notices, rather than with the queued note.
+    navigator.vibrate?.([150, 80, 150]);
+  } catch {}
+
+  // Every mounted copy passes the same handler, so exactly one of them runs.
+  for (const handler of endHandlers) {
+    if (handler.current) {
+      handler.current();
+      break;
+    }
+  }
+}
+
+function hydrate() {
+  if (hydrated) return;
+  hydrated = true;
+
+  // Listen for global custom event to trigger timer from set completion
+  window.addEventListener("start-rest-timer", (e: Event) => {
+    const customEvent = e as CustomEvent<{ seconds?: number }>;
+    startTimer(customEvent.detail?.seconds ?? 90);
+  });
+
+  // Restore a timer that was running before a reload.
+  try {
+    const stored = sessionStorage.getItem(STORAGE_KEY);
+    if (!stored) return;
+    const { target, total } = JSON.parse(stored);
+    if (typeof target !== "number" || typeof total !== "number") {
+      sessionStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+
+    const left = secondsLeft(target);
+    if (left > 0) {
+      // No note is queued: a context opened outside a user gesture would be
+      // suspended and silent, so the chime falls back to the finishing tick.
+      chimeQueued = false;
+      setTimer({ target, total, remaining: left });
+      watch(target);
+    } else {
+      // It ran out while the page was away. Report it finished instead of
+      // discarding it silently — an empty preset row reads as "the timer
+      // never ran", which is the opposite of what happened.
+      setTimer({ target: null, total, remaining: 0 });
+    }
+  } catch {}
+}
+
+function subscribe(listener: () => void) {
+  hydrate();
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+const getSnapshot = () => timer;
+const getServerSnapshot = () => IDLE;
+
 export default function RestTimer({ onTimerEnd }: RestTimerProps) {
-  const [totalSeconds, setTotalSeconds] = useState<number | null>(null);
-  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-  const targetTimeRef = useRef<number | null>(null);
-  // One completion per timer, whoever notices it first — the interval, the
-  // end-of-rest timeout, or the resync when the page comes back on screen.
-  const endedRef = useRef<boolean>(false);
-  const chimeQueuedRef = useRef<boolean>(false);
+  const { target, total: totalSeconds, remaining: remainingSeconds } = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
 
   // The parent passes an inline arrow, so its identity changes on every render
-  // of WorkoutCard. Held in a ref, it cannot become an effect dependency and
-  // tear the running countdown down and rebuild it on each keystroke.
+  // of WorkoutCard; the store reads it through a ref instead.
   const onTimerEndRef = useRef(onTimerEnd);
   useEffect(() => {
     onTimerEndRef.current = onTimerEnd;
   }, [onTimerEnd]);
-
-  const persistState = (target: number | null, total: number | null) => {
-    try {
-      if (target && total) {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ target, total }));
-      } else {
-        sessionStorage.removeItem(STORAGE_KEY);
-      }
-    } catch {}
-  };
-
-  const startTimer = useCallback((seconds: number) => {
-    const target = Date.now() + seconds * 1000;
-    targetTimeRef.current = target;
-    endedRef.current = false;
-    chimeQueuedRef.current = scheduleChime(target);
-    setTotalSeconds(seconds);
-    setRemainingSeconds(seconds);
-    setIsRunning(true);
-    persistState(target, seconds);
-  }, []);
-
-  const addSeconds = useCallback((sec: number) => {
-    if (!targetTimeRef.current) return;
-    const newTarget = targetTimeRef.current + sec * 1000;
-    targetTimeRef.current = newTarget;
-    // The queued note is pinned to the old moment, so it is re-queued rather
-    // than left to sound 30 seconds early.
-    chimeQueuedRef.current = scheduleChime(newTarget);
-    setTotalSeconds((prev) => {
-      const nextTotal = (prev ?? 0) + sec;
-      persistState(newTarget, nextTotal);
-      return nextTotal;
-    });
-    setRemainingSeconds((prev) => prev + sec);
-  }, []);
-
-  const cancelTimer = useCallback(() => {
-    targetTimeRef.current = null;
-    endedRef.current = true;
-    cancelScheduledChime();
-    setIsRunning(false);
-    setTotalSeconds(null);
-    setRemainingSeconds(0);
-    persistState(null, null);
-  }, []);
-
-  const finishTimer = useCallback(() => {
-    if (endedRef.current) return;
-    endedRef.current = true;
-    targetTimeRef.current = null;
-    setIsRunning(false);
-    setRemainingSeconds(0);
-    persistState(null, null);
-
-    // Only when Web Audio could not take the note ahead of time — otherwise it
-    // has already sounded, on the beat, however late this tick is.
-    if (!chimeQueuedRef.current) scheduleChime(Date.now());
-    chimeQueuedRef.current = false;
-
-    try {
-      // Vibration is ignored while the page is hidden, so it lands here, on
-      // the tick that notices, rather than with the queued note.
-      navigator.vibrate?.([150, 80, 150]);
-    } catch {}
-
-    onTimerEndRef.current?.();
-  }, []);
-
-  // Restore an active timer from sessionStorage if present
   useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem(STORAGE_KEY);
-      if (!stored) return;
-      const { target, total } = JSON.parse(stored);
-      if (typeof target !== "number" || typeof total !== "number") {
-        sessionStorage.removeItem(STORAGE_KEY);
-        return;
-      }
-
-      const left = Math.max(0, Math.ceil((target - Date.now()) / 1000));
-      if (left > 0) {
-        targetTimeRef.current = target;
-        endedRef.current = false;
-        // The rest keeps running while this component is unmounted (a tab
-        // switch), so its note is usually still queued. Queue one only when
-        // it is not, and never open a fresh context here: outside a user
-        // gesture it would be suspended and silent anyway.
-        chimeQueuedRef.current =
-          scheduledChime?.at === target || (audioContext !== null && scheduleChime(target));
-        setTotalSeconds(total);
-        setRemainingSeconds(left);
-        setIsRunning(true);
-      } else {
-        // It ran out while the page was away. Report it finished instead of
-        // discarding it silently — an empty preset row reads as "the timer
-        // never ran", which is the opposite of what happened.
-        endedRef.current = true;
-        sessionStorage.removeItem(STORAGE_KEY);
-        setTotalSeconds(total);
-        setRemainingSeconds(0);
-        setIsRunning(false);
-      }
-    } catch {}
-  }, []);
-
-  // Listen for global custom event to trigger timer from set completion
-  useEffect(() => {
-    const handleTrigger = (e: Event) => {
-      const customEvent = e as CustomEvent<{ seconds?: number }>;
-      const sec = customEvent.detail?.seconds ?? 90;
-      startTimer(sec);
-    };
-
-    window.addEventListener("start-rest-timer", handleTrigger);
-    return () => window.removeEventListener("start-rest-timer", handleTrigger);
-  }, [startTimer]);
-
-  // Main countdown. Every reading is taken from the wall clock, so a throttled
-  // or skipped tick costs nothing but a repaint.
-  useEffect(() => {
-    if (!isRunning) return;
-
-    const tick = () => {
-      const target = targetTimeRef.current;
-      if (target === null) return;
-      const left = Math.max(0, Math.ceil((target - Date.now()) / 1000));
-      setRemainingSeconds(left);
-      if (left <= 0) finishTimer();
-    };
-
-    // Three ways to notice, because a background tab defeats any one of them:
-    // the interval paints the count while the page is on screen; the timeout
-    // aims at the end of the rest itself, so completion does not wait for the
-    // next quarter-second tick; and the page-visible handlers re-read the
-    // clock the instant the app comes back, which is what turns a stale
-    // countdown into a finished one on return.
-    const interval = setInterval(tick, 250);
-    const timeout = setTimeout(tick, Math.max(0, (targetTimeRef.current ?? 0) - Date.now()) + 30);
-
-    document.addEventListener("visibilitychange", tick);
-    window.addEventListener("focus", tick);
-    window.addEventListener("pageshow", tick);
-
+    endHandlers.add(onTimerEndRef);
     return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-      document.removeEventListener("visibilitychange", tick);
-      window.removeEventListener("focus", tick);
-      window.removeEventListener("pageshow", tick);
+      endHandlers.delete(onTimerEndRef);
     };
-  }, [isRunning, finishTimer]);
+  }, []);
 
   const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -280,7 +342,7 @@ export default function RestTimer({ onTimerEnd }: RestTimerProps) {
 
   const PRESETS = [60, 90, 120, 180];
 
-  if (!isRunning && totalSeconds === null) {
+  if (totalSeconds === null) {
     return (
       <div
         className="motion-state-enter flex items-center justify-between border-t px-3 py-2 text-2xs"
@@ -308,8 +370,8 @@ export default function RestTimer({ onTimerEnd }: RestTimerProps) {
     );
   }
 
-  const progress = totalSeconds && totalSeconds > 0 ? (remainingSeconds / totalSeconds) * 100 : 0;
-  const isComplete = remainingSeconds === 0;
+  const progress = totalSeconds > 0 ? (remainingSeconds / totalSeconds) * 100 : 0;
+  const isComplete = target === null;
 
   return (
     <div
@@ -370,7 +432,7 @@ export default function RestTimer({ onTimerEnd }: RestTimerProps) {
         )}
         <button
           type="button"
-          onClick={cancelTimer}
+          onClick={dismissTimer}
           aria-label="Dismiss timer"
           className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded p-1 text-ink-faint hover:text-ink transition-colors"
         >
