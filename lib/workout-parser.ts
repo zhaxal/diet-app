@@ -192,6 +192,30 @@ function tryParseCommaSets(
 
 const NOTES_HEADING = /^#{0,4}\s*notes\s*:?\s*$/i;
 
+/**
+ * True when a line opens the workout-level notes section (`## Notes`).
+ * Exported for the editor's syntax highlighter, which has to make the same
+ * call the parser does about where the sets stop and the prose starts.
+ */
+export function isNotesHeading(line: string): boolean {
+  return NOTES_HEADING.test(line.trim());
+}
+
+/**
+ * True when a line reads as one or more sets on its own — the same two tests,
+ * in the same order, that the parser applies to a line under an exercise. The
+ * syntax highlighter asks this rather than carrying a second, drifting copy of
+ * the grammar, so what the editor colours as a set is exactly what gets saved
+ * as one.
+ */
+export function isSetLine(line: string, defaultUnit: WeightUnit = "kg"): boolean {
+  const clean = line.replace(/^(?:[-*•]|\d+[.)])\s+/, "").trim();
+  if (!clean) return false;
+  const commaSets = tryParseCommaSets(clean, defaultUnit);
+  if (commaSets && commaSets.length > 0) return true;
+  return tryParseSet(clean, defaultUnit) !== null;
+}
+
 /** Appends free text to an exercise's notes if one is open, otherwise to the workout-level notes. */
 function addComment(
   text: string,

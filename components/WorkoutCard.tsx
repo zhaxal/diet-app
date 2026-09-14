@@ -22,7 +22,9 @@ import {
 } from "@/lib/default-exercises";
 import { WORKOUT_TEMPLATES } from "@/lib/workout-templates";
 import { prettyDate } from "@/lib/time-client";
+import type { WeightUnit } from "@/lib/units";
 import RestTimer from "./RestTimer";
+import WorkoutNoteEditor from "./WorkoutNoteEditor";
 import ExerciseHistoryModal from "./ExerciseHistoryModal";
 import { AlertDialog, Dialog } from "./Dialog";
 import { WorkoutDaySkeleton } from "./DayLoadingSkeleton";
@@ -619,23 +621,15 @@ export default function WorkoutCard({
             </div>
           )}
 
-          {/* Textarea (Obsidian Note Feel) */}
-          <div className="relative flex-1 mt-1">
-            <textarea
-              ref={textareaRef}
-              rows={12}
-              value={rawNote}
-              onChange={(e) => handleNoteChange(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Bench Press&#10;- 80kg x 8&#10;- 80kg x 8 // prev: 75kg x8&#10;- 85kg x 6&#10;&#10;Incline DB Press&#10;- 30kg x 10&#10;- 30kg x 8"
-              aria-label="Workout note markdown"
-              className="w-full h-full resize-y rounded bg-transparent p-3 font-mono text-base sm:text-xs leading-relaxed text-ink placeholder:text-ink-faint/60 focus:outline-none"
-              style={{
-                background: "var(--panel-2)",
-                border: "1px solid var(--line-soft)",
-              }}
-            />
-          </div>
+          {/* The note itself (Obsidian Note Feel), painted as it is typed */}
+          <WorkoutNoteEditor
+            value={rawNote}
+            onChange={handleNoteChange}
+            onKeyDown={handleKeyDown}
+            weightUnit={weightUnit as WeightUnit}
+            textareaRef={textareaRef}
+            placeholder="Bench Press&#10;- 80kg x 8&#10;- 80kg x 8 // prev: 75kg x8&#10;- 85kg x 6&#10;&#10;Incline DB Press&#10;- 30kg x 10&#10;- 30kg x 8"
+          />
 
           {/* Quick Toolbar */}
           <div className="flex items-center justify-between mt-2 text-2xs">
