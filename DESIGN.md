@@ -636,6 +636,23 @@ draft removes that day's draft, and logout clears all account drafts. Date chang
 loading until a reading for the selected day is available; superseded requests cannot
 overwrite it.
 
+### Rest timer
+
+Every reading comes from the wall clock (`Date.now()` against a target stamp), never from
+counting ticks, because a rest is timed with the phone face-down or the app in the background,
+where the page's own timers are throttled to about one a minute and a frozen tab gets none at
+all. The countdown re-reads the clock on `visibilitychange`, `focus` and `pageshow`, so a rest
+that ran out while the app was away reports complete the instant it is back rather than
+resuming a stale count; a rest that ran out while the page was gone entirely is restored into
+its completed state rather than dropped.
+
+The chime is queued on the Web Audio clock at the moment the timer starts, for the exact
+instant it should sound. That clock runs on the audio thread and is not throttled, so the note
+lands on the beat whether or not the page is on screen — and the context is opened inside the
+tap that starts the timer, because autoplay policy unlocks one only on a user gesture. Adding
+30 seconds re-queues it; dismissing cancels it. Vibration stays on the tick that notices the
+end, since a hidden page is not allowed to vibrate.
+
 ## Do's and Don'ts
 
 ### Do:
