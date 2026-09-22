@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
   const parsed = createEntrySchema.safeParse(body);
   if (!parsed.success) return zodError(parsed.error);
 
-  const { consumedAt, quantity, quantityUnit, quantityGrams, ...rest } = parsed.data;
+  const { consumedAt, quantity, quantityUnit, quantityGrams, source, ...rest } =
+    parsed.data;
 
   const entry = await prisma.foodEntry.create({
     data: {
@@ -55,8 +56,11 @@ export async function POST(req: NextRequest) {
       ...rest,
       // Collapses the deprecated `quantityGrams` into the quantity + unit pair.
       ...normaliseQuantity({ quantity, quantityUnit, quantityGrams }),
-      // This route is the REST/browser door. The MCP handler stamps its own.
-      source: "ui",
+      // This route is the REST/browser door, so it stamps "ui" — unless the
+      // caller is restoring a row it just deleted and passes the provenance
+      // back. Stamping unconditionally meant undoing an assistant-written
+      // entry silently reassigned it to the browser.
+      source: source ?? "ui",
       consumedAt: consumedAt ? new Date(consumedAt) : undefined,
     },
   });

@@ -718,7 +718,7 @@ export default function WorkoutCard({
                       </div>
 
                       {/* Exercises Scroll List */}
-                      <div className="max-h-[55dvh] overflow-y-auto divide-y" style={{ borderColor: "var(--line-soft)" }}>
+                      <div className="max-h-[55dvh] overflow-y-auto divide-y divide-line-soft">
                         {suggestedExercises.length > 0 ? (
                           suggestedExercises.map((s) => (
                             <button
@@ -830,7 +830,7 @@ export default function WorkoutCard({
               <div className="text-2xs text-ink-faint uppercase tracking-wider mb-1.5">
                 Exercises
               </div>
-              <div className="divide-y rounded border" style={{ borderColor: "var(--line)" }}>
+              <div className="divide-y divide-line rounded border border-line">
                 {parsedPreview.exercises.map((ex, idx) => {
                   const stat = exerciseStats[ex.normalized];
                   return (

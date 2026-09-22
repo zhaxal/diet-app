@@ -41,6 +41,46 @@ test("MCP initialize returns capabilities for tools and resources, plus instruct
   assert.ok(json.result.instructions.includes("diet://today/summary"));
 });
 
+test("MCP initialize advertises same-origin icons, honouring a TLS proxy", async () => {
+  const init = async (headers: Record<string, string>) => {
+    const req = new NextRequest("http://localhost:3000/api/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-11-25" },
+      }),
+    });
+    const res = await POST(req);
+    return (await res.json()).result.serverInfo.icons as Array<{
+      src: string;
+      mimeType: string;
+      sizes: string[];
+    }>;
+  };
+
+  const icons = await init({});
+  assert.ok(icons.length > 0);
+  for (const icon of icons) {
+    assert.ok(icon.src.startsWith("http://localhost:3000/"), icon.src);
+    assert.ok(icon.mimeType.startsWith("image/"));
+    assert.ok(Array.isArray(icon.sizes) && icon.sizes.length > 0);
+  }
+  assert.ok(icons.some((i) => i.mimeType === "image/png"));
+
+  // Behind a proxy the request arrives as plain http on an internal host; the
+  // icon URL has to name the public https origin or the client drops it.
+  const proxied = await init({
+    "x-forwarded-proto": "https",
+    "x-forwarded-host": "food.example.com",
+  });
+  for (const icon of proxied) {
+    assert.ok(icon.src.startsWith("https://food.example.com/"), icon.src);
+  }
+});
+
 test("MCP tools/list returns lookup_barcode and other essential tools", async () => {
   const req = new NextRequest("http://localhost:3000/api/mcp", {
     method: "POST",

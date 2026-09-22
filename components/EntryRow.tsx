@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, Pencil } from "lucide-react";
 import { api, type FoodEntry } from "@/lib/api-client";
 import { clockTime } from "@/lib/time-client";
@@ -34,6 +34,25 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Delete sits at the outer right edge of a list that is scrolled with a
+  // thumb resting on exactly that edge. Undo catches the mistake afterwards;
+  // this catches it before the totals move.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+  }, []);
+
+  function armDelete() {
+    if (confirmingDelete) {
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+      setConfirmingDelete(false);
+      onDelete(entry.id);
+      return;
+    }
+    setConfirmingDelete(true);
+    confirmTimer.current = setTimeout(() => setConfirmingDelete(false), 4000);
+  }
   const initialForm = () => ({
     name: entry.name,
     calories: entry.calories.toString(),
@@ -314,8 +333,13 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
             </span>}
             <span className="num">{clockTime(entry.consumedAt)}</span>
             {entry.source === "mcp" && (
-              <span className="font-medium tracking-wide text-ink-dim" aria-label="Logged by assistant">
-                SRC: AI
+              /* `aria-label` on a bare span lands on `role="generic"`, where
+                 ARIA prohibits naming — so the only cue distinguishing the two
+                 front doors was the one cue a screen reader never received.
+                 The word carries itself now, and the rest is read out too. */
+              <span className="font-medium uppercase tracking-wide text-ink-dim">
+                assistant
+                <span className="sr-only"> logged this entry</span>
               </span>
             )}
           </span>
@@ -345,15 +369,24 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
           <Copy size={13} strokeWidth={1.75} aria-hidden="true" />
         </button>
         {/* Hairline separation between safe copy and destructive delete to prevent tap collisions */}
-        <span className="w-px h-3.5 bg-line shrink-0 mx-0.5" aria-hidden="true" />
+        <span className="w-px h-3.5 bg-line shrink-0 mx-1.5" aria-hidden="true" />
         {/* Always visible — this was opacity-0 until group-hover, i.e. permanently
             invisible on a touch device while remaining tappable. */}
         <button
-          onClick={() => onDelete(entry.id)}
-          className="glyph-btn shrink-0 text-2xs text-ink-faint transition-colors hover:text-over"
-          aria-label={`Delete ${entry.name}`}
+          onClick={armDelete}
+          onBlur={() => setConfirmingDelete(false)}
+          className={`glyph-btn shrink-0 text-2xs transition-colors ${
+            confirmingDelete
+              ? "font-semibold uppercase tracking-wide text-over"
+              : "text-ink-faint hover:text-over"
+          }`}
+          aria-label={
+            confirmingDelete
+              ? `Confirm delete ${entry.name}`
+              : `Delete ${entry.name}`
+          }
         >
-          ✕
+          {confirmingDelete ? "sure?" : "\u2715"}
         </button>
       </div>
       </li>

@@ -33,7 +33,14 @@ const entryBase = {
   consumedAt: z.string().datetime({ offset: true }).optional(),
 };
 
-export const createEntrySchema = z.object(entryBase);
+export const createEntrySchema = z.object({
+  ...entryBase,
+  // Undo restores an eating event that already happened, so it has to be able
+  // to say which front door originally wrote it. Everything else defaults to
+  // "ui": this schema only serves the REST/browser door, and an omitted source
+  // means the browser is authoring a new row rather than restoring an old one.
+  source: z.enum(["ui", "mcp"]).optional(),
+});
 
 // All fields optional for partial updates, but at least one must be present.
 export const updateEntrySchema = z

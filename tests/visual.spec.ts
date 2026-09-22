@@ -203,21 +203,23 @@ test.describe("Visual Regression Tests", () => {
     await page.goto(`/?tab=food&d=${EMPTY_DAY}`);
     await page.waitForSelector("text=Calories");
 
-    // Verify 3-tab bottom navigation
+    // Verify 3-tab bottom navigation. Addressed by role: a bare `text=` matches
+    // both the tab button and the label inside it, which is a strict-mode
+    // violation that failed this test before it ever reached its screenshot.
     const bottomNav = page.locator('nav[aria-label="Bottom navigation"]');
-    await expect(bottomNav.locator("text=Food")).toBeVisible();
-    await expect(bottomNav.locator("text=Workout")).toBeVisible();
-    await expect(bottomNav.locator("text=Settings")).toBeVisible();
-    await expect(bottomNav.locator("text=Today")).toHaveCount(0);
-    await expect(bottomNav.locator("text=Trends")).toHaveCount(0);
-    await expect(bottomNav.locator("text=Weight")).toHaveCount(0);
+    await expect(bottomNav.getByRole("button", { name: "Food", exact: true })).toBeVisible();
+    await expect(bottomNav.getByRole("button", { name: "Workout", exact: true })).toBeVisible();
+    await expect(bottomNav.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
+    await expect(bottomNav.getByRole("button", { name: "Today", exact: true })).toHaveCount(0);
+    await expect(bottomNav.getByRole("button", { name: "Trends", exact: true })).toHaveCount(0);
+    await expect(bottomNav.getByRole("button", { name: "Weight", exact: true })).toHaveCount(0);
 
     // Verify Weight instrument is placed on Food page
     await expect(page.locator("text=Weight").first()).toBeVisible();
 
     // Verify Trends & Analysis collapsible panel is present
     await expect(page.locator("text=Trends & Analysis")).toBeVisible();
-    await expect(page.getByRole("button", { name: /Open food composer/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Open log food/ })).toBeVisible();
 
     // Take snapshot of Food tab
     await takeFullPageScreenshot(page, "food-tab.png");
@@ -225,7 +227,7 @@ test.describe("Visual Regression Tests", () => {
 
   test("Food Tab - Manual Entry Dialog", async ({ page }) => {
     await page.goto(`/?tab=food&d=${EMPTY_DAY}`);
-    await page.getByRole("button", { name: /Open food composer/ }).click();
+    await page.getByRole("button", { name: /Open log food/ }).click();
     await page.getByRole("button", { name: "Enter food manually" }).click();
 
     const dialog = page.getByRole("dialog", { name: "Manual Food Entry" });

@@ -1722,6 +1722,23 @@ async function readResource(
   }
 }
 
+// The server's mark, advertised to MCP clients on initialize. Clients fetch
+// icons without credentials and reject anything that is not an absolute https:
+// or data: URI on the server's own origin, so these are built per request from
+// the host the client actually reached — a self-hoster's own domain, not a
+// baked-in one. A TLS-terminating proxy is asked first: behind one the incoming
+// request is plain http, and an http icon URL is dropped by the client.
+function serverIcons(req: NextRequest) {
+  const proto = req.headers.get("x-forwarded-proto")?.split(",")[0].trim();
+  const host = req.headers.get("x-forwarded-host")?.split(",")[0].trim();
+  const origin = proto && host ? `${proto}://${host}` : req.nextUrl.origin;
+  return [
+    { src: `${origin}/icon-192.png`, mimeType: "image/png", sizes: ["192x192"] },
+    { src: `${origin}/icon-512.png`, mimeType: "image/png", sizes: ["512x512"] },
+    { src: `${origin}/icon.svg`, mimeType: "image/svg+xml", sizes: ["any"] },
+  ];
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -1764,7 +1781,11 @@ export async function POST(req: NextRequest) {
         result: {
           protocolVersion: clientVersion,
           capabilities: { tools: {}, resources: {} },
-          serverInfo: { name: "rationd", version: "1.0.0" },
+          serverInfo: {
+            name: "rationd",
+            version: "1.0.0",
+            icons: serverIcons(req),
+          },
           instructions: `rationd MCP Server — Instructions for AI Assistants:
 
 1. AUTOMATICALLY SAVE SCANNED NUTRITION TABLES & LABELS:

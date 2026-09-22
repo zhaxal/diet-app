@@ -123,7 +123,7 @@ export default function ProductsCard() {
               : "Loading…"}
         </p>)
       ) : (
-        <ul className="mt-2 divide-y" style={{ borderColor: "var(--line-soft)" }}>
+        <ul className="mt-2 divide-y divide-line-soft">
           {products.map((p) => (
               <li key={p.id} className="py-2">
                 <div className="flex items-baseline justify-between gap-2">

@@ -234,7 +234,10 @@ export function Dialog({
           style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
         >
           <div className="min-w-0">
-            <h2 id={titleId} className="truncate text-sm font-semibold tracking-wide text-ink">
+            {/* Every other header in the system is uppercase with tracking;
+                dialog titles were the one Title Case sentence left. The
+                transform is CSS so assistive tech still reads the real words. */}
+            <h2 id={titleId} className="truncate text-sm font-semibold uppercase tracking-wider text-ink">
               {title}
             </h2>
             {description && (

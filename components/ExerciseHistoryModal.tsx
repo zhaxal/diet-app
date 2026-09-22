@@ -226,7 +226,7 @@ export default function ExerciseHistoryModal({
                 <span className="text-2xs font-semibold uppercase tracking-wider text-ink-faint">
                   Session History
                 </span>
-                <div className="divide-y border rounded" style={{ borderColor: "var(--line)" }}>
+                <div className="divide-y divide-line border-line rounded">
                   {[...data.sessions].reverse().map((session) => (
                     <div key={session.workoutId} className="flex flex-col gap-1 p-2.5 text-xs">
                       <div className="flex items-center justify-between">

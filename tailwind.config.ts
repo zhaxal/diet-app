@@ -39,6 +39,17 @@ export default {
       fontSize: {
         "2xs": ["0.6875rem", { lineHeight: "0.875rem" }],
       },
+      // Preflight's own default is `#e5e7eb`, a literal grey that belongs to no
+      // theme — and `divide-*` sets only a width on the children, so a colour
+      // set on the parent never reaches them. Every undeclared border in the
+      // app was therefore that grey, which in dark read as a near-white rule on
+      // a near-black panel: the brightest edge on the screen, on row dividers.
+      borderColor: {
+        DEFAULT: "var(--line)",
+      },
+      divideColor: {
+        DEFAULT: "var(--line)",
+      },
       borderRadius: {
         DEFAULT: "0.25rem",
         md: "0.3125rem",

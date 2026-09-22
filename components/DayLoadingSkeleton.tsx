@@ -62,7 +62,7 @@ export function FoodDaySkeleton({ date }: { date: string }) {
           <SkeletonBar className="h-3 w-20" />
           <SkeletonBar className="h-3 w-12" />
         </div>
-        <div className="divide-y" style={{ borderColor: "var(--line-soft)" }}>
+        <div className="divide-y divide-line-soft">
           {["w-3/5", "w-2/5"].map((width) => (
             <div key={width} className="flex items-center justify-between gap-3 px-3 py-3">
               <div className="min-w-0 flex-1 space-y-1.5">

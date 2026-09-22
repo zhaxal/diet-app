@@ -284,8 +284,10 @@ kind of thing you are looking at, which is why it must not be diluted.
 - **Field (touch)** (sans, 400, 16px): Every form control on a coarse pointer. Not a design
   choice — the iOS zoom floor. See The Touch Floor below.
 - **Data** (mono, 600, 0.875rem, tabular): Inline measured values — an entry's calories, its
-  P/C/F triplet, a meter's value/goal pair. Scales down to 0.6875rem for secondary figures
-  without changing character.
+  amount and time, a meter's value/goal pair. Scales down to 0.6875rem for secondary figures
+  without changing character. An entry row carries calories only; its P/C/F live in the row's
+  edit dialog, because the metadata line already holds the amount, the clock time and (when the
+  assistant wrote it) its provenance, and three more figures overflow it at 320px.
 
 ### Named Rules
 
@@ -322,11 +324,25 @@ their internal rows use 6px gaps. There is no large spacing step in the system �
 gap between two adjacent elements on the Food screen is 8px. This is intentional, and it is
 the main reason the screen carries a full day of nutrition with very little scrolling.
 
-The Food screen is a fixed vertical sequence, densest at the top: seven-day strip → the
-calorie readout → a responsive grid of six macro meters → the contextual daily weight instrument
-→ the meal selector → quick-add chips → one collapsible Add food panel → entries grouped by meal
-→ the collapsible Trends & Analysis instrument. Everything optional collapses; the day's numbers
-never do.
+The Food screen is a fixed vertical sequence, densest at the top: seven-day strip → date bar →
+the collapsible Log food panel, which carries Quick add while it is shut and the composer when it
+is open → the calorie readout → a responsive grid of six macro meters → entries grouped by meal →
+the contextual daily weight instrument → the collapsible Trends & Analysis instrument. Everything
+optional collapses; the day's numbers never do.
+
+**The day's primary task lands before its report.** Capture sits above the readout, not below it,
+which is the one place this screen deliberately departs from "numbers first": a chip tap and the
+figure it moves are then in the same viewport, and the fastest path in the product costs no
+scroll. The readout keeps its visual weight — the 2.25rem display, the `.gridlines` face — but
+not the first position.
+
+**Log food is one panel with two states, not two panels.** Shut, it offers Quick add: a filter
+field over ranked chips, one tap to log. Open, that block unmounts and the composer owns the
+panel, with its own search across the tray, catalog, favourites, recents and Open Food Facts.
+Leaving both mounted put two search fields and two Recent strips inside one border about 100px
+apart, doing different things, distinguished only by their placeholders. One surface, one search
+field, one Recent strip, whichever state it is in. The header keeps one name — "Log food" — in
+both states.
 
 There used to be three panels below the chips — Products, Add food, and Copy & templates —
 which is three places to answer one question. Products was a second logging surface for one
@@ -335,7 +351,7 @@ are now inputs to Add food, which is the single place an entry is composed, and 
 itself moved to Settings where a reference table belongs.
 
 Trends and Weight live directly on the Food screen rather than occupying standalone tabs:
-Weight is a compact daily instrument beneath the macro meters (with one-tap logging for that day,
+Weight is a compact daily instrument beneath the day's entries (with one-tap logging for that day,
 overall trend delta, and expandable line chart history), while Trends & Analysis is an accordion
 instrument beneath the meal entries providing the full multi-metric chart suite over 7d/30d/90d/all windows.
 It reports what the range *was*; it does not project, streak, or congratulate.
@@ -600,6 +616,27 @@ a `clear` beside it. Below them, the preview states the row that will be written
 written, and `★ favorite` / `⬚ save label` are offered only when the current values can honestly
 be turned into one.
 
+### Provenance
+
+An entry records which front door wrote it, and the day's record says so. A row written by the
+assistant carries `assistant` in the annotation layer after its time; a meal whose rows all came
+that way says `all by assistant` in its header, and a mixed meal says `3 by assistant`. Per-row
+labels alone answer "who wrote this one", which is the wrong question when the assistant logged
+the whole meal — five faint labels down a list read as texture rather than as a meal that arrived
+while you were eating it.
+
+The label is a word, not a field name. It read `SRC: AI` with an `aria-label` on a bare `<span>`,
+which resolves to `role="generic"` where ARIA prohibits naming — so the only cue distinguishing
+the two front doors was the one cue a screen reader never received. It is plain text now, with an
+`sr-only` clause completing the sentence.
+
+**Provenance survives undo, and only undo.** Restoring a deleted row is restoring an eating event
+that already happened, so `POST /api/entries` accepts an optional `source` and both Undo handlers
+pass the original back. Re-logging from a chip or the copy tray is a *new* event authored in the
+browser and correctly stamps `ui`. The route stamped `ui` unconditionally before, so undoing a
+deleted assistant row silently reassigned it — the badge just disappeared, and nothing said the
+record had changed hands.
+
 ### Copy
 
 `⧉` on an entry row, and `copy all` on a meal-group header. Copying writes nothing: it puts the
@@ -615,7 +652,32 @@ The system's signature component and the reason it reads as an instrument. A lab
 over) sits above a 4px track in `--line-soft` carrying an amber fill that animates its width
 over 500ms with an ease-out curve. A large variant at 6px height and 13px figures backs the
 calorie readout's 8px bar. Six of these in a three-column grid account for the entire macro
-display at wider sizes; narrower screens use the stacking and two-column rules above.
+display at wider sizes; narrower screens use the stacking and two-column rules above. Bars sit at
+the bottom of their grid cell (`mt-auto`), so a meter whose label wraps to a second line does not
+drag its own bar out of line with its neighbours'.
+
+**Over goal is a word and a shape, not a hue.** Colour alone was the entire message, which is a
+WCAG 1.4.1 failure on the app's core content and tells you nothing about the size of the overage.
+Past its goal a meter prints `+15.2 over` in `--over` beside the figure, and the track re-scales
+to the *value* so the goal becomes a 1px `--panel` tick inside the bar rather than the end of it.
+At 165/150 the tick stands near the right; at 300/150 it stands at the middle. Clamping the fill
+at 100% drew both as the same full bar — the instrument stopped measuring at exactly the point
+the measurement became interesting.
+
+**A goal has a direction, and the meter says which.** `bound="min"` marks a floor to clear
+(protein, fibre), `bound="max"` a ceiling to stay under (sugar, sodium); a budget (calories,
+carbs, fat) leaves it unset. It renders as a faint `min` / `max` after the unit. The distinction
+is typographic on purpose — the Three-State Number Rule allows exactly three number colours, and
+this is not permitted to become a fourth. Without it all six read as progress bars, and being a
+hair under your sugar target looked like an achievement.
+
+**A chart mark is not a control.** A tappable data cell — an adherence day, a bar — carries
+`.cell-btn`, which exempts it from the coarse-pointer 44px floor. Those rules are written
+`button:not(.cell-btn)` so they also outrank a lone utility class: at plain `button` a
+`min-h-[36px]` beat them and the control shipped at 36px on the one device that needs 44.
+Forcing 44px onto 30 adherence cells widened the document to 1,375px inside a 390px viewport and
+carried the fixed bottom nav off screen with it, so Trends panels also carry `overflow-x-clip` as
+a standing guard.
 
 ### Toasts
 
@@ -708,6 +770,14 @@ toast — happens once.
   than introducing a larger step.
 
 ### Don't:
+- **Don't** leave a border undeclared and assume it inherits. `borderColor.DEFAULT` and
+  `divideColor.DEFAULT` are now `var(--line)` in `tailwind.config.ts`; before that, Tailwind
+  preflight's own `#e5e7eb` was the default for every border the app never named. `divide-*` sets
+  only a *width* on the children, so a colour set on the parent never reaches them — every entry
+  row, product row, shortcut row and weight reading divided at `#e5e7eb` in both themes. In light
+  that is a hair off `--line-soft` and survived for months; in dark it was a near-white rule on a
+  near-black panel at 14.5:1, the brightest edge in the interface, sitting on the rows *inside* a
+  list rather than the borders that define regions. Name the divider: `divide-y divide-line-soft`.
 - **Don't** hardcode a hex value in a component. Charts take `--accent`, with `--ink-dim` and
   `--ink-faint` for additional series; the system has one signal colour and data visualisation is
   not an exemption. (`MiniChart` defaulted to emerald `#10b981` and `TrendsCard` passed indigo
@@ -717,6 +787,11 @@ toast — happens once.
   with ☀️/🌙; `FoodSearch` carried a 🔍 in its placeholder. Both are corrected.)
 - **Don't** use the older auth-screen language. The field, button, and type scale defined here
   are the system, and the login screen is not exempt.
+- **Don't** put a destructive control at the outer screen edge with nothing between it and the
+  bezel. The right edge is where a thumb rests while scrolling, and the entries list grows all
+  day. `✕` on an entry row now arms on the first tap (it becomes `sure?` in `--over` for four
+  seconds) and deletes on the second, and it sits 3px further from `⧉` than it did — Undo is the
+  net afterwards, not the only guard.
 - **Don't** grow a touch target by projecting an invisible box from a glyph. A `.hit`-style
   44×44 pseudo-element cast from an 8px glyph inside a 24px chip overhung the control beside it,
   so a tap meant for "log this favorite" could land on "delete it". Use `.glyph-btn`: real
@@ -762,6 +837,9 @@ toast — happens once.
   colour may be used to praise, congratulate, or mark a streak.
 - **Don't** widen past the 672px column or add a second column, sidebar, or top navigation bar on
   any surface.
+- **Don't** title a dialog in sentence case. `Dialog` uppercases its own `<h2>` with 0.05em
+  tracking, matching every other header in the system; the title prop stays in natural casing so
+  assistive tech reads words rather than letters.
 - **Don't** set prose in monospace or figures in sans. The split is the system's primary semantic
   signal.
 - **Don't** clutter functional settings cards with permanent paragraphs of instructional prose.

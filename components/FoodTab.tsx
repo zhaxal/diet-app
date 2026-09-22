@@ -597,15 +597,15 @@ export default function FoodTab({
               aria-expanded={showAdd}
               aria-controls="food-composer"
               aria-label={mealConfirmed
-                ? `${showAdd ? "Close" : "Open"} food composer for ${meal}`
-                : `${showAdd ? "Close" : "Open"} food composer — choose a meal first`}
+                ? `${showAdd ? "Close" : "Open"} log food for ${meal}`
+                : `${showAdd ? "Close" : "Open"} log food — choose a meal first`}
               className={`motion-press flex min-h-[56px] w-full items-center justify-between gap-3 px-3 text-left transition-colors ${
                 showAdd ? "bg-panel-2 text-ink hover:bg-bg" : "bg-ink text-panel hover:opacity-95"
               }`}
             >
               <span className="min-w-0">
                 <span id="log-food-heading" className="block text-xs font-semibold uppercase tracking-widest">
-                  {showAdd ? "Food composer" : "Log food"}
+                  Log food
                 </span>
                 <span
                   className={`mt-0.5 block text-2xs ${showAdd ? "text-ink-faint" : "text-panel/70"}`}
@@ -622,7 +622,12 @@ export default function FoodTab({
               </span>
             </button>
 
-            {allQuickItems.length > 0 && (
+            {/* Quick add is what this panel offers while it is shut. Open, the
+                composer carries its own tray, favourites and recent strips and
+                its own search, so leaving this mounted put two search fields
+                and two Recent strips ~100px apart inside one border, with
+                nothing saying which reached further. */}
+            {!showAdd && allQuickItems.length > 0 && (
               <div className="border-t px-3 py-2.5" style={{ borderColor: "var(--line)" }}>
                 <div className="mb-1.5 flex items-baseline justify-between gap-2">
                   <h2 id="quick-add-heading" className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
@@ -760,13 +765,8 @@ export default function FoodTab({
 
             {showAdd && (
               <div id="food-composer" className="border-t px-3 py-3" style={{ borderColor: "var(--line)" }}>
-                <div className="mb-3 flex items-end justify-between gap-3 border-b pb-2" style={{ borderColor: "var(--line-soft)" }}>
-                  <div>
-                    <p className="text-2xs uppercase tracking-wider text-ink-faint">Logging to</p>
-                    <p className="mt-0.5 text-xs font-semibold capitalize text-ink">
-                      {mealConfirmed ? meal : "Choose a meal"}
-                    </p>
-                  </div>
+                <div className="mb-3 flex items-center justify-between gap-3 border-b pb-2" style={{ borderColor: "var(--line-soft)" }}>
+                  <p className="text-2xs uppercase tracking-wider text-ink-faint">Logging to</p>
                   <Select
                     value={mealConfirmed ? meal : ""}
                     onChange={(e) => setMeal(e.target.value as Meal)}
@@ -843,7 +843,7 @@ export default function FoodTab({
               </span>
               {calGoal && (
                 <span className="num text-sm text-ink-faint">
-                  / {calGoal.toLocaleString()}
+                  / {calGoal.toLocaleString()} kcal
                 </span>
               )}
               {calGoal ? (
@@ -885,13 +885,18 @@ export default function FoodTab({
           {/* Secondary macros */}
           <section className="panel mt-2 grid grid-cols-3 gap-2 p-3" aria-labelledby="nutrition-heading">
             <h2 id="nutrition-heading" className="sr-only">Nutrition</h2>
+            {/* `bound` says which way each goal points. Protein and fibre are
+                floors you are trying to clear; sugar and sodium are ceilings
+                you are trying to stay under; carbs and fat are budgets and say
+                nothing. Without it all six read as progress bars, and being a
+                hair under your sugar target looked like an achievement. */}
             {[
-              { label: "protein", cur: total.protein, goal: goals.dailyProtein, unit: "g" },
+              { label: "protein", cur: total.protein, goal: goals.dailyProtein, unit: "g", bound: "min" as const },
               { label: "carbs", cur: total.carbs, goal: goals.dailyCarbs, unit: "g" },
               { label: "fat", cur: total.fat, goal: goals.dailyFat, unit: "g" },
-              { label: "fiber", cur: total.fiber, goal: goals.dailyFiber, unit: "g" },
-              { label: "sugar", cur: total.sugar, goal: goals.dailySugar, unit: "g" },
-              { label: "sodium", cur: total.sodium, goal: goals.dailySodium, unit: "mg" },
+              { label: "fiber", cur: total.fiber, goal: goals.dailyFiber, unit: "g", bound: "min" as const },
+              { label: "sugar", cur: total.sugar, goal: goals.dailySugar, unit: "g", bound: "max" as const },
+              { label: "sodium", cur: total.sodium, goal: goals.dailySodium, unit: "mg", bound: "max" as const },
             ].map((m) => (
               <Meter
                 key={m.label}
@@ -899,6 +904,7 @@ export default function FoodTab({
                 value={m.cur}
                 goal={m.goal}
                 unit={m.unit}
+                bound={m.bound}
               />
             ))}
           </section>
@@ -947,8 +953,22 @@ export default function FoodTab({
             ) : (
               <>
                 {MEALS.map((mealName) => {
-                  const items = entries.filter((e) => e.mealType === mealName);
+                  // Meals are printed in the order they are eaten, so the rows
+                  // inside one have to run the same way. Newest-first here put
+                  // the 16:10 snack below the 19:20 dinner and made the day
+                  // read as a query result rather than as a day.
+                  const items = entries
+                    .filter((e) => e.mealType === mealName)
+                    .sort(
+                      (a, b) =>
+                        new Date(a.consumedAt).getTime() - new Date(b.consumedAt).getTime(),
+                    );
                   if (items.length === 0) return null;
+                  // Per-row provenance answers "who wrote this one", which is
+                  // the wrong question when the assistant logged the whole
+                  // meal: five faint labels down a list read as texture, not
+                  // as a meal that arrived while you were eating it.
+                  const byAssistant = items.filter((e) => e.source === "mcp").length;
                   return (
                     <div key={mealName} className="panel mb-2">
                       {/* rounded-t self-clips the header's own fill instead of
@@ -962,6 +982,13 @@ export default function FoodTab({
                           {mealName}
                         </h3>
                         <div className="flex items-center gap-2">
+                          {byAssistant > 0 && (
+                            <span className="text-2xs font-medium uppercase tracking-wider text-ink-faint">
+                              {byAssistant === items.length
+                                ? "all by assistant"
+                                : `${byAssistant} by assistant`}
+                            </span>
+                          )}
                           <span className="num text-2xs text-ink-faint">
                             {Math.round(summary?.byMeal[mealName]?.calories ?? 0)} kcal
                           </span>
@@ -976,7 +1003,7 @@ export default function FoodTab({
                           />
                         </div>
                       </div>
-                      <ul className="divide-y" style={{ borderColor: "var(--line-soft)" }}>
+                      <ul className="divide-y divide-line-soft">
                         {items.map((entry) => (
                           <EntryRow
                             key={entry.id}

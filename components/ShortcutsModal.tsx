@@ -33,7 +33,7 @@ export default function ShortcutsModal({ isOpen, onClose }: Props) {
         </div>
       }
     >
-      <ul className="divide-y text-xs" style={{ borderColor: "var(--line-soft)" }}>
+      <ul className="divide-y divide-line-soft text-xs">
         {SHORTCUTS.map((s, idx) => (
           <li key={idx} className="flex items-center justify-between py-1.5 first:pt-0 last:pb-0">
             <span className="text-ink-dim">{s.label}</span>

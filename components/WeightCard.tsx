@@ -229,8 +229,7 @@ export default function WeightCard({ date, logs, weightUnit, onLogsChange }: Pro
             <span className="num">{logs.length} logged</span>
           </div>
           <ul
-            className="mt-1 max-h-36 space-y-1 overflow-y-auto divide-y"
-            style={{ borderColor: "var(--line-soft)" }}
+            className="mt-1 max-h-36 space-y-1 divide-y divide-line-soft overflow-y-auto"
           >
             {[...logs].reverse().map((l) => (
               <li key={l.id} className="flex items-center gap-2 pt-1 text-xs text-ink-dim">

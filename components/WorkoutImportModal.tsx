@@ -263,7 +263,7 @@ export default function WorkoutImportModal({
                 <span><strong className="num text-ink">{preview.totalSets}</strong> sets</span>
               </div>
 
-              <div className="max-h-36 overflow-y-auto divide-y border rounded text-2xs" style={{ borderColor: "var(--line-soft)" }}>
+              <div className="max-h-36 overflow-y-auto divide-y divide-line-soft border-line-soft rounded text-2xs">
                 {preview.workouts.map((w, idx) => (
                   <div key={idx} className="p-2 flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">

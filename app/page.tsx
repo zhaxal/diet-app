@@ -687,6 +687,9 @@ function Dashboard() {
                 productId: item.productId,
                 quantity: item.quantity,
                 quantityUnit: item.quantityUnit,
+                // Restoring a row is not authoring one: the entry goes back
+                // with the front door that originally wrote it.
+                source: item.source,
               });
             }
             await loadDay(date);
@@ -733,6 +736,7 @@ function Dashboard() {
                     productId: doomed.productId,
                     quantity: doomed.quantity,
                     quantityUnit: doomed.quantityUnit,
+                    source: doomed.source,
                   })
                   .then(() => loadDay(date));
               },

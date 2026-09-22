@@ -206,7 +206,7 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
   // meters read as a measurement rather than an absence.
   if (logged.length === 0) {
     return (
-      <section className="panel p-3">
+      <section className="panel overflow-x-clip p-3">
         {header}
         <p className="mt-3 text-sm text-ink-dim">
           {range === "all" ? "Nothing logged yet." : "Nothing logged in this window."}
@@ -250,7 +250,7 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
     <div className="space-y-2">
       {/* Coverage. The caption this replaces claimed averages "over 30 days"
           while quietly computing them over however many were logged. */}
-      <section className="panel p-3">
+      <section className="panel overflow-x-clip p-3">
         {header}
         <div className="mt-2 grid grid-cols-3 gap-2">
           <Stat label="days logged" value={`${logged.length}/${trends.nutrition.length}`} />
@@ -264,7 +264,7 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
         </div>
       </section>
 
-      <section className="panel p-3">
+      <section className="panel overflow-x-clip p-3">
         <Segmented options={METRICS} value={metric} onChange={setMetric} label="Metric" grow />
 
         <div className="mt-2 h-28 overflow-hidden">
@@ -323,6 +323,10 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
             <Stat label={`max ${unit}`} value={String(round1(Math.max(...series)))} />
           </div>
         )}
+        {/* Only describe the chart when the chart drew. This sat under the
+            "one more day" placeholder and explained a dashed rule and red bars
+            that were nowhere on screen. */}
+        {hasTrend && (
         <p className="mt-1.5 text-2xs text-ink-faint">
           {metric === "weight" ? (
             "Every reading in the window, oldest first."
@@ -345,11 +349,12 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
             </>
           )}
         </p>
+        )}
       </section>
 
-      <section className="panel p-3">
+      <section className="panel overflow-x-clip p-3">
         <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-          Against goal
+          Calories against goal
         </h2>
         {calGoal != null ? (
           <>
@@ -376,7 +381,7 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
       </section>
 
       {/* The same six meters as Today, over the window instead of the day. */}
-      <section className="panel p-3">
+      <section className="panel overflow-x-clip p-3">
         <div className="flex items-baseline justify-between">
           <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
             Average day
@@ -401,7 +406,7 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
         </div>
       </section>
 
-      <section className="panel p-3">
+      <section className="panel overflow-x-clip p-3">
         <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">By meal</h2>
         {mealTotal > 0 ? (
           <ul className="mt-2 space-y-2">
@@ -516,7 +521,7 @@ function Adherence({ days, goal }: { days: TrendDay[]; goal: number }) {
                 title={title(d)}
                 aria-label={title(d)}
                 aria-pressed={isSelected}
-                className={`h-7 flex-1 transition-opacity ${
+                className={`cell-btn h-7 min-w-0 flex-1 transition-opacity ${
                   isSelected ? "ring-1 ring-ink opacity-100" : "hover:opacity-85"
                 }`}
                 style={{ background: fill(state(d)) }}
@@ -572,7 +577,7 @@ function Adherence({ days, goal }: { days: TrendDay[]; goal: number }) {
                   title={title(d)}
                   aria-label={title(d)}
                   aria-pressed={isSelected}
-                  className={`h-2 w-2 transition-transform ${
+                  className={`cell-btn h-2 w-2 transition-transform ${
                     isSelected ? "ring-1 ring-ink scale-125 z-10" : ""
                   }`}
                   style={{ background: fill(state(d)) }}

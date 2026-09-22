@@ -938,14 +938,23 @@ select.field {
 /* Keep the readout dense; interactive boxes still need space for a thumb.
    Actual boxes, without overhanging hit areas that can steal adjacent taps. */
 @media (pointer: coarse), (max-width: 480px) {
-  button,
-  a,
+  /* `:not(.cell-btn)` carries two jobs. It exempts data cells (below), and it
+     lifts these rules to (0,1,1) so a single utility class like `min-h-[36px]`
+     can no longer outrank them — at plain `button` they lost every such match
+     and the control shipped at 36px on the one device that needs 44. */
+  button:not(.cell-btn),
+  a:not(.cell-btn),
   input:not([type="checkbox"]):not([type="radio"]),
   select,
   textarea {
     min-height: 44px;
   }
-  button { min-width: 44px; }
+  button:not(.cell-btn) { min-width: 44px; }
+  /* A chart mark that happens to be tappable is not a control: an adherence
+     day is sized by the range it belongs to, the way a bar is. Forcing 44px on
+     30 of them widened the document past the viewport and carried the fixed
+     bottom nav off screen with it. */
+  .cell-btn { min-width: 0; min-height: 0; }
   a { display: inline-flex; align-items: center; }
   .glyph-btn { margin: 0; min-width: 44px; min-height: 44px; }
   /* Labels stay subordinate, but 12px survives motion and bright kitchens more

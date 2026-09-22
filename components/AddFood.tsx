@@ -1484,7 +1484,7 @@ function Group({
         {(note ?? hint) && <span className="text-2xs text-ink-faint">{note ?? hint}</span>}
       </div>
       {items.length > 0 && (
-        <ul className="divide-y" style={{ borderColor: "var(--line-soft)" }}>
+        <ul className="divide-y divide-line-soft">
           {items}
         </ul>
       )}
