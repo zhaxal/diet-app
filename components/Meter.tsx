@@ -36,13 +36,15 @@ export function MeterFill({
 export function Meter({
   label,
   value,
+  current,
   goal,
   unit = "g",
   size = "sm",
   bound,
 }: {
   label: string;
-  value: number;
+  value?: number;
+  current?: number;
   goal: number | null;
   unit?: string;
   size?: "sm" | "lg";
@@ -53,15 +55,16 @@ export function Meter({
       exactly three number colours and this is not allowed to be a fourth. */
   bound?: "min" | "max";
 }) {
-  const over = goal ? value > goal : false;
+  const actualValue = value ?? current ?? 0;
+  const over = goal ? actualValue > goal : false;
   // Past the goal the track re-scales to the value, so the goal becomes a tick
   // inside the bar rather than the end of it. Clamping at 100% drew 165/150
   // and 300/150 as the same full bar — the instrument stopped measuring at
   // exactly the point the measurement got interesting.
-  const pct = goal ? (over ? 100 : (value / goal) * 100) : 0;
-  const goalTickPct = goal && over ? (goal / value) * 100 : null;
-  const shown = Math.round(value * 10) / 10;
-  const overBy = goal && over ? Math.round((value - goal) * 10) / 10 : null;
+  const pct = goal ? (over ? 100 : (actualValue / goal) * 100) : 0;
+  const goalTickPct = goal && over ? (goal / actualValue) * 100 : null;
+  const shown = Math.round(actualValue * 10) / 10;
+  const overBy = goal && over ? Math.round((actualValue - goal) * 10) / 10 : null;
   const lg = size === "lg";
 
   return (
@@ -101,6 +104,16 @@ export function Meter({
           rather than "no target set" — a hairline says unset without lying. */}
       {goal ? (
         <div
+          role="progressbar"
+          aria-label={`${label} progress`}
+          aria-valuenow={shown}
+          aria-valuemin={0}
+          aria-valuemax={goal}
+          aria-valuetext={
+            overBy !== null
+              ? `${shown} of ${goal} ${unit}, ${overBy} ${unit} over goal`
+              : `${shown} of ${goal} ${unit}`
+          }
           className="relative mt-auto w-full overflow-hidden rounded-sm"
           style={{ height: lg ? 6 : 4, marginTop: "auto", background: "var(--line-soft)" }}
         >

@@ -143,7 +143,7 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
         title={`Edit ${entry.name}`}
         description={`${entry.mealType} · ${clockTime(entry.consumedAt)}`}
         size="md"
-        bodyClassName="p-3"
+        bodyClassName="p-4"
       >
         <form onSubmit={save} className="space-y-2">
           {/* Food name */}

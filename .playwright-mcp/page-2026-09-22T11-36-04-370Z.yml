@@ -1,0 +1,18 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e3]:
+    - generic [ref=f1e6]:
+      - status "Loading your account" [ref=f1e7]:
+        - navigation [aria-hidden] [ref=f1e9]
+        - status "Loading food log for today" [ref=f1e31]:
+          - generic [ref=f1e35]:
+            - paragraph [ref=f1e36]: Loading food log
+            - paragraph [ref=f1e37]: Today
+      - navigation "Bottom navigation" [ref=f1e82]:
+        - generic [ref=f1e83]:
+          - button "Food" [ref=f1e84] [cursor=pointer]
+          - button "Workout" [ref=f1e88] [cursor=pointer]
+          - button "Settings" [ref=f1e95] [cursor=pointer]
+    - generic "Notifications":
+      - status
+      - alert
+  - alert [ref=f1e99]

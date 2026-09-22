@@ -24,7 +24,7 @@ export default function ShortcutsModal({ isOpen, onClose }: Props) {
       title="Keyboard Shortcuts"
       variant="center"
       size="sm"
-      bodyClassName="p-3"
+      bodyClassName="p-4"
       footer={
         <div className="text-right">
           <button type="button" onClick={onClose} className="btn btn-primary text-2xs">

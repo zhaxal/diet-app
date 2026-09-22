@@ -1194,7 +1194,7 @@ export default function AddFood({
           title={origin ? "Confirm & Scale" : "Manual Food Entry"}
           description={`${mealConfirmed ? meal : "choose a meal"} · ${whenLabel(date)}`}
           size="md"
-          bodyClassName="p-3"
+          bodyClassName="p-4"
         >
           <form onSubmit={log} className="grid grid-cols-2 gap-1.5 min-[360px]:grid-cols-4">
           <div className="col-span-full flex items-end justify-between gap-3 border-b pb-2" style={{ borderColor: "var(--line-soft)" }}>

@@ -1,0 +1,175 @@
+- generic [ref=f1e1]:
+  - generic [ref=f1e101]:
+    - generic [ref=f1e103]:
+      - heading [level=1] [ref=f1e308]: Food log for Today
+      - navigation [ref=f1e309]:
+        - button [ref=f1e310] [cursor=pointer]:
+          - generic [ref=f1e107]: W
+          - generic [ref=f1e108]: "16"
+        - button [ref=f1e311] [cursor=pointer]:
+          - generic [ref=f1e110]: T
+          - generic [ref=f1e111]: "17"
+        - button [ref=f1e312] [cursor=pointer]:
+          - generic [ref=f1e113]: F
+          - generic [ref=f1e114]: "18"
+        - button [ref=f1e313] [cursor=pointer]:
+          - generic [ref=f1e116]: S
+          - generic [ref=f1e117]: "19"
+        - button [ref=f1e314] [cursor=pointer]:
+          - generic [ref=f1e119]: S
+          - generic [ref=f1e120]: "20"
+        - button [ref=f1e315] [cursor=pointer]:
+          - generic [ref=f1e122]: M
+          - generic [ref=f1e123]: "21"
+        - button [pressed] [ref=f1e316] [cursor=pointer]:
+          - generic [ref=f1e125]: T
+          - generic [ref=f1e126]: "22"
+      - generic [ref=f1e127]:
+        - generic [ref=f1e128]: Today
+        - button [ref=f1e317] [cursor=pointer]: Change date
+      - generic [ref=f1e133]:
+        - region [ref=f1e318]:
+          - button [expanded] [ref=f1e319] [cursor=pointer]:
+            - generic [ref=f1e136]:
+              - generic [ref=f1e137]: Log food
+              - generic [ref=f1e138]: Adding to dinner
+            - generic [aria-hidden] [ref=f1e139]: −
+          - generic [ref=f1e264]:
+            - generic [ref=f1e265]:
+              - paragraph [ref=f1e266]: Logging to
+              - combobox [ref=f1e320]
+            - generic [ref=f1e269]:
+              - generic [ref=f1e270]:
+                - textbox [ref=f1e321]:
+                  - /placeholder: Search copied, saved, eaten and online…
+                - button [ref=f1e322] [cursor=pointer]
+              - generic [ref=f1e278]:
+                - generic [ref=f1e279]:
+                  - paragraph [ref=f1e280]: Recent · 1 tap
+                  - button [ref=f1e323] [cursor=pointer]: Batch +
+                - generic [ref=f1e283]:
+                  - button [ref=f1e324] [cursor=pointer]:
+                    - generic [ref=f1e286]:
+                      - generic [ref=f1e287]:
+                        - generic [ref=f1e288]: Oatmeal with berries
+                        - generic [ref=f1e289]: "320"
+                      - generic [ref=f1e290]: breakfast · last portion
+                  - button [ref=f1e325] [cursor=pointer]:
+                    - generic [ref=f1e293]:
+                      - generic [ref=f1e294]:
+                        - generic [ref=f1e295]: Greek yogurt
+                        - generic [ref=f1e296]: "150"
+                      - generic [ref=f1e297]: snack · last portion
+                  - button [ref=f1e326] [cursor=pointer]:
+                    - generic [ref=f1e300]:
+                      - generic [ref=f1e301]:
+                        - generic [ref=f1e302]: Grilled chicken salad
+                        - generic [ref=f1e303]: "450"
+                      - generic [ref=f1e304]: lunch · last portion
+              - generic [ref=f1e305]:
+                - button [ref=f1e327] [cursor=pointer]: Resume food draft
+                - generic [ref=f1e307]: Draft retained
+        - region [ref=f1e328]:
+          - generic [ref=f1e160]:
+            - heading [level=2] [ref=f1e329]: Calories
+            - generic [ref=f1e162]:
+              - generic [ref=f1e163]: 0 entries· 08:36 PM
+              - button [ref=f1e330] [cursor=pointer]
+          - generic [ref=f1e170]:
+            - generic [ref=f1e171]: "0"
+            - button [ref=f1e331] [cursor=pointer]: Set targets →
+        - region [ref=f1e332]:
+          - heading [level=2] [ref=f1e333]: Nutrition
+          - generic [ref=f1e177]:
+            - generic [ref=f1e178]: protein
+            - generic [ref=f1e179]: 0g
+          - generic [ref=f1e183]:
+            - generic [ref=f1e184]: carbs
+            - generic [ref=f1e185]: 0g
+          - generic [ref=f1e189]:
+            - generic [ref=f1e190]: fat
+            - generic [ref=f1e191]: 0g
+          - generic [ref=f1e195]:
+            - generic [ref=f1e196]: fiber
+            - generic [ref=f1e197]: 0g
+          - generic [ref=f1e201]:
+            - generic [ref=f1e202]: sugar
+            - generic [ref=f1e203]: 0g
+          - generic [ref=f1e207]:
+            - generic [ref=f1e208]: sodium
+            - generic [ref=f1e209]: 0mg
+        - region [ref=f1e334]:
+          - heading [level=2] [ref=f1e335]: Meals
+          - generic [ref=f1e214]:
+            - paragraph [ref=f1e215]: Nothing logged today.
+            - paragraph [ref=f1e216]: Quick add is ready above. Open Log food to search or adjust an amount.
+        - generic [ref=f1e217]:
+          - generic [ref=f1e218]:
+            - generic [ref=f1e219]:
+              - heading [level=2] [ref=f1e336]: Weight
+              - generic [ref=f1e221]: today
+            - button [ref=f1e337] [cursor=pointer]:
+              - generic [ref=f1e224]: trend
+              - generic [ref=f1e225]: +
+          - generic [ref=f1e226]:
+            - generic [ref=f1e227]:
+              - generic [ref=f1e228]: Weight for Today in kg
+              - spinbutton [ref=f1e338]
+              - generic: kg
+            - button [disabled] [ref=f1e339]: Log
+        - button [ref=f1e340] [cursor=pointer]:
+          - generic [ref=f1e233]: Trends & Analysis
+          - generic [ref=f1e234]: +
+    - navigation [ref=f1e341]:
+      - generic [ref=f1e237]:
+        - button [ref=f1e342] [cursor=pointer]: Food
+        - button [ref=f1e343] [cursor=pointer]: Workout
+        - button [ref=f1e344] [cursor=pointer]: Settings
+  - alert [ref=f1e99]
+  - dialog [ref=f1e346]:
+    - banner [ref=f1e347]:
+      - generic [ref=f1e348]:
+        - heading "Manual Food Entry" [level=2] [ref=f1e349]
+        - paragraph [ref=f1e350]: dinner · today
+      - button "Close Manual Food Entry" [active] [ref=f1e351] [cursor=pointer]
+    - generic [ref=f1e356]:
+      - generic [ref=f1e357]:
+        - generic [ref=f1e358]:
+          - generic [ref=f1e359]: Log to
+          - generic [ref=f1e360]: dinner
+        - combobox "Meal" [ref=f1e362]:
+          - option "Choose a meal" [disabled]
+          - option "breakfast"
+          - option "lunch"
+          - option "dinner" [selected]
+          - option "snack"
+      - generic [ref=f1e363]:
+        - generic [ref=f1e364]: Food
+        - textbox "Food" [ref=f1e365]:
+          - /placeholder: What did you eat?
+      - group "Nutrition values are" [ref=f1e367]:
+        - generic [ref=f1e369]:
+          - button "As eaten" [pressed] [ref=f1e370] [cursor=pointer]
+          - button "PER 100 G" [ref=f1e371] [cursor=pointer]
+        - paragraph [ref=f1e372]: Values describe the portion you ate. An amount records it without scaling.
+      - generic [ref=f1e373]:
+        - generic [ref=f1e374]: Calories (kcal)
+        - spinbutton "Calories (kcal)" [ref=f1e375]
+      - button "+ Protein, carbs & fat" [ref=f1e377] [cursor=pointer]
+      - generic [ref=f1e378]:
+        - generic [ref=f1e379]: Amount is optional for a portion total.
+        - button "+ Record amount" [ref=f1e380] [cursor=pointer]
+      - generic [ref=f1e381]:
+        - generic [ref=f1e382]: Enter a food and calories to preview it.
+        - button "Log" [disabled] [ref=f1e384]
+  - generic [aria-hidden]:
+    - generic: tight line height, tiny body text
+  - generic [aria-hidden]:
+    - generic: text occluded by an overlapping element
+  - generic [aria-hidden] [ref=f1e253]:
+    - generic [ref=f1e256]:
+      - generic [ref=f1e257]: decorative grid-line background
+      - generic [ref=f1e258]: two-axis grid-line gradient background
+    - generic [ref=f1e259]:
+      - button [ref=f1e385] [cursor=pointer]: ◉
+      - button [ref=f1e386] [cursor=pointer]: ×

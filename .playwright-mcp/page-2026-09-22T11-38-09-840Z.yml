@@ -1,0 +1,116 @@
+- generic [active] [ref=f2e1]:
+  - generic [ref=f2e3]:
+    - generic [ref=f2e101]:
+      - generic [ref=f2e103]:
+        - heading "Food log for Today" [level=1] [ref=f2e104]
+        - navigation "Week" [ref=f2e105]:
+          - button "Wed, Sep 16, nothing logged" [ref=f2e106] [cursor=pointer]:
+            - generic [ref=f2e107]: W
+            - generic [ref=f2e108]: "16"
+          - button "Thu, Sep 17, nothing logged" [ref=f2e109] [cursor=pointer]:
+            - generic [ref=f2e110]: T
+            - generic [ref=f2e111]: "17"
+          - button "Fri, Sep 18, nothing logged" [ref=f2e112] [cursor=pointer]:
+            - generic [ref=f2e113]: F
+            - generic [ref=f2e114]: "18"
+          - button "Sat, Sep 19, nothing logged" [ref=f2e115] [cursor=pointer]:
+            - generic [ref=f2e116]: S
+            - generic [ref=f2e117]: "19"
+          - button "Sun, Sep 20, nothing logged" [ref=f2e118] [cursor=pointer]:
+            - generic [ref=f2e119]: S
+            - generic [ref=f2e120]: "20"
+          - button "Yesterday, nothing logged" [ref=f2e121] [cursor=pointer]:
+            - generic [ref=f2e122]: M
+            - generic [ref=f2e123]: "21"
+          - button "Today, nothing logged" [pressed] [ref=f2e124] [cursor=pointer]:
+            - generic [ref=f2e125]: T
+            - generic [ref=f2e126]: "22"
+        - generic [ref=f2e127]:
+          - generic [ref=f2e128]: Today
+          - button "Change date" [ref=f2e130] [cursor=pointer]
+        - generic [ref=f2e133]:
+          - region "Log food" [ref=f2e134]:
+            - button "Open log food for dinner" [ref=f2e135] [cursor=pointer]:
+              - generic [ref=f2e136]:
+                - generic [ref=f2e137]: Log food
+                - generic [ref=f2e138]: dinner · today
+              - generic [aria-hidden] [ref=f2e139]: +
+            - generic [ref=f2e140]:
+              - generic [ref=f2e141]:
+                - heading "Quick add" [level=2] [ref=f2e142]
+                - generic [ref=f2e143]: 1 tap · Undo
+              - generic [ref=f2e144]: Find food
+              - textbox "Find food" [ref=f2e146]:
+                - /placeholder: Filter favorites and recent foods
+              - generic [ref=f2e147]:
+                - heading "Recent" [level=3] [ref=f2e148]
+                - group "Recent" [ref=f2e149]:
+                  - button "Log Oatmeal with berries, 320 calories, to dinner" [ref=f2e150] [cursor=pointer]:
+                    - generic [ref=f2e151]: Oatmeal with berries
+                    - generic [ref=f2e152]: 320 kcal · last portion
+                  - button "Log Greek yogurt, 150 calories, to dinner" [ref=f2e153] [cursor=pointer]:
+                    - generic [ref=f2e154]: Greek yogurt
+                    - generic [ref=f2e155]: 150 kcal · last portion
+                  - button "Log Grilled chicken salad, 450 calories, to dinner" [ref=f2e156] [cursor=pointer]:
+                    - generic [ref=f2e157]: Grilled chicken salad
+                    - generic [ref=f2e158]: 450 kcal · last portion
+          - region [ref=f2e159]:
+            - generic [ref=f2e160]:
+              - heading "Calories" [level=2] [ref=f2e161]
+              - generic [ref=f2e162]:
+                - generic [ref=f2e163]: 0 entries· 08:38 PM
+                - button "Refresh food log" [ref=f2e164] [cursor=pointer]
+            - generic [ref=f2e170]:
+              - generic [ref=f2e171]: "0"
+              - button "Set targets →" [ref=f2e172] [cursor=pointer]
+          - region [ref=f2e174]:
+            - heading "Nutrition" [level=2] [ref=f2e175]
+            - generic [ref=f2e177]:
+              - generic [ref=f2e178]: protein
+              - generic [ref=f2e179]: 0g
+            - generic [ref=f2e183]:
+              - generic [ref=f2e184]: carbs
+              - generic [ref=f2e185]: 0g
+            - generic [ref=f2e189]:
+              - generic [ref=f2e190]: fat
+              - generic [ref=f2e191]: 0g
+            - generic [ref=f2e195]:
+              - generic [ref=f2e196]: fiber
+              - generic [ref=f2e197]: 0g
+            - generic [ref=f2e201]:
+              - generic [ref=f2e202]: sugar
+              - generic [ref=f2e203]: 0g
+            - generic [ref=f2e207]:
+              - generic [ref=f2e208]: sodium
+              - generic [ref=f2e209]: 0mg
+          - region [ref=f2e212]:
+            - heading "Meals" [level=2] [ref=f2e213]
+            - generic [ref=f2e214]:
+              - paragraph [ref=f2e215]: Nothing logged today.
+              - paragraph [ref=f2e216]: Quick add is ready above. Open Log food to search or adjust an amount.
+          - generic [ref=f2e217]:
+            - generic [ref=f2e218]:
+              - generic [ref=f2e219]:
+                - heading "Weight" [level=2] [ref=f2e220]
+                - generic [ref=f2e221]: today
+              - button "trend +" [ref=f2e223] [cursor=pointer]:
+                - generic [ref=f2e224]: trend
+                - generic [ref=f2e225]: +
+            - generic [ref=f2e226]:
+              - generic [ref=f2e227]:
+                - generic [ref=f2e228]: Weight for Today in kg
+                - spinbutton "Weight for Today in kg kg" [ref=f2e229]
+                - generic: kg
+              - button "Log" [disabled] [ref=f2e230]
+          - button "Trends & Analysis +" [ref=f2e232] [cursor=pointer]:
+            - generic [ref=f2e233]: Trends & Analysis
+            - generic [ref=f2e234]: +
+      - navigation "Bottom navigation" [ref=f2e236]:
+        - generic [ref=f2e237]:
+          - button "Food" [ref=f2e238] [cursor=pointer]
+          - button "Workout" [ref=f2e242] [cursor=pointer]
+          - button "Settings" [ref=f2e249] [cursor=pointer]
+    - generic "Notifications":
+      - status
+      - alert
+  - alert [ref=f2e99]

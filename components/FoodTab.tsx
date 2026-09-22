@@ -88,7 +88,7 @@ function QuickAddRow({
                   ? `Choose a meal before logging ${food.name}, ${Math.round(food.calories)} calories, on ${prettyDate(date)}`
                   : `Log ${food.name}, ${Math.round(food.calories)} calories, to ${meal}`
               }
-              className="motion-press flex min-h-[40px] max-w-64 shrink-0 items-center gap-1.5 rounded border border-line bg-panel-2 px-2.5 py-1.5 text-left transition-colors hover:border-accent disabled:cursor-wait disabled:opacity-60"
+              className="motion-press flex min-h-[44px] max-w-64 shrink-0 items-center gap-1.5 rounded border border-line bg-panel-2 px-2.5 py-1.5 text-left transition-colors hover:border-accent disabled:cursor-wait disabled:opacity-60"
             >
               <span className={`min-w-0 truncate text-xs font-medium ${item.kind === "favorite" ? "text-accent" : "text-ink"}`}>
                 {isLogging ? "Logging…" : `${item.kind === "favorite" ? "★ " : ""}${food.name}`}
@@ -289,6 +289,8 @@ export default function FoodTab({
   const calPct = calGoal ? Math.min(100, (total.calories / calGoal) * 100) : 0;
   const calLeft = calGoal ? calGoal - total.calories : 0;
   const calOver = calLeft < 0;
+  const hasMicroGoals = Boolean(goals.dailyFiber || goals.dailySugar || goals.dailySodium);
+  const [showAllNutrients, setShowAllNutrients] = React.useState(false);
 
   const isFirstRun =
     entries.length === 0 &&
@@ -473,7 +475,7 @@ export default function FoodTab({
                 color: active ? "var(--panel)" : "var(--ink-dim)",
               }}
             >
-              <div className="text-2xs uppercase tracking-wider opacity-70">
+              <div className="text-2xs leading-snug uppercase tracking-wider opacity-70">
                 {dt.toLocaleDateString(undefined, { weekday: "narrow" })}
               </div>
               <div className="num text-sm font-semibold">{d.slice(8)}</div>
@@ -600,15 +602,15 @@ export default function FoodTab({
                 ? `${showAdd ? "Close" : "Open"} log food for ${meal}`
                 : `${showAdd ? "Close" : "Open"} log food — choose a meal first`}
               className={`motion-press flex min-h-[56px] w-full items-center justify-between gap-3 px-3 text-left transition-colors ${
-                showAdd ? "bg-panel-2 text-ink hover:bg-bg" : "bg-ink text-panel hover:opacity-95"
+                showAdd ? "bg-panel-2 text-ink hover:bg-bg" : "bg-panel text-ink hover:bg-panel-2"
               }`}
             >
               <span className="min-w-0">
-                <span id="log-food-heading" className="block text-xs font-semibold uppercase tracking-widest">
+                <span id="log-food-heading" className="block text-xs font-semibold uppercase tracking-widest text-ink">
                   Log food
                 </span>
                 <span
-                  className={`mt-0.5 block text-2xs ${showAdd ? "text-ink-faint" : "text-panel/70"}`}
+                  className="mt-0.5 block text-2xs text-ink-faint"
                 >
                   {showAdd
                     ? mealConfirmed ? `Adding to ${meal}` : "Choose a meal before logging"
@@ -617,7 +619,7 @@ export default function FoodTab({
                       : `Choose a meal · ${prettyDate(date)}`}
                 </span>
               </span>
-              <span className="num text-lg leading-none" aria-hidden="true">
+              <span className="num text-lg leading-none text-ink-dim" aria-hidden="true">
                 {showAdd ? "−" : "+"}
               </span>
             </button>
@@ -804,109 +806,151 @@ export default function FoodTab({
             )}
           </section>
 
-          {/* Calorie readout */}
-          <section className="panel gridlines mt-2 p-3" aria-labelledby="calories-heading">
-            <div className="flex items-baseline justify-between">
-              <h2 id="calories-heading" className="text-2xs uppercase tracking-wider text-ink-faint">
-                Calories
-              </h2>
-              <div className="flex min-w-0 items-center gap-0.5">
-                <span className="num min-w-0 text-right text-2xs text-ink-faint">
-                  {total.count} {total.count === 1 ? "entry" : "entries"}
-                  {lastLoaded && (
-                    <span className="ml-1.5">
-                      {refreshing ? "· syncing" : `· ${clockTime(lastLoaded)}`}
-                    </span>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  onClick={revalidate}
-                  disabled={refreshing}
-                  aria-label="Refresh food log"
-                  title="Refresh food log"
-                  className="glyph-btn -my-2 -mr-2 text-ink-faint transition-colors hover:text-ink disabled:opacity-60"
-                >
-                  <RefreshCw
-                    size={14}
-                    strokeWidth={1.75}
-                    aria-hidden="true"
-                    className={refreshing ? "animate-spin" : undefined}
-                  />
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="num text-4xl font-bold leading-none text-ink">
-                {Math.round(total.calories).toLocaleString()}
-              </span>
-              {calGoal && (
-                <span className="num text-sm text-ink-faint">
-                  / {calGoal.toLocaleString()} kcal
-                </span>
-              )}
-              {calGoal ? (
-                <span
-                  className="num ml-auto text-right text-sm font-semibold shrink-0 whitespace-nowrap"
-                  style={{ color: calOver ? "var(--over)" : "var(--ok)" }}
-                >
-                  {calOver ? `+${Math.abs(calLeft).toLocaleString()}` : Math.abs(calLeft).toLocaleString()}
-                  <span className="ml-1 text-2xs uppercase tracking-wider opacity-80">
-                    {calOver ? "over" : "left"}
+          {/* Unified Telemetry Panel: Calorie Readout + Nutritional Breakdown */}
+          <section className="panel mt-2 overflow-hidden" aria-labelledby="calories-heading">
+            {/* Primary Energy Readout */}
+            <div className="gridlines border-b border-line-soft p-3">
+              <div className="flex items-baseline justify-between">
+                <h2 id="calories-heading" className="text-2xs uppercase tracking-wider text-ink-faint">
+                  Calories
+                </h2>
+                <div className="flex min-w-0 items-center gap-0.5">
+                  <span className="num min-w-0 text-right text-2xs text-ink-faint">
+                    {total.count} {total.count === 1 ? "entry" : "entries"}
+                    {lastLoaded && (
+                      <span className="ml-1.5">
+                        {refreshing ? "· syncing" : `· ${clockTime(lastLoaded)}`}
+                      </span>
+                    )}
                   </span>
+                  <button
+                    type="button"
+                    onClick={revalidate}
+                    disabled={refreshing}
+                    aria-label="Refresh food log"
+                    title="Refresh food log"
+                    className="glyph-btn -my-2 -mr-2 text-ink-faint transition-colors hover:text-ink disabled:opacity-60"
+                  >
+                    <RefreshCw
+                      size={14}
+                      strokeWidth={1.75}
+                      aria-hidden="true"
+                      className={refreshing ? "animate-spin" : undefined}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="num text-4xl font-bold leading-none text-ink">
+                  {Math.round(total.calories).toLocaleString()}
                 </span>
-              ) : (
-                <button
-                  onClick={() => goTab("settings")}
-                  className="ml-auto text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
+                {calGoal && (
+                  <span className="num text-sm text-ink-faint">
+                    / {calGoal.toLocaleString()} kcal
+                  </span>
+                )}
+                {calGoal ? (
+                  <span
+                    className="num ml-auto text-right text-sm font-semibold shrink-0 whitespace-nowrap"
+                    style={{ color: calOver ? "var(--over)" : "var(--ok)" }}
+                  >
+                    {calOver ? `+${Math.abs(calLeft).toLocaleString()}` : Math.abs(calLeft).toLocaleString()}
+                    <span className="ml-1 text-2xs uppercase tracking-wider opacity-80">
+                      {calOver ? "over" : "left"}
+                    </span>
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => goTab("settings")}
+                    className="ml-auto text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
+                  >
+                    Set targets →
+                  </button>
+                )}
+              </div>
+
+              {calGoal ? (
+                <div
+                  role="progressbar"
+                  aria-label="Calories progress"
+                  aria-valuenow={Math.round(total.calories)}
+                  aria-valuemin={0}
+                  aria-valuemax={calGoal}
+                  aria-valuetext={
+                    calOver
+                      ? `${Math.round(total.calories)} of ${calGoal} kcal, ${Math.abs(calLeft)} kcal over goal`
+                      : `${Math.round(total.calories)} of ${calGoal} kcal, ${Math.abs(calLeft)} kcal left`
+                  }
+                  className="mt-2 w-full overflow-hidden rounded-sm"
+                  style={{ height: 8, background: "var(--line-soft)" }}
                 >
-                  Set targets →
-                </button>
+                  <MeterFill progress={calPct} over={calOver} />
+                </div>
+              ) : (
+                <div
+                  className="mt-2 w-full"
+                  style={{ height: 1, background: "var(--line)" }}
+                  aria-hidden="true"
+                />
               )}
             </div>
 
-            {calGoal ? (
-              <div
-                className="mt-2 w-full overflow-hidden rounded-sm"
-                style={{ height: 8, background: "var(--line-soft)" }}
-              >
-                <MeterFill progress={calPct} over={calOver} />
+            {/* Nutritional Breakdown */}
+            <div className="bg-panel-2/40 p-3">
+              <h3 id="nutrition-heading" className="sr-only">Nutrition</h3>
+              {/* Core 3 Macros: Protein, Carbs, Fat */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "protein", cur: total.protein, goal: goals.dailyProtein, unit: "g", bound: "min" as const },
+                  { label: "carbs", cur: total.carbs, goal: goals.dailyCarbs, unit: "g" },
+                  { label: "fat", cur: total.fat, goal: goals.dailyFat, unit: "g" },
+                ].map((m) => (
+                  <Meter
+                    key={m.label}
+                    label={m.label}
+                    value={m.cur}
+                    goal={m.goal}
+                    unit={m.unit}
+                    bound={m.bound}
+                  />
+                ))}
               </div>
-            ) : (
-              <div
-                className="mt-2 w-full"
-                style={{ height: 1, background: "var(--line)" }}
-                aria-hidden="true"
-              />
-            )}
-          </section>
 
-          {/* Secondary macros */}
-          <section className="panel mt-2 grid grid-cols-3 gap-2 p-3" aria-labelledby="nutrition-heading">
-            <h2 id="nutrition-heading" className="sr-only">Nutrition</h2>
-            {/* `bound` says which way each goal points. Protein and fibre are
-                floors you are trying to clear; sugar and sodium are ceilings
-                you are trying to stay under; carbs and fat are budgets and say
-                nothing. Without it all six read as progress bars, and being a
-                hair under your sugar target looked like an achievement. */}
-            {[
-              { label: "protein", cur: total.protein, goal: goals.dailyProtein, unit: "g", bound: "min" as const },
-              { label: "carbs", cur: total.carbs, goal: goals.dailyCarbs, unit: "g" },
-              { label: "fat", cur: total.fat, goal: goals.dailyFat, unit: "g" },
-              { label: "fiber", cur: total.fiber, goal: goals.dailyFiber, unit: "g", bound: "min" as const },
-              { label: "sugar", cur: total.sugar, goal: goals.dailySugar, unit: "g", bound: "max" as const },
-              { label: "sodium", cur: total.sodium, goal: goals.dailySodium, unit: "mg", bound: "max" as const },
-            ].map((m) => (
-              <Meter
-                key={m.label}
-                label={m.label}
-                value={m.cur}
-                goal={m.goal}
-                unit={m.unit}
-                bound={m.bound}
-              />
-            ))}
+              {/* Secondary Micronutrients (Fiber, Sugar, Sodium) */}
+              {(showAllNutrients || hasMicroGoals) && (
+                <div className="mt-2.5 grid grid-cols-3 gap-2 border-t pt-2.5" style={{ borderColor: "var(--line-soft)" }}>
+                  {[
+                    { label: "fiber", cur: total.fiber, goal: goals.dailyFiber, unit: "g", bound: "min" as const },
+                    { label: "sugar", cur: total.sugar, goal: goals.dailySugar, unit: "g", bound: "max" as const },
+                    { label: "sodium", cur: total.sodium, goal: goals.dailySodium, unit: "mg", bound: "max" as const },
+                  ].map((m) => (
+                    <Meter
+                      key={m.label}
+                      label={m.label}
+                      value={m.cur}
+                      goal={m.goal}
+                      unit={m.unit}
+                      bound={m.bound}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Progressive disclosure toggle when no micronutrient goals are configured */}
+              {!hasMicroGoals && (
+                <div className="mt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowAllNutrients((prev) => !prev)}
+                    aria-expanded={showAllNutrients}
+                    className="text-2xs font-semibold uppercase tracking-wider text-ink-dim transition-colors hover:text-accent"
+                  >
+                    {showAllNutrients ? "− Fewer nutrients" : "+ 3 more nutrients"}
+                  </button>
+                </div>
+              )}
+            </div>
           </section>
 
           {/* Entries, grouped by meal or onboarding empty state */}

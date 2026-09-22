@@ -76,7 +76,7 @@ export function Dialog({
   closeOnBackdrop = true,
   showClose = true,
   initialFocusRef,
-  bodyClassName = "p-3 sm:p-4",
+  bodyClassName = "p-4",
 }: DialogProps) {
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const [phase, setPhase] = useState<DialogPhase>(open ? "open" : "closed");
@@ -230,7 +230,7 @@ export function Dialog({
         }}
       >
         <header
-          className="flex shrink-0 items-center justify-between gap-3 border-b px-3 py-2.5 sm:px-4"
+          className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5"
           style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
         >
           <div className="min-w-0">

@@ -118,7 +118,7 @@ function TabCrossFade({ activeKey, children }: { activeKey: string; children: Re
   }
 
   return (
-    <div className="motion-tab-fade">
+    <div className="motion-tab-fade motion-view">
       {leaving != null && (
         <div
           aria-hidden="true"
