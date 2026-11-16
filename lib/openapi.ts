@@ -335,6 +335,45 @@ export function buildOpenApiDocument(baseUrl?: string) {
           },
         },
       },
+      "/auth/password": {
+        post: {
+          tags: ["Auth"],
+          summary: "Change the signed-in account's password",
+          description:
+            "Ends every session issued before the change, on every device, and " +
+            "returns a fresh token for the caller. The API key is a separate " +
+            "credential and is not affected.",
+          requestBody: jsonBody({
+            type: "object",
+            required: ["currentPassword", "newPassword"],
+            properties: {
+              currentPassword: { type: "string" },
+              newPassword: { type: "string", minLength: 8 },
+            },
+          }),
+          responses: {
+            "200": jsonResponse("Password changed", {
+              type: "object",
+              properties: {
+                ok: { type: "boolean" },
+                token: { type: "string", description: "JWT, valid for 30 days" },
+              },
+            }),
+            "401": jsonResponse("Unauthorized", {
+              $ref: "#/components/schemas/Error",
+            }),
+            "403": jsonResponse("Current password is incorrect", {
+              $ref: "#/components/schemas/Error",
+            }),
+            "422": jsonResponse("Validation error", {
+              $ref: "#/components/schemas/Error",
+            }),
+            "429": jsonResponse("Too many failed attempts; see the Retry-After header", {
+              $ref: "#/components/schemas/Error",
+            }),
+          },
+        },
+      },
       "/auth/logout": {
         post: {
           tags: ["Auth"],

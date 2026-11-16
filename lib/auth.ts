@@ -25,6 +25,11 @@ export interface AuthUser {
 interface TokenPayload {
   sub: string;
   email: string;
+  /**
+   * The account's `tokenVersion` when this token was issued. Tokens from before
+   * the field existed have none, and are read as version 0.
+   */
+  v?: number;
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -38,8 +43,16 @@ export async function verifyPassword(
   return bcrypt.compare(password, hash);
 }
 
-export function signToken(user: { id: string; email: string }): string {
-  const payload: TokenPayload = { sub: user.id, email: user.email };
+export function signToken(user: {
+  id: string;
+  email: string;
+  tokenVersion?: number;
+}): string {
+  const payload: TokenPayload = {
+    sub: user.id,
+    email: user.email,
+    v: user.tokenVersion ?? 0,
+  };
   return jwt.sign(payload, JWT_SECRET as string, { expiresIn: TOKEN_TTL });
 }
 
@@ -76,12 +89,17 @@ export async function getUserFromRequest(
   if (!payload) return null;
 
   // Confirm the user still exists (e.g. not deleted after the token was issued).
-  const user = await prisma.user.findUnique({
+  const found = await prisma.user.findUnique({
     where: { id: payload.sub },
     // weightUnit rides along because body weight is stored canonically and
     // every read has to render it in the account's own unit.
-    select: { id: true, email: true, timezone: true, weightUnit: true },
+    select: { id: true, email: true, timezone: true, weightUnit: true, tokenVersion: true },
   });
+  if (!found) return null;
+
+  // A token issued before the password last changed is no longer a session.
+  const { tokenVersion, ...user } = found;
+  if ((payload.v ?? 0) !== tokenVersion) return null;
 
   return user;
 }

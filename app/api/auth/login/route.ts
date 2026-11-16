@@ -46,7 +46,8 @@ export async function POST(req: NextRequest) {
 
   loginFailures.reset(accountKey);
 
-  const token = signToken({ id: user.id, email: user.email });
+  // The whole row, so the token carries the account's current session version.
+  const token = signToken(user);
 
   const res = NextResponse.json({
     token,

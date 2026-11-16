@@ -11,6 +11,9 @@ model User {
   id            String      @id @default(cuid())
   email         String      @unique
   passwordHash  String
+  // Bumped whenever the password changes. A session token carries the value it
+  // was issued under and stops working once the two differ.
+  tokenVersion  Int         @default(0)
   apiKey        String      @unique @default(cuid())
   dailyCalories Int?
   dailyProtein  Float?

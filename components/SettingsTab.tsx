@@ -7,6 +7,7 @@ import type { Goals } from "@/lib/api-client";
 import ThemeToggle from "@/components/ThemeToggle";
 import GoalsCard from "@/components/GoalsCard";
 import ProductsCard from "@/components/ProductsCard";
+import PasswordCard from "@/components/PasswordCard";
 import { Header, Panel } from "@/components/Panel";
 import { AlertDialog } from "@/components/Dialog";
 import InstallPwaCard from "@/components/InstallPwaCard";
@@ -277,6 +278,10 @@ export default function SettingsTab({
             </p>
           </div>
         </div>
+      </Panel>
+
+      <Panel title="Password" hint="change it" defaultOpen={false}>
+        <PasswordCard email={email} />
       </Panel>
 
       <div className="mt-3 flex items-center justify-between">

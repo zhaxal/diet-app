@@ -57,7 +57,9 @@ easy to see, verify, and correct.
 - **Install:** PWA, `display: standalone`, portrait, `viewportFit: cover`, home-screen
   icon (`/icon.svg`, maskable variant). Safe-area insets and a bottom nav are load-bearing.
 - **Sessions:** JWT in an httpOnly cookie, 30-day expiry — the owner effectively stays
-  logged in on their phone indefinitely.
+  logged in on their phone indefinitely. Changing the password (Settings, or
+  `POST /api/auth/password`) ends every session issued before the change; the API key is
+  a separate credential and is rotated separately.
 - **Registration:** open until the first account exists, then closed. Setting `INVITE_CODE`
   on the server reopens it to people who are given that code — the "handful of invited
   people" path, with no admin screen to maintain. Failed sign-ins, invite codes and API

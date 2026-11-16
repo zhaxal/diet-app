@@ -10,6 +10,16 @@ export const credentialsSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Current password is required").max(200),
+    newPassword: z.string().min(8, "Password must be at least 8 characters").max(200),
+  })
+  .refine((d) => d.currentPassword !== d.newPassword, {
+    message: "The new password must be different from the current one",
+    path: ["newPassword"],
+  });
+
 export const registerSchema = credentialsSchema.extend({
   // Only consulted when the server requires one; see lib/registration.ts.
   inviteCode: z.string().max(200).optional(),

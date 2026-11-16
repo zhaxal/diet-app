@@ -212,6 +212,11 @@ export const api = {
       body: JSON.stringify({ email, password, ...(inviteCode ? { inviteCode } : {}) }),
     }),
   logout: () => request("/api/auth/logout", { method: "POST" }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ ok: true; token: string }>("/api/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
   getApiKey: () => request<{ apiKey: string }>("/api/auth/apikey"),
   regenerateApiKey: () =>
     request<{ apiKey: string }>("/api/auth/apikey", { method: "POST" }),
