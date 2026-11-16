@@ -31,10 +31,31 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # because no DB queries are made at build time.
 ENV DATABASE_URL="file:/app/data/diet.db"
 
+# JWT_SECRET must be present for the build too: lib/auth.ts refuses to load
+# without one, and the build loads every route. This value signs nothing and
+# stays in this stage — the runner stage below has no JWT_SECRET of its own, so
+# the container still refuses to serve until the real one is supplied.
+ENV JWT_SECRET="build-time-placeholder-not-a-secret"
+
 RUN npm run build
 
 
-# ── Stage 3: production runner ────────────────────────────────────────────────
+# ── Stage 3: the Prisma CLI, alone ───────────────────────────────────────────
+# The running container needs exactly one development tool: `prisma migrate
+# deploy`. Installing just that package, at the version the lockfile pins, keeps
+# the rest of the dev toolchain (TypeScript, ESLint, Playwright, Tailwind…) out
+# of the final image.
+FROM node:22-slim AS prisma-cli
+WORKDIR /cli
+
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+
+COPY package-lock.json ./
+RUN npm install --no-save --no-audit --no-fund \
+      "prisma@$(node -p "require('./package-lock.json').packages['node_modules/prisma'].version")"
+
+
+# ── Stage 4: production runner ────────────────────────────────────────────────
 FROM node:22-slim AS runner
 WORKDIR /app
 
@@ -57,8 +78,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 # Copy Prisma schema + migrations so we can run migrate deploy on startup.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-# Copy full node_modules from deps so Prisma CLI and all transitive deps are present.
-COPY --from=deps   --chown=nextjs:nodejs /app/node_modules ./node_modules
+# The app's own runtime dependencies are already inside the standalone output
+# above. The Prisma CLI lives apart from them so the two cannot shadow each other.
+COPY --from=prisma-cli --chown=nextjs:nodejs /cli/node_modules ./prisma-cli/node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/backup-db.mjs /app/scripts/docker-entrypoint.sh ./scripts/
 
 # Persist the SQLite database in a named volume mounted at /app/data.
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
@@ -70,6 +93,10 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Run migrations then start the server.
-# Call prisma/build/index.js directly so __dirname resolves the sibling wasm files.
-CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node server.js"]
+# Healthy means the server answers and can read its database. The start period
+# covers the snapshot and migrations that run before the server comes up.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+
+# Snapshot the database if a migration is pending, migrate, then start the server.
+CMD ["sh", "scripts/docker-entrypoint.sh"]

@@ -259,6 +259,24 @@ export function buildOpenApiDocument(baseUrl?: string) {
     },
     security: [{ bearerAuth: [] }],
     paths: {
+      "/health": {
+        get: {
+          tags: ["System"],
+          summary: "Whether this instance can serve requests",
+          description: "Public. 200 while the database can be read, 503 otherwise.",
+          security: [],
+          responses: {
+            "200": jsonResponse("Healthy", {
+              type: "object",
+              properties: { ok: { type: "boolean" } },
+            }),
+            "503": jsonResponse("The database cannot be read", {
+              type: "object",
+              properties: { ok: { type: "boolean" } },
+            }),
+          },
+        },
+      },
       "/auth/register": {
         get: {
           tags: ["Auth"],

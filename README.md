@@ -81,7 +81,15 @@ docker compose up -d --build
 ```
 
 Existing data in the `diet_data` volume is untouched; pending database
-migrations are applied automatically when the container restarts.
+migrations are applied automatically when the container restarts. Before a
+pending migration runs, the container writes a snapshot of the database to
+`/app/data/backups/` and keeps the newest five. That guards against a migration
+going wrong; it is on the same volume, so it is not a substitute for backing
+the volume up. If a needed snapshot cannot be written the container refuses to
+start — set `SKIP_DB_BACKUP=1` to start anyway.
+
+`GET /api/health` answers `{"ok":true}` while the app can read its database,
+and the image's Docker healthcheck polls it.
 
 ## Installing it on your phone
 
