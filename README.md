@@ -60,11 +60,18 @@ Set these as environment variables (or in `.env` for Compose):
 | --- | --- | --- |
 | `JWT_SECRET` | yes | Long random string used to sign login sessions. Generate one with `openssl rand -hex 32`. |
 | `DATABASE_URL` | no | Defaults to `file:/app/data/diet.db`. Only change this if you're moving the database elsewhere. |
+| `INVITE_CODE` | no | Lets other people register. Unset (the default), nobody can sign up once the first account exists. Set it, and anyone who enters this code on the sign-up form can create an account. |
 
 ### First run
 
 Open the app, register an account, and start logging. There's no separate
 admin setup — the first account you create is just a normal account.
+
+Once that first account exists, the sign-up form closes: a stranger who finds
+your URL cannot create an account. To let someone else in, set `INVITE_CODE`
+to a phrase of your choosing, restart the container, and give them the phrase;
+remove it again to close the door. Repeated wrong passwords, invite codes or
+API keys from one address are refused for 15 minutes.
 
 ### Updating
 

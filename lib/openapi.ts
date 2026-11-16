@@ -260,19 +260,57 @@ export function buildOpenApiDocument(baseUrl?: string) {
     security: [{ bearerAuth: [] }],
     paths: {
       "/auth/register": {
+        get: {
+          tags: ["Auth"],
+          summary: "Whether this server is taking new accounts",
+          description:
+            "Registration is open until the first account exists. After that it " +
+            "is open only if the server sets INVITE_CODE, and then only to " +
+            "callers who supply that code.",
+          security: [],
+          responses: {
+            "200": jsonResponse("Registration state", {
+              type: "object",
+              required: ["open", "inviteRequired"],
+              properties: {
+                open: { type: "boolean" },
+                inviteRequired: { type: "boolean" },
+              },
+            }),
+          },
+        },
         post: {
           tags: ["Auth"],
           summary: "Create a new account",
           security: [],
-          requestBody: jsonBody({ $ref: "#/components/schemas/Credentials" }),
+          requestBody: jsonBody({
+            allOf: [
+              { $ref: "#/components/schemas/Credentials" },
+              {
+                type: "object",
+                properties: {
+                  inviteCode: {
+                    type: "string",
+                    description: "Required when GET /auth/register reports inviteRequired.",
+                  },
+                },
+              },
+            ],
+          }),
           responses: {
             "201": jsonResponse("Account created", {
               $ref: "#/components/schemas/AuthResponse",
+            }),
+            "403": jsonResponse("Registration is closed, or the invite code is wrong", {
+              $ref: "#/components/schemas/Error",
             }),
             "409": jsonResponse("Email already in use", {
               $ref: "#/components/schemas/Error",
             }),
             "422": jsonResponse("Validation error", {
+              $ref: "#/components/schemas/Error",
+            }),
+            "429": jsonResponse("Too many failed attempts; see the Retry-After header", {
               $ref: "#/components/schemas/Error",
             }),
           },
@@ -289,6 +327,9 @@ export function buildOpenApiDocument(baseUrl?: string) {
               $ref: "#/components/schemas/AuthResponse",
             }),
             "401": jsonResponse("Invalid credentials", {
+              $ref: "#/components/schemas/Error",
+            }),
+            "429": jsonResponse("Too many failed attempts; see the Retry-After header", {
               $ref: "#/components/schemas/Error",
             }),
           },

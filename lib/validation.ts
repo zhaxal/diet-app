@@ -10,6 +10,11 @@ export const credentialsSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
+export const registerSchema = credentialsSchema.extend({
+  // Only consulted when the server requires one; see lib/registration.ts.
+  inviteCode: z.string().max(200).optional(),
+});
+
 const nutrient = () => z.number().min(0).max(1000000).optional().default(0);
 
 // Shared shape for the nutritional fields of a food entry.

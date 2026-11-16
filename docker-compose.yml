@@ -6,6 +6,7 @@ services:
     environment:
       JWT_SECRET: ${JWT_SECRET}
       DATABASE_URL: ${DATABASE_URL:-file:/app/data/diet.db}
+      INVITE_CODE: ${INVITE_CODE:-}
     volumes:
       - diet_data:/app/data
     networks:

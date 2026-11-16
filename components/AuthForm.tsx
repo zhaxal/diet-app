@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
@@ -9,10 +9,35 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Null until the server has answered. The form is shown meanwhile: the
+  // server enforces the rule either way, this only decides what to ask for.
+  const [registration, setRegistration] = useState<{
+    open: boolean;
+    inviteRequired: boolean;
+  } | null>(null);
 
   const isLogin = mode === "login";
+  const closed = !isLogin && registration?.open === false;
+  const needsInvite = !isLogin && registration?.inviteRequired === true;
+
+  useEffect(() => {
+    if (isLogin) return;
+    let cancelled = false;
+    api
+      .registrationStatus()
+      .then((state) => {
+        if (!cancelled) setRegistration(state);
+      })
+      .catch(() => {
+        // Unreachable server: leave the plain form up and let submit report it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLogin]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,7 +47,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       if (isLogin) {
         await api.login(email, password);
       } else {
-        await api.register(email, password);
+        await api.register(email, password, needsInvite ? inviteCode : undefined);
       }
       router.push("/");
       router.refresh();
@@ -58,9 +83,20 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           <p className="mt-1 text-xs text-ink-dim">
             {isLogin
               ? "Review your day or keep logging."
-              : "Track food here and through your assistant in one daily record."}
+              : closed
+                ? "This server is not taking new accounts."
+                : "Track food here and through your assistant in one daily record."}
           </p>
 
+          {closed ? (
+            <p
+              role="status"
+              className="motion-state-enter mt-4 rounded px-2.5 py-1.5 text-xs text-ink-dim"
+              style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}
+            >
+              Ask whoever runs it for an invite code.
+            </p>
+          ) : (
           <form onSubmit={onSubmit} className="mt-4 space-y-3">
             <div>
               <label
@@ -99,6 +135,28 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
                 placeholder="At least 8 characters"
               />
             </div>
+            {needsInvite && (
+              <div className="motion-state-enter">
+                <label
+                  htmlFor="invite-code"
+                  className="block text-2xs uppercase tracking-wider text-ink-faint"
+                >
+                  Invite code
+                </label>
+                <input
+                  id="invite-code"
+                  type="text"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  required
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  className="field mt-1 w-full"
+                  placeholder="From the server's owner"
+                />
+              </div>
+            )}
 
             {error && (
               <p
@@ -126,6 +184,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
                   : "Create account"}
             </button>
           </form>
+          )}
 
           <div
             className="mt-4 border-t pt-3 text-center text-xs text-ink-dim"

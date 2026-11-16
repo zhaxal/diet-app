@@ -204,10 +204,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
-  register: (email: string, password: string) =>
+  registrationStatus: () =>
+    request<{ open: boolean; inviteRequired: boolean }>("/api/auth/register"),
+  register: (email: string, password: string, inviteCode?: string) =>
     request("/api/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, ...(inviteCode ? { inviteCode } : {}) }),
     }),
   logout: () => request("/api/auth/logout", { method: "POST" }),
   getApiKey: () => request<{ apiKey: string }>("/api/auth/apikey"),

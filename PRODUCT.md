@@ -58,6 +58,10 @@ easy to see, verify, and correct.
   icon (`/icon.svg`, maskable variant). Safe-area insets and a bottom nav are load-bearing.
 - **Sessions:** JWT in an httpOnly cookie, 30-day expiry — the owner effectively stays
   logged in on their phone indefinitely.
+- **Registration:** open until the first account exists, then closed. Setting `INVITE_CODE`
+  on the server reopens it to people who are given that code — the "handful of invited
+  people" path, with no admin screen to maintain. Failed sign-ins, invite codes and API
+  keys are rate-limited per address, in memory.
 - **Assistant access:** a per-user API key surfaced in Settings; MCP endpoint at
   `/api/mcp`; OpenAPI 3.1 document at `/api/openapi.json`; Scalar reference at `/api-docs`.
 - **One external dependency:** `/api/foods/search` proxies Open Food Facts server-side
@@ -119,9 +123,6 @@ easy to see, verify, and correct.
 
 **Open / undecided**
 
-- **Registration is currently open** — anyone who reaches the URL can create an account.
-  The "friends later" goal implies some gating (invite codes, an allowlist, or disabled
-  self-signup), but no mechanism has been chosen or built.
 - Whether logging friction is currently acceptable on either path is untested; no measurement exists.
 - No multi-user, sharing, or social features exist or are planned.
 

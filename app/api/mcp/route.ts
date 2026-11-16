@@ -37,6 +37,7 @@ import {
   getExerciseFullHistory,
   getWorkoutMacroSummary,
 } from "@/lib/workout-stats";
+import { clientFailures, clientIp } from "@/lib/rate-limit";
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 
@@ -1848,6 +1849,21 @@ export async function POST(req: NextRequest) {
   // tools/call and resources/read require an API key — accepted via ?key= query param or
   // Authorization: Bearer header.
   if (method === "tools/call" || method === "resources/read") {
+    // A caller that keeps presenting wrong keys is guessing. Cut it off before
+    // looking the next one up; a connector with the right key never gets here.
+    const ipKey = `ip:${clientIp(req)}`;
+    const limit = clientFailures.check(ipKey);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        {
+          jsonrpc: "2.0",
+          id: id ?? null,
+          error: { code: -32001, message: "Too many failed attempts — try again later" },
+        },
+        { status: 429, headers: { ...CORS, "Retry-After": String(limit.retryAfterSec) } },
+      );
+    }
+
     const keyFromQuery = req.nextUrl.searchParams.get("key");
     const authHeader = req.headers.get("authorization");
     const rawKey =
@@ -1870,6 +1886,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (!userId) {
+      // A missing key is a misconfigured client, not a guess; only a key that
+      // was offered and did not match counts against the caller.
+      if (rawKey) clientFailures.hit(ipKey);
       return NextResponse.json(
         {
           jsonrpc: "2.0",
