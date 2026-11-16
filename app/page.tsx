@@ -1,13 +1,11 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type AnimationEvent, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type AnimationEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import {
   api,
   type FoodEntry,
   type Summary,
-  type Totals,
   type Goals,
   type WeightLog,
   type Favorite,
@@ -15,7 +13,7 @@ import {
   type Trends,
   type TrendRange,
 } from "@/lib/api-client";
-import { clockTime, todayStr, shiftDate, prettyDate } from "@/lib/time-client";
+import { todayStr, shiftDate } from "@/lib/time-client";
 import { createLatestRequest } from "@/lib/latest-request";
 import { clearFoodDrafts, clearFoodDraftsUnless } from "@/lib/food-draft";
 import {
@@ -138,7 +136,6 @@ function TabCrossFade({ activeKey, children }: { activeKey: string; children: Re
   );
 }
 
-const TABS: Tab[] = ["food", "workout", "settings"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function isCalendarDate(value: string): boolean {

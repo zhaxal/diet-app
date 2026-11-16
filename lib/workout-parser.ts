@@ -1,4 +1,4 @@
-import { toKg, fromKg, type WeightUnit } from "./units";
+import { type WeightUnit } from "./units";
 
 export interface ParsedSet {
   setNumber: number;
@@ -49,8 +49,7 @@ export function calculate1RM(weight: number, reps: number): number {
   return Math.round(est * 10) / 10;
 }
 
-/** Check if a line is a set specification or an exercise name / note */
-const SET_PATTERN = /(?:(?:(\+|-)?\s*(\d+(?:\.\d+)?)\s*(kg|lbs?|lb)?)|\b(bw|bodyweight)\b|\bbody\s*weight\b)?\s*(?:[xX*@×]\s*(\d+))(?:\s*reps?)?/i;
+/** A set written as reps alone, e.g. "- 12 reps". */
 const REPS_ONLY_PATTERN = /^[-*•\s]*(\d+)\s*(?:reps?|r)\b/i;
 
 interface ExtractedSetItem {

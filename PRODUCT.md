@@ -10,15 +10,16 @@ web
 
 **Primary user: the owner (a single self-hosting individual), on a phone, mid-day, mid-life.**
 The app is installed to the home screen and opened in short bursts around eating —
-standing in a kitchen, sitting at a table, one hand occupied. Sessions are seconds
-long for capture and a minute or two for review. The desktop browser is a secondary,
-occasional context (settings, API key, longer corrections).
+standing in a kitchen, sitting at a table, one hand occupied — and at the gym, between
+sets, with a rest timer running. Sessions are seconds long for capture and a minute or
+two for review. The desktop browser is a secondary, occasional context (settings, API
+key, longer corrections).
 
 **Second first-class user: an assistant acting on the owner's behalf.** Any AI assistant
 (Claude, Cursor, Windsurf, ChatGPT, etc.) reaches the same data through the MCP tool
 surface and the REST API — including reading a photographed nutrition label, scanning
-barcodes, and logging from them. Anything the UI can do to a day's log, the assistant
-can do too, and both paths write to the same records.
+barcodes, logging from them, and logging or importing gym sessions. Anything the UI can
+do to a day's log, the assistant can do too, and both paths write to the same records.
 
 **Confirmed direction: personal now, a handful of invited people later.** Accounts,
 per-user isolation, and registration are already real; the product is built so a small
@@ -28,8 +29,8 @@ consumer market.
 ## Product Purpose
 
 Track daily food intake — calories and six nutrients (protein, carbs, fat, fiber,
-sugar, sodium) — against personal daily goals, plus body weight over time, on
-infrastructure the owner controls.
+sugar, sodium) — against personal daily goals, plus body weight over time and gym
+training session by session, on infrastructure the owner controls.
 
 Success is **sustained, low-friction logging**: a day that gets fully logged without
 the logging becoming a chore. A day with a complete, trustworthy record is a win; an
@@ -85,6 +86,14 @@ easy to see, verify, and correct.
   `serving` when the label declares one. Incompatible pairings are refused, never guessed at.
 - Barcode capture in the browser via native `BarcodeDetector` (Chrome/Android) with WASM ZXing polyfill for Safari/iOS, photo upload fallback, and manual digit entry, looking up first in the user's catalog and falling back to Open Food Facts.
 - TDEE inputs (sex, birth year, height) and per-nutrient daily goals.
+- Gym workouts, one session per local day, written as a plain-text note (`Bench Press` /
+  `- 80kg x 8`). The note is the record the owner edits; it is parsed into exercises and
+  sets, with warm-up, bodyweight, RPE and `//` comments understood, and set weights stored
+  canonically in kilograms like body weight. Per-exercise history, personal-record
+  detection, estimated 1RM, a progressive-overload draft for the next session, range
+  summaries (volume, frequency, muscle groups), a rest timer, and import/export of a
+  multi-day training journal (Obsidian-style markdown). A workout row carries the same
+  `source` stamp as a food entry.
 - Copy any entry, or a whole meal, onto a device-local tray, then re-log it from Add food at a
   different amount and in a different unit. The tray is a clipboard, not a record: it lives in
   the browser, is scoped to the account, and the assistant cannot see it.
@@ -92,7 +101,8 @@ easy to see, verify, and correct.
   eaten before and Open Food Facts at once; whatever is picked arrives quoted against a known
   amount, which the amount field then rescales. Hand-typed values declare whether they are as
   eaten or per 100 g/ml.
-- Copy a previous day's entries and apply a template (API only); CSV/data export.
+- Copy a previous day's entries and apply a template (API only); a CSV export of food
+  entries and a full JSON export of everything the account holds, workouts included.
 - Light and dark themes, with the choice persisted and applied before first paint.
 
 **Fixed constraints — future design work must not break these**

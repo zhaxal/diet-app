@@ -28,7 +28,6 @@ import {
 import {
   parseWorkoutNote,
   formatWorkoutNote,
-  calculate1RM,
   normalizeExerciseName,
   parseMultiWorkoutMarkdown,
   generateObsidianExport,

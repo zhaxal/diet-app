@@ -300,7 +300,6 @@ export default function FoodTab({
     !goals.dailyFat &&
     favorites.length === 0 &&
     recent.length === 0;
-  const daySurface = loadedDate !== date ? "loading" : dayError ? "error" : "ready";
 
   // Grace period before rendering a skeleton: if data arrives within 100ms (typical for
   // local SQLite or cached responses), defer the slide until data is ready so the transition
