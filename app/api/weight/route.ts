@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { weightSchema } from "@/lib/validation";
 import { jsonError, zodError, unauthorized } from "@/lib/http";
-import { fromKg, isWeightUnit, toKg, type WeightUnit } from "@/lib/units";
+import { BODY_WEIGHT_DECIMALS, fromKg, isWeightUnit, toKg, type WeightUnit } from "@/lib/units";
 
 export async function GET(req: NextRequest) {
   const user = await getUserFromRequest(req);
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     unit: display,
     logs: logs.map((l) => ({
       ...l,
-      weight: fromKg(l.weight, display),
+      weight: fromKg(l.weight, display, BODY_WEIGHT_DECIMALS),
       weightKg: l.weight,
       enteredUnit: l.unit,
     })),
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
   const display: WeightUnit = isWeightUnit(user.weightUnit) ? user.weightUnit : "kg";
   return NextResponse.json(
     {
-      log: { ...log, weight: fromKg(log.weight, display), weightKg: log.weight, enteredUnit: log.unit },
+      log: { ...log, weight: fromKg(log.weight, display, BODY_WEIGHT_DECIMALS), weightKg: log.weight, enteredUnit: log.unit },
       unit: display,
     },
     { status: 201 },

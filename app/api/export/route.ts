@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { unauthorized } from "@/lib/http";
-import { fromKg, isWeightUnit, type WeightUnit } from "@/lib/units";
+import { BODY_WEIGHT_DECIMALS, fromKg, isWeightUnit, type WeightUnit } from "@/lib/units";
 
 // GET /api/export?format=json|csv — download all of the user's data.
 export async function GET(req: NextRequest) {
@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
     weightLogs: weightLogs.map(({ unit, ...l }) => ({
       ...l,
       weightKg: l.weight,
-      weight: fromKg(l.weight, displayUnit),
+      weight: fromKg(l.weight, displayUnit, BODY_WEIGHT_DECIMALS),
       // Named as the API names it, not as the column does.
       enteredUnit: unit,
       displayUnit,

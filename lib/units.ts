@@ -29,11 +29,19 @@ export function toKg(value: number, unit: WeightUnit): number {
   return unit === "lb" ? value * LB_IN_KG : value;
 }
 
-/** Kilograms → the unit the viewer has chosen, rounded to one decimal. */
-export function fromKg(kg: number, unit: WeightUnit): number {
+/**
+ * Kilograms → the unit the viewer has chosen, rounded to `decimals` places.
+ * One decimal suits lifting loads and volumes; body-weight readings pass
+ * `BODY_WEIGHT_DECIMALS`, since many scales read in 0.05 kg steps.
+ */
+export function fromKg(kg: number, unit: WeightUnit, decimals = 1): number {
   const v = unit === "lb" ? kg / LB_IN_KG : kg;
-  return Math.round(v * 10) / 10;
+  const f = 10 ** decimals;
+  return Math.round(v * f) / f;
 }
+
+/** Precision a body-weight reading is shown at: enough for a 72.45 kg scale. */
+export const BODY_WEIGHT_DECIMALS = 2;
 
 // ── Food quantity ──────────────────────────────────────────────────────────
 

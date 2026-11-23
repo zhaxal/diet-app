@@ -168,7 +168,7 @@ export default function WeightCard({ date, logs, weightUnit, onLogsChange }: Pro
             </span>
             <input
               type="number"
-              step="0.1"
+              step="any"
               min={0}
               max={1000}
               value={weight}

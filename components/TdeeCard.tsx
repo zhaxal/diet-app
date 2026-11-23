@@ -136,7 +136,7 @@ export default function TdeeCard({ goals, latestWeight, onApply }: Props) {
             type="number"
             min={1}
             max={lb ? 2204 : 1000}
-            step="0.1"
+            step="any"
             value={weightInput}
             onChange={(e) => setWeightInput(e.target.value)}
             placeholder="0.0"

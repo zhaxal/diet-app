@@ -29,6 +29,12 @@ test("kilograms are shown in the chosen unit to one decimal", () => {
   assert.equal(fromKg(72.34, "kg"), 72.3);
 });
 
+test("body-weight readings can be shown to two decimals, as 0.05 kg scales read", () => {
+  assert.equal(fromKg(72.45, "kg", 2), 72.45);
+  assert.equal(fromKg(100, "lb", 2), 220.46); // 220.462…
+  assert.equal(fromKg(80, "kg", 2), 80);
+});
+
 // ── Food quantity ──────────────────────────────────────────────────────────
 
 test("a quantity resolves to the product's base unit", () => {

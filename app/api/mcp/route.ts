@@ -10,6 +10,7 @@ import {
 } from "@/lib/time";
 import {
   baseUnitFor,
+  BODY_WEIGHT_DECIMALS,
   fromKg,
   isWeightUnit,
   normaliseServing,
@@ -984,7 +985,7 @@ async function callTool(
       });
       return (
         `Logged ${a.weight} ${entered} on ${localDateInTz(log.loggedAt, tz)} (id: ${log.id})` +
-        (entered === display ? "" : ` — shown as ${fromKg(log.weight, display)} ${display} in the app`)
+        (entered === display ? "" : ` — shown as ${fromKg(log.weight, display, BODY_WEIGHT_DECIMALS)} ${display} in the app`)
       );
     }
 
@@ -999,7 +1000,7 @@ async function callTool(
       // the same measurement the screen shows.
       const shown: WeightUnit = isWeightUnit(user?.weightUnit) ? (user!.weightUnit as WeightUnit) : "kg";
       return logs
-        .map((l) => `[${l.id}] ${localDateInTz(l.loggedAt, tz)}: ${fromKg(l.weight, shown)} ${shown}`)
+        .map((l) => `[${l.id}] ${localDateInTz(l.loggedAt, tz)}: ${fromKg(l.weight, shown, BODY_WEIGHT_DECIMALS)} ${shown}`)
         .join("\n");
     }
 
