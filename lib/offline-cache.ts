@@ -40,10 +40,25 @@ export function readSnapshot(): DaySnapshot | null {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
-    const snap = JSON.parse(raw) as DaySnapshot;
-    // A snapshot with no user id predates this format, or was hand-edited.
-    if (!snap?.userId || !snap?.date || typeof snap.at !== "number") return null;
-    return snap;
+    const snap = JSON.parse(raw) as Partial<DaySnapshot> | null;
+    if (
+      !snap ||
+      typeof snap.userId !== "string" ||
+      !snap.userId ||
+      typeof snap.date !== "string" ||
+      !snap.date ||
+      typeof snap.at !== "number" ||
+      !Number.isFinite(snap.at) ||
+      !Array.isArray(snap.entries) ||
+      !snap.goals ||
+      typeof snap.goals !== "object" ||
+      !Array.isArray(snap.favorites) ||
+      !Array.isArray(snap.recent) ||
+      !Array.isArray(snap.weightLogs)
+    ) {
+      return null;
+    }
+    return snap as DaySnapshot;
   } catch {
     return null;
   }

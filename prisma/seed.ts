@@ -4,6 +4,10 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PROD_SEED !== "1") {
+    throw new Error("Refusing to run demo seed in production (set ALLOW_PROD_SEED=1 to override).");
+  }
+
   const email = "demo@example.com";
   const passwordHash = await bcrypt.hash("password123", 10);
 

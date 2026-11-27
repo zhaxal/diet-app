@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "./prisma";
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -53,15 +53,42 @@ export function signToken(user: {
     email: user.email,
     v: user.tokenVersion ?? 0,
   };
-  return jwt.sign(payload, JWT_SECRET as string, { expiresIn: TOKEN_TTL });
+  return jwt.sign(payload, JWT_SECRET as string, {
+    algorithm: "HS256",
+    expiresIn: TOKEN_TTL,
+  });
 }
 
 export function verifyToken(token: string): TokenPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET as string) as TokenPayload;
+    return jwt.verify(token, JWT_SECRET as string, {
+      algorithms: ["HS256"],
+    }) as TokenPayload;
   } catch {
     return null;
   }
+}
+
+const COOKIE_MAX_AGE_SEC = 60 * 60 * 24 * 30;
+
+export function setAuthCookie(res: NextResponse, token: string): void {
+  res.cookies.set(AUTH_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: COOKIE_MAX_AGE_SEC,
+  });
+}
+
+export function clearAuthCookie(res: NextResponse): void {
+  res.cookies.set(AUTH_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
 }
 
 /**

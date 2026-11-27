@@ -73,9 +73,11 @@ export function createRateLimiter(opts: {
       }
       if (t >= nextSweepAt) sweep(t);
       // Still full after dropping everything expired: this is a flood of
-      // distinct keys. Forgetting the table lets some attempts through, which
-      // is a better failure than holding memory hostage.
-      if (entries.size >= maxKeys) entries.clear();
+      // distinct keys. Evict only the oldest entry so active lockouts survive.
+      if (entries.size >= maxKeys) {
+        const oldest = entries.keys().next().value;
+        if (oldest !== undefined) entries.delete(oldest);
+      }
       entries.set(key, { count: 1, resetAt: t + windowMs });
     },
 

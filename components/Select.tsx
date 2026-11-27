@@ -13,11 +13,15 @@ export default function Select({
   className = "",
   wrapClassName = "",
   children,
+  ref,
   ...rest
-}: SelectHTMLAttributes<HTMLSelectElement> & { wrapClassName?: string }) {
+}: SelectHTMLAttributes<HTMLSelectElement> & {
+  wrapClassName?: string;
+  ref?: React.Ref<HTMLSelectElement>;
+}) {
   return (
     <span className={`select-wrap ${wrapClassName}`}>
-      <select className={`field w-full ${className}`} {...rest}>
+      <select ref={ref} className={`field w-full ${className}`} {...rest}>
         {children}
       </select>
     </span>

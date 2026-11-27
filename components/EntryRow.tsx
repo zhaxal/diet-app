@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Copy, Pencil } from "lucide-react";
-import { api, type FoodEntry } from "@/lib/api-client";
+import { api, MEALS, type FoodEntry } from "@/lib/api-client";
 import { clockTime } from "@/lib/time-client";
 import { comparableUnits, formatQuantity, unitLabel, type QuantityUnit } from "@/lib/units";
 import { macroStrings } from "@/lib/macros";
@@ -10,8 +10,6 @@ import { resizePortion, restateAmount } from "@/lib/entry-portion";
 import Select from "./Select";
 import { useToast } from "./Toast";
 import { Dialog } from "./Dialog";
-
-const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
 
 const NUMERIC_FIELDS = [
   { key: "calories", label: "kcal", max: 100000 },
@@ -32,6 +30,7 @@ interface Props {
 
 export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
   const toast = useToast();
+  const foodNameId = useId();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   // Delete sits at the outer right edge of a list that is scrolled with a
@@ -148,8 +147,9 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
         <form onSubmit={save} className="space-y-2">
           {/* Food name */}
           <div>
-            <label className="block text-2xs uppercase tracking-wider text-ink-faint">Food</label>
+            <label htmlFor={foodNameId} className="block text-2xs uppercase tracking-wider text-ink-faint">Food</label>
             <input
+              id={foodNameId}
               required
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -246,6 +246,7 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
             <button
               type="button"
               onClick={toggleNutrients}
+              aria-expanded={showNutrients}
               className="text-2xs text-ink-faint hover:text-ink font-medium"
             >
               {showNutrients ? "− Hide detailed nutrients" : "+ Edit raw nutrients"}
@@ -321,6 +322,7 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
     <>
       <li className="entry-row motion-list-item group flex items-center gap-2 px-3 py-2">
       <button
+        type="button"
         onClick={beginEdit}
         className="entry-identity min-w-0 flex-1 text-left text-sm text-ink hover:text-accent flex items-center justify-between gap-2"
         title="Edit entry"
@@ -361,6 +363,7 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
           you then have to correct. */}
       <div className="flex items-center shrink-0">
         <button
+          type="button"
           onClick={() => onCopy(entry)}
           className="glyph-btn shrink-0 text-ink-faint transition-colors hover:text-ink"
           aria-label={`Copy ${entry.name} to add food`}
@@ -373,8 +376,15 @@ export default function EntryRow({ entry, onUpdate, onDelete, onCopy }: Props) {
         {/* Always visible — this was opacity-0 until group-hover, i.e. permanently
             invisible on a touch device while remaining tappable. */}
         <button
+          type="button"
           onClick={armDelete}
-          onBlur={() => setConfirmingDelete(false)}
+          onBlur={() => {
+            if (confirmTimer.current) {
+              clearTimeout(confirmTimer.current);
+              confirmTimer.current = null;
+            }
+            setConfirmingDelete(false);
+          }}
           className={`glyph-btn shrink-0 text-2xs transition-colors ${
             confirmingDelete
               ? "font-semibold uppercase tracking-wide text-over"

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { weightSchema } from "@/lib/validation";
 import { jsonError, zodError, unauthorized } from "@/lib/http";
+import { dayBoundsInTz, isValidCalendarDate } from "@/lib/time";
 import { BODY_WEIGHT_DECIMALS, fromKg, isWeightUnit, toKg, type WeightUnit } from "@/lib/units";
 
 export async function GET(req: NextRequest) {
@@ -16,11 +17,36 @@ export async function GET(req: NextRequest) {
   const fromParam = req.nextUrl.searchParams.get("from");
   const toParam = req.nextUrl.searchParams.get("to");
 
-  const from = fromParam ? new Date(fromParam) : defaultFrom;
-  const to = toParam ? new Date(toParam) : now;
+  let gte = defaultFrom;
+  if (fromParam) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fromParam)) {
+      if (!isValidCalendarDate(fromParam)) return jsonError("Invalid from date", 422);
+      gte = dayBoundsInTz(fromParam, user.timezone).start;
+    } else {
+      const d = new Date(fromParam);
+      if (!Number.isFinite(d.getTime())) {
+        return jsonError("Invalid from date", 422);
+      }
+      gte = d;
+    }
+  }
+
+  let toFilter: { lte?: Date; lt?: Date } = { lte: now };
+  if (toParam) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(toParam)) {
+      if (!isValidCalendarDate(toParam)) return jsonError("Invalid to date", 422);
+      toFilter = { lt: dayBoundsInTz(toParam, user.timezone).end };
+    } else {
+      const d = new Date(toParam);
+      if (!Number.isFinite(d.getTime())) {
+        return jsonError("Invalid to date", 422);
+      }
+      toFilter = { lte: d };
+    }
+  }
 
   const logs = await prisma.weightLog.findMany({
-    where: { userId: user.id, loggedAt: { gte: from, lte: to } },
+    where: { userId: user.id, loggedAt: { gte, ...toFilter } },
     orderBy: { loggedAt: "asc" },
   });
 

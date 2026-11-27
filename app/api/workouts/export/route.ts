@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
-import { unauthorized } from "@/lib/http";
+import { jsonError, unauthorized } from "@/lib/http";
+import { dayBoundsInTz, isValidCalendarDate, localDateInTz } from "@/lib/time";
+import { lookupMuscleGroup } from "@/lib/default-exercises";
 import { generateObsidianExport } from "@/lib/workout-parser";
 import { fromKg, isWeightUnit, type WeightUnit } from "@/lib/units";
 
@@ -15,9 +17,16 @@ export async function GET(req: NextRequest) {
   const endDate = req.nextUrl.searchParams.get("endDate");
   const displayUnit: WeightUnit = isWeightUnit(user.weightUnit) ? user.weightUnit : "kg";
 
-  const dateFilter: Record<string, unknown> = {};
-  if (startDate) dateFilter.gte = new Date(`${startDate}T00:00:00.000Z`);
-  if (endDate) dateFilter.lte = new Date(`${endDate}T23:59:59.999Z`);
+  if ((startDate && !isValidCalendarDate(startDate)) || (endDate && !isValidCalendarDate(endDate))) {
+    return jsonError("startDate and endDate must be valid YYYY-MM-DD calendar dates", 422);
+  }
+  if (startDate && endDate && startDate > endDate) {
+    return jsonError("startDate must not be after endDate", 422);
+  }
+
+  const dateFilter: { gte?: Date; lt?: Date } = {};
+  if (startDate) dateFilter.gte = dayBoundsInTz(startDate, user.timezone).start;
+  if (endDate) dateFilter.lt = dayBoundsInTz(endDate, user.timezone).end;
 
   const workouts = await prisma.workout.findMany({
     where: {
@@ -41,7 +50,7 @@ export async function GET(req: NextRequest) {
   if (format === "markdown") {
     const markdownContent = generateObsidianExport(
       workouts.map((w) => ({
-        date: w.date.toISOString().slice(0, 10),
+        date: localDateInTz(w.date, user.timezone),
         title: w.title,
         rawNote: w.rawNote,
       })),
@@ -58,7 +67,7 @@ export async function GET(req: NextRequest) {
   // JSON export
   const structured = workouts.map((w) => ({
     id: w.id,
-    date: w.date.toISOString().slice(0, 10),
+    date: localDateInTz(w.date, user.timezone),
     title: w.title,
     rawNote: w.rawNote,
     notes: w.notes,
@@ -66,7 +75,7 @@ export async function GET(req: NextRequest) {
     createdAt: w.createdAt,
     exercises: w.exercises.map((we) => ({
       name: we.exercise.name,
-      muscleGroup: we.exercise.muscleGroup,
+      muscleGroup: we.exercise.muscleGroup ?? lookupMuscleGroup(we.exercise.name) ?? null,
       notes: we.notes,
       sets: we.sets.map((s) => ({
         setNumber: s.setNumber,

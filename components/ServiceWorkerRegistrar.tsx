@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { initPwaInstallListener } from "@/lib/pwa-install";
 
 const DEV_RESET_KEY = "diet-dev-worker-reset-v1";
 
@@ -27,6 +28,7 @@ async function removeInheritedDevelopmentWorker() {
  */
 export default function ServiceWorkerRegistrar() {
   useEffect(() => {
+    initPwaInstallListener();
     if (!("serviceWorker" in navigator)) return;
 
     if (process.env.NODE_ENV !== "production") {

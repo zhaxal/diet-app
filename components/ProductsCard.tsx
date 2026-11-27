@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createLatestRequest } from "@/lib/latest-request";
 import { api, type Product } from "@/lib/api-client";
 import { macroStrings, parseMacros, type MacroStrings } from "@/lib/macros";
 import {
@@ -45,21 +44,34 @@ export default function ProductsCard() {
   const [editing, setEditing] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const queryRef = useRef(q);
-  queryRef.current = q.trim();
-  const [reads] = useState(() => createLatestRequest(() => queryRef.current));
+  const [reloadSeq, setReloadSeq] = useState(0);
 
-  const load = useCallback(async (query: string) => {
-    setError(null);
-    await reads.run(query, () => api.listProducts(query || undefined),
-      ({ products }) => { setProducts(products); setLoaded(true); },
-      (e) => { setError(e instanceof Error ? e.message : "Could not load saved labels"); });
-  }, [reads]);
+  const reload = useCallback(() => {
+    setReloadSeq((n) => n + 1);
+  }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => load(q.trim()), 250);
-    return () => { clearTimeout(t); reads.invalidate(); };
-  }, [q, load, reads]);
+    let cancelled = false;
+    const query = q.trim();
+    const t = setTimeout(() => {
+      setError(null);
+      api
+        .listProducts(query || undefined)
+        .then(({ products: next }) => {
+          if (cancelled) return;
+          setProducts(next);
+          setLoaded(true);
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          setError(e instanceof Error ? e.message : "Could not load saved labels");
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [q, reloadSeq]);
 
   async function remove(p: Product) {
     try {
@@ -70,26 +82,22 @@ export default function ProductsCard() {
       toast(`Deleted ${p.name}`, "info", {
         label: "Undo",
         onAct: async () => {
-          try {
-            await api.saveProduct({
-              name: p.name,
-              brand: p.brand ?? undefined,
-              barcode: p.barcode ?? undefined,
-              calories: p.calories,
-              protein: p.protein,
-              carbs: p.carbs,
-              fat: p.fat,
-              fiber: p.fiber,
-              sugar: p.sugar,
-              sodium: p.sodium,
-              basis: p.basis,
-              servingSize: p.servingSize ?? undefined,
-              servingUnit: p.servingUnit ?? undefined,
-            });
-            load(q.trim());
-          } catch (e) {
-            throw e;
-          }
+          await api.saveProduct({
+            name: p.name,
+            brand: p.brand ?? undefined,
+            barcode: p.barcode ?? undefined,
+            calories: p.calories,
+            protein: p.protein,
+            carbs: p.carbs,
+            fat: p.fat,
+            fiber: p.fiber,
+            sugar: p.sugar,
+            sodium: p.sodium,
+            basis: p.basis,
+            servingSize: p.servingSize ?? undefined,
+            servingUnit: p.servingUnit ?? undefined,
+          });
+          reload();
         },
       });
     } catch (e) {
@@ -112,15 +120,13 @@ export default function ProductsCard() {
 
       {error && <div className="mt-2 text-xs text-ink-dim" role="alert">
         <p>Saved labels could not be refreshed. {error}</p>
-        <button onClick={() => load(q.trim())} className="btn btn-ghost mt-2">Retry</button>
+        <button type="button" onClick={reload} className="btn btn-ghost mt-2">Retry</button>
       </div>}
       {products.length === 0 ? (!error && (
         <p className="mt-3 text-xs text-ink-faint">
           {!loaded ? "Loading…" : q
             ? `Nothing matches “${q}”.`
-            : loaded
-              ? "No labels saved yet. Scan a barcode in Add food, or photograph a nutrition label and ask your AI assistant to save it — it only has to read the label once."
-              : "Loading…"}
+            : "No labels saved yet. Scan a barcode in Add food, or photograph a nutrition label and ask your AI assistant to save it — it only has to read the label once."}
         </p>)
       ) : (
         <ul className="mt-2 divide-y divide-line-soft">
@@ -128,6 +134,7 @@ export default function ProductsCard() {
               <li key={p.id} className="py-2">
                 <div className="flex items-baseline justify-between gap-2">
                   <button
+                    type="button"
                     onClick={() => setEditing(p.id)}
                     className="min-w-0 flex-1 truncate text-left text-sm text-ink hover:text-accent"
                     title="Correct these values"
@@ -139,6 +146,7 @@ export default function ProductsCard() {
                     {p.calories}kcal/100{base(p)}
                   </span>
                   <button
+                    type="button"
                     onClick={() => remove(p)}
                     className="glyph-btn shrink-0 text-2xs text-ink-faint transition-colors hover:text-over"
                     aria-label={`Delete ${p.name}`}

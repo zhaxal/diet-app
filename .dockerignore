@@ -5,8 +5,14 @@
 .next
 node_modules
 .prisma-engines
-*.db
-*.db-journal
+**/*.db
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
+test-results
+playwright-report
+.DS_Store
+.impeccable
 README.md
 Dockerfile
 .dockerignore

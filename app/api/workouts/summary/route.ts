@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const days = daysParam ? Math.max(1, Math.min(365, parseInt(daysParam, 10) || 30)) : 30;
   const displayUnit: WeightUnit = isWeightUnit(user.weightUnit) ? user.weightUnit : "kg";
 
-  const summary = await getWorkoutMacroSummary(user.id, days, displayUnit);
+  const summary = await getWorkoutMacroSummary(user.id, days, displayUnit, user.timezone);
 
   return NextResponse.json({ summary });
 }

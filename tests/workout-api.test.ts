@@ -4,6 +4,18 @@ import { prisma } from "../lib/prisma";
 import { parseWorkoutNote } from "../lib/workout-parser";
 import { toKg } from "../lib/units";
 import { getExerciseSummary, getExerciseFullHistory } from "../lib/workout-stats";
+import { todayInTz } from "../lib/time";
+import {
+  GET as getWorkout,
+  POST as saveWorkout,
+  DELETE as deleteWorkout,
+} from "../app/api/workouts/route";
+import { POST as importWorkouts } from "../app/api/workouts/import/route";
+import { GET as exportWorkouts } from "../app/api/workouts/export/route";
+import { GET as getWorkoutSummary } from "../app/api/workouts/summary/route";
+import { GET as listExercises } from "../app/api/exercises/route";
+import { GET as getExerciseHistory } from "../app/api/exercises/[id]/history/route";
+import { createUser, request, withId } from "./helpers";
 
 test("workout database pipeline: creates exercises, logs sets, and computes progression stats", async () => {
   // 1. Create or get demo user
@@ -174,4 +186,153 @@ test("workout database pipeline: creates exercises, logs sets, and computes prog
   await prisma.workout.deleteMany({ where: { userId: user.id } });
   await prisma.exercise.deleteMany({ where: { userId: user.id } });
   await prisma.user.delete({ where: { id: user.id } });
+});
+
+test("REST workout lifecycle: POST/GET/DELETE preserves omitted source and returns 404 on missing delete", async () => {
+  const user = await createUser("workout-rest@example.com");
+  const date = "2026-10-05";
+
+  const createRes = await saveWorkout(
+    request("POST", "/api/workouts", {
+      token: user.token,
+      body: {
+        date,
+        title: "MCP Session",
+        rawNote: "Bench Press\n- 80kg x 5",
+        source: "mcp",
+      },
+    }),
+  );
+  assert.equal(createRes.status, 200);
+  const created = await createRes.json();
+  assert.equal(created.workout.source, "mcp");
+
+  // Updating without specifying source must preserve existing source ("mcp")
+  const updateRes = await saveWorkout(
+    request("POST", "/api/workouts", {
+      token: user.token,
+      body: {
+        date,
+        title: "MCP Session Edited",
+        rawNote: "Bench Press\n- 82.5kg x 5",
+      },
+    }),
+  );
+  assert.equal(updateRes.status, 200);
+  const updated = await updateRes.json();
+  assert.equal(updated.workout.source, "mcp");
+
+  const getRes = await getWorkout(
+    request("GET", `/api/workouts?date=${date}`, { token: user.token }),
+  );
+  assert.equal(getRes.status, 200);
+  const fetched = await getRes.json();
+  assert.equal(fetched.workout.title, "MCP Session Edited");
+  assert.ok(fetched.exerciseStats["bench press"]);
+
+  const delRes = await deleteWorkout(
+    request("DELETE", `/api/workouts?date=${date}`, { token: user.token }),
+  );
+  assert.equal(delRes.status, 200);
+
+  const missingDelRes = await deleteWorkout(
+    request("DELETE", `/api/workouts?date=${date}`, { token: user.token }),
+  );
+  assert.equal(missingDelRes.status, 404);
+});
+
+test("REST workouts import, export validation, summary clamp, and exercises endpoints", async () => {
+  const user = await createUser("workout-tools@example.com");
+  const today = todayInTz("UTC");
+
+  // Invalid import payload rejected
+  const badImport = await importWorkouts(
+    request("POST", "/api/workouts/import", {
+      token: user.token,
+      body: {},
+    }),
+  );
+  assert.equal(badImport.status, 422);
+
+  // Dry run followed by real markdown import including assisted negative set + Arm exercise
+  const md = `# ${today} Arms & Dips
+Close-Grip Bench Press
+- 70kg x 8
+
+Assisted Dips
+- -20kg x 10
+`;
+  const dryRes = await importWorkouts(
+    request("POST", "/api/workouts/import", {
+      token: user.token,
+      body: { markdown: md, dryRun: true },
+    }),
+  );
+  assert.equal(dryRes.status, 200);
+  const dryJson = await dryRes.json();
+  assert.equal(dryJson.dryRun, true);
+  assert.equal(dryJson.totalWorkouts, 1);
+
+  const impRes = await importWorkouts(
+    request("POST", "/api/workouts/import", {
+      token: user.token,
+      body: { markdown: md },
+    }),
+  );
+  assert.equal(impRes.status, 200);
+  const impJson = await impRes.json();
+  assert.equal(impJson.created, 1);
+
+  // Summary clamps negative assisted weight so volume equals 70 * 8 = 560
+  const sumRes = await getWorkoutSummary(
+    request("GET", "/api/workouts/summary?days=7", { token: user.token }),
+  );
+  assert.equal(sumRes.status, 200);
+  const { summary } = await sumRes.json();
+  assert.equal(summary.totalWorkouts, 1);
+  assert.equal(summary.totalVolume, 560);
+
+  // Export date validation + valid markdown export
+  const badExport = await exportWorkouts(
+    request("GET", "/api/workouts/export?startDate=2026-02-30", { token: user.token }),
+  );
+  assert.equal(badExport.status, 422);
+
+  const invertedExport = await exportWorkouts(
+    request("GET", "/api/workouts/export?startDate=2026-10-10&endDate=2026-10-01", { token: user.token }),
+  );
+  assert.equal(invertedExport.status, 422);
+
+  const okExport = await exportWorkouts(
+    request("GET", "/api/workouts/export?format=markdown", { token: user.token }),
+  );
+  assert.equal(okExport.status, 200);
+  const exportText = await okExport.text();
+  assert.match(exportText, /Close-Grip Bench Press/);
+
+  // Exercises endpoint filters muscle=Arms cleanly and links today's morning/current workout
+  const exRes = await listExercises(
+    request("GET", "/api/exercises?muscle=Arms", { token: user.token }),
+  );
+  assert.equal(exRes.status, 200);
+  const { exercises } = (await exRes.json()) as {
+    exercises: Array<{ id: string; name: string; muscleGroup: string }>;
+  };
+  const closeGrip = exercises.find((e) => e.name === "Close-Grip Bench Press");
+  assert.ok(closeGrip);
+  assert.equal(closeGrip.muscleGroup, "Arms");
+
+  const histRes = await getExerciseHistory(
+    request("GET", `/api/exercises/${closeGrip.id}/history`, { token: user.token }),
+    withId(closeGrip.id),
+  );
+  assert.equal(histRes.status, 200);
+  const hist = await histRes.json();
+  assert.equal(hist.lifetime.bestWeight, 70);
+
+  const unknownHist = await getExerciseHistory(
+    request("GET", "/api/exercises/missing-id/history", { token: user.token }),
+    withId("missing-id"),
+  );
+  assert.equal(unknownHist.status, 404);
 });

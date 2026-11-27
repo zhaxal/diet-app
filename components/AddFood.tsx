@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Check, ScanBarcode, Star, X } from "lucide-react";
 import {
   api,
+  MEALS,
   type Favorite,
   type FoodSearchResult,
   type Meal,
@@ -39,7 +40,9 @@ import { Dialog } from "./Dialog";
 import Select from "./Select";
 import { useToast } from "./Toast";
 
-const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
+const subscribeNoop = () => () => {};
+const getCanScanClient = () => isBarcodeScanningSupported();
+const getCanScanServer = () => false;
 
 /**
  * What the numbers in the form describe.
@@ -134,19 +137,28 @@ export default function AddFood({
 }: Props) {
   const toast = useToast();
   const [initialDraft] = useState(() => readFoodDraft(userId, date));
-  const [draftReady, setDraftReady] = useState(false);
+  const mountedRef = useRef(false);
 
   // ── Finding something ────────────────────────────────────────────────────
   const [q, setQ] = useState(initialDraft?.q ?? "");
-  const [products, setProducts] = useState<Product[]>([]);
-  const [online, setOnline] = useState<FoodSearchResult[]>([]);
-  const [searchingOnline, setSearchingOnline] = useState(false);
-  const [onlineFailed, setOnlineFailed] = useState(false);
+  const [localSearch, setLocalSearch] = useState<{
+    forQuery: string;
+    products: Product[];
+    failed: boolean;
+  }>({ forQuery: "", products: [], failed: false });
+  const [onlineSearch, setOnlineSearch] = useState<{
+    forQuery: string;
+    results: FoodSearchResult[];
+    failed: boolean;
+  }>({ forQuery: "", results: [], failed: false });
   const [scanning, setScanning] = useState(false);
-  // Read once, after mount: `BarcodeDetector` does not exist during SSR, and
-  // branching on it during render would desync hydration.
-  const [canScan, setCanScan] = useState(false);
-  useEffect(() => setCanScan(isBarcodeScanningSupported()), []);
+  // `BarcodeDetector` does not exist during SSR; branching on it directly
+  // would desync hydration.
+  const canScan = useSyncExternalStore(
+    subscribeNoop,
+    getCanScanClient,
+    getCanScanServer,
+  );
 
   // ── Composing the entry ──────────────────────────────────────────────────
   const [name, setName] = useState(initialDraft?.name ?? "");
@@ -168,6 +180,7 @@ export default function AddFood({
   const [showManual, setShowManual] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingAux, setSavingAux] = useState(false);
   const hasDraft = !!(q || name || amount || Object.values(vals).some((v) => v !== ""));
   const isComposing = Boolean(name.trim() || vals.calories.trim() || origin || showManual);
 
@@ -229,9 +242,10 @@ export default function AddFood({
       return;
     }
     setSaving(true);
+    let loggedCount = 0;
     try {
       const items = Array.from(batchSelection.values());
-      const res = await Promise.all(
+      const settled = await Promise.allSettled(
         items.map((it) =>
           api.createEntry({
             name: it.name,
@@ -250,44 +264,61 @@ export default function AddFood({
           })
         )
       );
-      toast(`Added ${items.length} items to ${meal}`, "success", {
-        label: "Undo all",
-        onAct: async () => {
-          await Promise.all(res.map((r) => api.deleteEntry(r.entry.id)));
-          onLogged();
-        },
-      });
-      setBatchSelection(new Map());
-      setBatchMode(false);
-      onLogged();
+      const succeeded = settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+      loggedCount = succeeded.length;
+      if (succeeded.length === items.length) {
+        toast(`Added ${items.length} items to ${meal}`, "success", {
+          label: "Undo all",
+          onAct: async () => {
+            await Promise.all(succeeded.map((r) => api.deleteEntry(r.entry.id)));
+            onLogged();
+          },
+        });
+        setBatchSelection(new Map());
+        setBatchMode(false);
+      } else if (succeeded.length > 0) {
+        toast(
+          `Logged ${succeeded.length} item${succeeded.length === 1 ? "" : "s"}, ${items.length - succeeded.length} failed`,
+          "error",
+        );
+      } else {
+        const firstRejected = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+        const reason = firstRejected?.reason;
+        toast(reason instanceof Error ? reason.message : "Failed to log batch", "error");
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to log batch", "error");
     } finally {
+      if (loggedCount > 0) onLogged();
       setSaving(false);
     }
   }
 
   useEffect(() => {
     if (initialDraft?.meal) onMealChange(initialDraft.meal);
-    setDraftReady(true);
+    mountedRef.current = true;
     // Restore once per account/day mount, not whenever the user changes meal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (!draftReady) return;
+    if (!mountedRef.current) return;
     writeFoodDraft(userId, date, hasDraft
       ? { q, name, vals, reference, amount, unit, multiple, serving, productId, origin, showTrace, meal: mealConfirmed ? meal : null }
       : null);
-  }, [draftReady, userId, date, hasDraft, q, name, vals, reference, amount, unit, multiple, serving, productId, origin, showTrace, meal, mealConfirmed]);
+  }, [userId, date, hasDraft, q, name, vals, reference, amount, unit, multiple, serving, productId, origin, showTrace, meal, mealConfirmed]);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
 
   // Quick add hands its query over rather than searching twice. Focus follows
   // it, so the handover lands on a field the user is already typing into.
+  const [prevSeed, setPrevSeed] = useState(seedQuery);
+  if (seedQuery !== prevSeed) {
+    setPrevSeed(seedQuery);
+    if (seedQuery) setQ(seedQuery);
+  }
   useEffect(() => {
     if (!seedQuery) return;
-    setQ(seedQuery);
     searchRef.current?.focus();
     onSeedConsumed?.();
   }, [seedQuery, onSeedConsumed]);
@@ -301,47 +332,48 @@ export default function AddFood({
   const query = q.trim();
 
   useEffect(() => {
-    if (query.length < 1) {
-      setProducts([]);
-      setOnline([]);
-      setOnlineFailed(false);
-      return;
-    }
+    if (query.length < 1) return;
     let live = true;
-    const t = setTimeout(async () => {
+    const t = setTimeout(() => {
       api
         .listProducts(query)
-        .then(({ products }) => live && setProducts(products))
-        .catch(() => live && setProducts([]));
+        .then(({ products: rows }) => {
+          if (live) setLocalSearch({ forQuery: query, products: rows, failed: false });
+        })
+        .catch(() => {
+          if (live) setLocalSearch({ forQuery: query, products: [], failed: true });
+        });
 
       // Open Food Facts is the one outbound call in the app and the slowest
       // thing here, so it is gated behind a second character and never blocks
       // the three local groups from rendering.
-      if (query.length < 2) {
-        setOnline([]);
-        return;
-      }
-      setSearchingOnline(true);
-      try {
-        const { results, unavailable } = await api.searchFoods(query);
-        if (live) {
-          setOnline(results);
-          setOnlineFailed(Boolean(unavailable));
-        }
-      } catch {
-        if (live) {
-          setOnline([]);
-          setOnlineFailed(true);
-        }
-      } finally {
-        if (live) setSearchingOnline(false);
-      }
+      if (query.length < 2) return;
+      api
+        .searchFoods(query)
+        .then(({ results, unavailable }) => {
+          if (live) {
+            setOnlineSearch({
+              forQuery: query,
+              results,
+              failed: Boolean(unavailable),
+            });
+          }
+        })
+        .catch(() => {
+          if (live) setOnlineSearch({ forQuery: query, results: [], failed: true });
+        });
     }, 300);
     return () => {
       live = false;
       clearTimeout(t);
     };
   }, [query]);
+
+  const products = query.length >= 1 && localSearch.forQuery === query ? localSearch.products : [];
+  const productsFailed = query.length >= 1 && localSearch.forQuery === query && localSearch.failed;
+  const online = query.length >= 2 && onlineSearch.forQuery === query ? onlineSearch.results : [];
+  const onlineFailed = query.length >= 2 && onlineSearch.forQuery === query && onlineSearch.failed;
+  const searchingOnline = query.length >= 2 && onlineSearch.forQuery !== query;
 
   const lower = query.toLowerCase();
   const matchesQuery = useCallback(
@@ -373,9 +405,9 @@ export default function AddFood({
 
   // ── Loading something into the form ──────────────────────────────────────
 
-  function focusCompose() {
+  const focusCompose = useCallback(() => {
     setComposerOpen(true);
-  }
+  }, []);
 
   function reset() {
     writeFoodDraft(userId, date, null);
@@ -448,7 +480,7 @@ export default function AddFood({
     focusCompose();
   }
 
-  function pickProduct(p: Product) {
+  const pickProduct = useCallback((p: Product) => {
     const base = baseUnitFor(p.basis as ProductBasis);
     setName(p.brand ? `${p.name} (${p.brand})` : p.name);
     setVals(macroStrings(p));
@@ -468,7 +500,7 @@ export default function AddFood({
     setShowTrace(hasTrace(p));
     setQ("");
     focusCompose();
-  }
+  }, [focusCompose]);
 
   function pickOnline(r: FoodSearchResult) {
     setName(r.name);
@@ -484,7 +516,7 @@ export default function AddFood({
     focusCompose();
   }
 
-  async function onScanned(code: string) {
+  const onScanned = useCallback(async (code: string) => {
     setScanning(false);
     try {
       const { source, product } = await api.lookupBarcode(code);
@@ -505,7 +537,7 @@ export default function AddFood({
     } catch (e) {
       toast(e instanceof Error ? e.message : "Barcode lookup failed", "error");
     }
-  }
+  }, [pickProduct, toast]);
 
   // ── What will actually be logged ─────────────────────────────────────────
 
@@ -663,12 +695,15 @@ export default function AddFood({
       toast("Choose a meal before saving this favorite", "info");
       return;
     }
+    setSavingAux(true);
     try {
       await api.saveFavorite({ name: name.trim(), ...result, mealType: meal });
       onFavoritesChanged();
       toast("Saved to favorites");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not save favorite", "error");
+    } finally {
+      setSavingAux(false);
     }
   }
 
@@ -734,6 +769,7 @@ export default function AddFood({
       toast("These numbers cannot be restated per 100 — check the unit", "error");
       return;
     }
+    setSavingAux(true);
     try {
       await api.saveProduct({
         name: name.trim(),
@@ -744,6 +780,8 @@ export default function AddFood({
       toast(`Saved to products, per 100 ${base}`);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not save product", "error");
+    } finally {
+      setSavingAux(false);
     }
   }
 
@@ -751,6 +789,7 @@ export default function AddFood({
     query.length > 0 &&
     (copiedHits.length > 0 ||
       products.length > 0 ||
+      productsFailed ||
       eatenHits.length > 0 ||
       online.length > 0 ||
       searchingOnline ||
@@ -827,7 +866,7 @@ export default function AddFood({
               />
             ))}
           </Group>
-          <Group label="Saved labels">
+          <Group label="Saved labels" note={productsFailed ? "could not load" : undefined}>
             {products.map((p) => (
               <ResultRow
                 key={p.id}
@@ -1004,6 +1043,7 @@ export default function AddFood({
                         }
                       }}
                       disabled={!batchMode && quickLoggingName !== null}
+                      aria-pressed={batchMode ? isSelected : undefined}
                       aria-busy={isLogging || undefined}
                       aria-label={batchMode
                         ? `${isSelected ? "Remove" : "Add"} ${f.name} from the batch`
@@ -1115,6 +1155,7 @@ export default function AddFood({
                         }
                       }}
                       disabled={!batchMode && quickLoggingName !== null}
+                      aria-pressed={batchMode ? isSelected : undefined}
                       aria-busy={isLogging || undefined}
                       aria-label={batchMode
                         ? `${isSelected ? "Remove" : "Add"} ${r.name} from the batch`
@@ -1184,18 +1225,17 @@ export default function AddFood({
         </span>
       </div>
 
-      {isComposing && (
-        <Dialog
-          open={composerOpen}
-          onClose={() => {
-            setComposerOpen(false);
-            if (!hasDraft) setShowManual(false);
-          }}
-          title={origin ? "Confirm & Scale" : "Manual Food Entry"}
-          description={`${mealConfirmed ? meal : "choose a meal"} · ${whenLabel(date)}`}
-          size="md"
-          bodyClassName="p-4"
-        >
+      <Dialog
+        open={composerOpen && isComposing}
+        onClose={() => {
+          setComposerOpen(false);
+          if (!hasDraft) setShowManual(false);
+        }}
+        title={origin ? "Confirm & Scale" : "Manual Food Entry"}
+        description={`${mealConfirmed ? meal : "choose a meal"} · ${whenLabel(date)}`}
+        size="md"
+        bodyClassName="p-4"
+      >
           <form onSubmit={log} className="grid grid-cols-2 gap-1.5 min-[360px]:grid-cols-4">
           <div className="col-span-full flex items-end justify-between gap-3 border-b pb-2" style={{ borderColor: "var(--line-soft)" }}>
             <div>
@@ -1335,6 +1375,7 @@ export default function AddFood({
               <div className="col-span-full">
                 <button
                   type="button"
+                  aria-expanded={showTrace}
                   onClick={() => setShowTrace((shown) => !shown)}
                   className="text-2xs uppercase tracking-wider text-ink-faint hover:text-ink transition-colors"
                 >
@@ -1407,11 +1448,21 @@ export default function AddFood({
           {canLog && (
             <div className="col-span-full flex flex-wrap items-center justify-end gap-3 pt-1">
               <div className="flex items-center gap-3">
-                <button type="button" onClick={saveFavorite} className="text-2xs text-accent hover:underline">
+                <button
+                  type="button"
+                  onClick={saveFavorite}
+                  disabled={saving || savingAux}
+                  className="text-2xs text-accent hover:underline disabled:opacity-50"
+                >
                   ★ favorite
                 </button>
                 {per100Basis && (
-                  <button type="button" onClick={saveProduct} className="text-2xs text-accent hover:underline">
+                  <button
+                    type="button"
+                    onClick={saveProduct}
+                    disabled={saving || savingAux}
+                    className="text-2xs text-accent hover:underline disabled:opacity-50"
+                  >
                     ⬚ save label
                   </button>
                 )}
@@ -1455,7 +1506,6 @@ export default function AddFood({
           </div>
         </form>
       </Dialog>
-      )}
     </div>
   );
 }

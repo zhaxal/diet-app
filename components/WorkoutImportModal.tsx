@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useId, useState, useRef } from "react";
 import { UploadCloud, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { Dialog } from "@/components/Dialog";
@@ -37,13 +37,22 @@ export default function WorkoutImportModal({
     workouts: DryRunWorkout[];
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const markdownId = useId();
+
+  function closeAndReset() {
+    setMarkdownText("");
+    setPreview(null);
+    setError(null);
+    setConfirmDiscard(false);
+    onClose();
+  }
 
   function requestClose() {
     if (markdownText.trim()) {
       setConfirmDiscard(true);
       return;
     }
-    onClose();
+    closeAndReset();
   }
 
   // Handle file reading
@@ -107,7 +116,12 @@ export default function WorkoutImportModal({
       });
 
       if (res.ok) {
-        onSuccess(res.total || 0);
+        const count = res.total || 0;
+        setMarkdownText("");
+        setPreview(null);
+        setError(null);
+        setConfirmDiscard(false);
+        onSuccess(count);
       } else {
         setError("Import failed to save workouts");
       }
@@ -140,7 +154,7 @@ export default function WorkoutImportModal({
               </button>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={closeAndReset}
                 className="btn border border-over text-over hover:bg-over hover:text-panel"
               >
                 Discard import
@@ -196,6 +210,7 @@ export default function WorkoutImportModal({
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
+                e.target.value = "";
                 if (file) handleFile(file);
               }}
             />
@@ -212,10 +227,11 @@ export default function WorkoutImportModal({
 
           {/* Markdown Textarea */}
           <div className="space-y-1">
-            <label className="text-2xs uppercase tracking-wider text-ink-faint font-semibold">
+            <label htmlFor={markdownId} className="text-2xs uppercase tracking-wider text-ink-faint font-semibold">
               Markdown Content
             </label>
             <textarea
+              id={markdownId}
               aria-label="Obsidian markdown import text"
               value={markdownText}
               onChange={(e) => {
@@ -236,6 +252,7 @@ export default function WorkoutImportModal({
           {/* Error notice */}
           {error && (
             <div
+              role="alert"
               className="p-3 rounded border flex items-center gap-2 text-over"
               style={{
                 borderColor: "var(--over)",

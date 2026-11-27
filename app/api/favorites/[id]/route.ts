@@ -11,9 +11,10 @@ export async function DELETE(
   if (!user) return unauthorized();
 
   const { id } = await params;
-  const fav = await prisma.favorite.findUnique({ where: { id } });
-  if (!fav || fav.userId !== user.id) return notFound();
+  const { count } = await prisma.favorite.deleteMany({
+    where: { id, userId: user.id },
+  });
+  if (count === 0) return notFound();
 
-  await prisma.favorite.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

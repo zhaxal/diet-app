@@ -12,7 +12,8 @@ import type {
   Trends,
   TrendRange,
 } from "@/lib/api-client";
-import { api } from "@/lib/api-client";
+import { api, MEALS, type Meal } from "@/lib/api-client";
+export { MEALS, type Meal };
 import type { CopiedItem } from "@/lib/copied";
 import type { Tab } from "@/components/BottomNav";
 import { prettyDate, todayStr, clockTime, consumedAtFor, weekEnding } from "@/lib/time-client";
@@ -28,9 +29,6 @@ import Select from "@/components/Select";
 import { useToast } from "@/components/Toast";
 import { FoodDaySkeleton } from "@/components/DayLoadingSkeleton";
 import DayTransition from "@/components/DayTransition";
-
-export const MEALS = ["breakfast", "lunch", "dinner", "snack"] as const;
-export type Meal = (typeof MEALS)[number];
 
 type QuickItem =
   | { kind: "favorite"; food: Favorite }
@@ -126,9 +124,14 @@ function MealActionsMenu({
   const [open, setOpen] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const triggerRef = React.useRef<HTMLButtonElement | null>(null);
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
+    const menuItems = () =>
+      Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
+    menuItems()[0]?.focus();
+
     function onPointerDown(e: PointerEvent) {
       if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
     }
@@ -136,6 +139,23 @@ function MealActionsMenu({
       if (e.key === "Escape") {
         setOpen(false);
         triggerRef.current?.focus();
+        return;
+      }
+      const items = menuItems();
+      if (items.length === 0) return;
+      const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        items[(idx + 1 + items.length) % items.length]?.focus();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        items[(idx - 1 + items.length) % items.length]?.focus();
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        items[0]?.focus();
+      } else if (e.key === "End") {
+        e.preventDefault();
+        items[items.length - 1]?.focus();
       }
     }
     document.addEventListener("pointerdown", onPointerDown);
@@ -169,6 +189,7 @@ function MealActionsMenu({
       </button>
       {open && (
         <div
+          ref={menuRef}
           role="menu"
           aria-label={`${mealName} actions`}
           className="motion-state-enter absolute right-0 top-full z-20 mt-1 w-32 overflow-hidden rounded border"
@@ -235,7 +256,7 @@ interface Props {
   setTrendRange: (r: TrendRange) => void;
   trendsOpen: boolean;
   toggleTrends: () => void;
-  loadTrends: (r: TrendRange) => Promise<void>;
+  retryTrends: () => void;
   onOpenShortcuts: () => void;
 }
 
@@ -279,7 +300,7 @@ export default function FoodTab({
   setTrendRange,
   trendsOpen,
   toggleTrends,
-  loadTrends,
+  retryTrends,
   onOpenShortcuts,
 }: Props) {
   const toast = useToast();
@@ -304,18 +325,16 @@ export default function FoodTab({
   // Grace period before rendering a skeleton: if data arrives within 100ms (typical for
   // local SQLite or cached responses), defer the slide until data is ready so the transition
   // slides directly between complete day views without an abrupt skeleton pop.
-  const [loadingGraceExpired, setLoadingGraceExpired] = React.useState(false);
+  const [graceExpiredForDate, setGraceExpiredForDate] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (loadedDate !== date) {
-      const timer = setTimeout(() => setLoadingGraceExpired(true), 100);
-      return () => clearTimeout(timer);
-    } else {
-      setLoadingGraceExpired(false);
-    }
+    if (loadedDate === date) return;
+    const timer = setTimeout(() => setGraceExpiredForDate(date), 100);
+    return () => clearTimeout(timer);
   }, [date, loadedDate]);
 
   const isDataReady = loadedDate === date;
+  const loadingGraceExpired = !isDataReady && graceExpiredForDate === date;
   // If data is ready or the grace period has elapsed, transition to the selected date.
   // Otherwise, hold the transition on loadedDate so it slides with complete content.
   const activeTransitionKey = (isDataReady || loadingGraceExpired) ? date : (loadedDate ?? date);
@@ -323,10 +342,18 @@ export default function FoodTab({
   const [datePickerOpen, setDatePickerOpen] = React.useState(false);
   const [quickLoggingName, setQuickLoggingName] = React.useState<string | null>(null);
   const quickLoggingRef = React.useRef(false);
+  const composerMealSelectRef = React.useRef<HTMLSelectElement | null>(null);
   const [quickQuery, setQuickQuery] = React.useState("");
   const [quickSearchSeed, setQuickSearchSeed] = React.useState("");
   const [focusQuickSearch, setFocusQuickSearch] = React.useState(false);
   const [pendingQuickAdd, setPendingQuickAdd] = React.useState<Favorite | RecentFood | null>(null);
+  const [prevDate, setPrevDate] = React.useState(date);
+  if (date !== prevDate) {
+    setPrevDate(date);
+    setPendingQuickAdd(null);
+    setQuickSearchSeed("");
+    setFocusQuickSearch(false);
+  }
   const quickMealChooserRef = React.useRef<HTMLDivElement | null>(null);
   const quickFavorites = React.useMemo<QuickItem[]>(() => {
     return favorites.map((food) => ({ kind: "favorite" as const, food }));
@@ -348,12 +375,6 @@ export default function FoodTab({
       : [];
   }, [allQuickItems, quickQuery]);
   const isPastDay = date !== todayStr();
-
-  React.useEffect(() => {
-    setPendingQuickAdd(null);
-    setQuickSearchSeed("");
-    setFocusQuickSearch(false);
-  }, [date]);
 
   React.useLayoutEffect(() => {
     if (!pendingQuickAdd) return;
@@ -418,11 +439,12 @@ export default function FoodTab({
   }
 
   async function requestComposerQuickLog(food: Favorite | RecentFood) {
-    if (isPastDay) {
-      setPendingQuickAdd(food);
+    if (isPastDay && !mealConfirmed) {
+      toast("Choose a meal above before logging", "info");
+      composerMealSelectRef.current?.focus();
       return;
     }
-    await quickLog(food);
+    await quickLog(food, meal);
   }
 
   function chooseQuickAddMeal(targetMeal: Meal) {
@@ -456,6 +478,7 @@ export default function FoodTab({
           return (
             <button
               key={d}
+              type="button"
               onClick={() => setDate(d)}
               aria-pressed={active}
               aria-label={`${prettyDate(d)}${
@@ -512,6 +535,7 @@ export default function FoodTab({
             <span className="num">{clockTime(staleSince)}</span>. An assistant may have logged since.
           </span>
           <button
+            type="button"
             onClick={revalidate}
             disabled={refreshing}
             className="shrink-0 text-2xs font-semibold uppercase tracking-wider text-accent hover:underline disabled:opacity-60"
@@ -529,6 +553,7 @@ export default function FoodTab({
         <div className="flex items-center gap-2">
           {date !== todayStr() && (
             <button
+              type="button"
               onClick={() => setDate(todayStr())}
               className="text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
             >
@@ -549,6 +574,7 @@ export default function FoodTab({
             max={todayStr()}
             aria-label="Show a different day"
             onChange={(e) => {
+              if (!e.target.value) return;
               setDate(e.target.value);
               setDatePickerOpen(false);
             }}
@@ -562,6 +588,7 @@ export default function FoodTab({
             max={todayStr()}
             aria-label="Show a different day"
             onChange={(e) => {
+              if (!e.target.value) return;
               setDate(e.target.value);
               setDatePickerOpen(false);
             }}
@@ -580,6 +607,7 @@ export default function FoodTab({
           </p>
           <p className="mt-1 text-xs text-ink-faint">{dayError}</p>
           <button
+            type="button"
             onClick={() => loadDay(date)}
             className="btn btn-primary mt-3 w-full text-xs"
           >
@@ -596,7 +624,7 @@ export default function FoodTab({
               type="button"
               onClick={() => setShowAdd((open) => !open)}
               aria-expanded={showAdd}
-              aria-controls="food-composer"
+              aria-controls={showAdd ? "food-composer" : undefined}
               aria-label={mealConfirmed
                 ? `${showAdd ? "Close" : "Open"} log food for ${meal}`
                 : `${showAdd ? "Close" : "Open"} log food — choose a meal first`}
@@ -769,6 +797,7 @@ export default function FoodTab({
                 <div className="mb-3 flex items-center justify-between gap-3 border-b pb-2" style={{ borderColor: "var(--line-soft)" }}>
                   <p className="text-2xs uppercase tracking-wider text-ink-faint">Logging to</p>
                   <Select
+                    ref={composerMealSelectRef}
                     value={mealConfirmed ? meal : ""}
                     onChange={(e) => setMeal(e.target.value as Meal)}
                     aria-label="Meal for this food"
@@ -861,6 +890,7 @@ export default function FoodTab({
                   </span>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => goTab("settings")}
                     className="ml-auto text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
                   >
@@ -1087,6 +1117,7 @@ export default function FoodTab({
 
           {/* Weight remains available, but the day’s actual food record comes first. */}
           <WeightCard
+            key={date}
             date={date}
             logs={weightLogs}
             weightUnit={goals.weightUnit || "kg"}
@@ -1096,47 +1127,49 @@ export default function FoodTab({
           {/* Trends & Analysis */}
           <Panel
             title="Trends & Analysis"
-            hint={
-              trends && trends.nutrition.length > 0
-                ? `${trendRange === "all" ? "all" : `${trendRange}d`} · avg ${Math.round(trends.nutrition.filter((d) => d.count > 0).reduce((s, d) => s + d.calories, 0) / (trends.nutrition.filter((d) => d.count > 0).length || 1))} kcal`
-                : undefined
-            }
+            hint={(() => {
+              const logged = trends?.nutrition.filter((d) => d.count > 0) ?? [];
+              if (logged.length === 0) return undefined;
+              const avg = Math.round(
+                logged.reduce((s, d) => s + d.calories, 0) / logged.length,
+              );
+              return `${trendRange === "all" ? "all" : `${trendRange}d`} · avg ${avg} kcal`;
+            })()}
             open={trendsOpen}
             onToggle={toggleTrends}
             bare
           >
-            <div className="pt-2">
-              {trends ? (
-                <TrendsCard
-                  trends={trends}
-                  goals={goals}
-                  range={trendRange}
-                  onRangeChange={(r) => {
-                    setTrendRange(r);
-                    loadTrends(r).catch(() => {});
-                  }}
-                  onSetGoals={() => goTab("settings")}
-                />
-              ) : trendsError ? (
-                <section className="panel p-3 text-center">
+            <div className="pt-2 space-y-2">
+              {trendsError && (
+                <section className="panel p-3 text-center" role="alert">
                   <p className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-                    Trends unavailable
+                    {trends ? "Could not refresh trends" : "Trends unavailable"}
                   </p>
                   <p className="mt-1 text-xs text-ink-faint">{trendsError}</p>
                   <button
-                    onClick={() => loadTrends(trendRange).catch(() => {})}
+                    type="button"
+                    onClick={retryTrends}
                     className="btn btn-primary mt-3 w-full"
                   >
                     Retry
                   </button>
                 </section>
-              ) : (
+              )}
+              {trends ? (
+                <TrendsCard
+                  trends={trends}
+                  goals={goals}
+                  range={trendRange}
+                  onRangeChange={setTrendRange}
+                  onSetGoals={() => goTab("settings")}
+                />
+              ) : !trendsError ? (
                 <section className="panel p-3 text-center">
                   <p className="text-2xs uppercase tracking-wider text-ink-faint">
                     Loading trends…
                   </p>
                 </section>
-              )}
+              ) : null}
             </div>
           </Panel>
         </div>

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
-import { jsonError, unauthorized } from "@/lib/http";
+import { workoutImportSchema } from "@/lib/validation";
+import { jsonError, zodError, unauthorized } from "@/lib/http";
 import { parseMultiWorkoutMarkdown, parseWorkoutNote } from "@/lib/workout-parser";
-import { dayBoundsInTz, zonedWallToUtc } from "@/lib/time";
-import { toKg, isWeightUnit, type WeightUnit } from "@/lib/units";
+import { todayInTz } from "@/lib/time";
+import { isWeightUnit, type WeightUnit } from "@/lib/units";
+import { upsertWorkoutForDay } from "@/lib/services/workouts";
 
 // POST /api/workouts/import
 export async function POST(req: NextRequest) {
@@ -18,37 +20,38 @@ export async function POST(req: NextRequest) {
     return jsonError("Invalid JSON body", 400);
   }
 
-  const payload = body as {
-    markdown?: string;
-    workouts?: Array<{ date: string; title?: string; note: string }>;
-    dryRun?: boolean;
-    overwrite?: boolean;
-  };
+  const validated = workoutImportSchema.safeParse(body);
+  if (!validated.success) return zodError(validated.error);
 
+  const payload = validated.data;
   const userUnit: WeightUnit = isWeightUnit(user.weightUnit) ? user.weightUnit : "kg";
 
-  // Parse workouts from markdown or array
   let itemsToImport: Array<{ date: string; title: string; rawNote: string }> = [];
 
-  if (payload.markdown && typeof payload.markdown === "string") {
-    const parsed = parseMultiWorkoutMarkdown(payload.markdown, userUnit);
+  if (payload.markdown) {
+    const parsed = parseMultiWorkoutMarkdown(
+      payload.markdown,
+      userUnit,
+      todayInTz(user.timezone),
+    );
     itemsToImport = parsed.map((p) => ({
       date: p.date,
       title: p.title,
       rawNote: p.rawNote,
     }));
-  } else if (Array.isArray(payload.workouts)) {
+  } else if (payload.workouts) {
     itemsToImport = payload.workouts.map((w) => ({
       date: w.date,
       title: w.title || "Workout",
       rawNote: w.note,
     }));
-  } else {
-    return jsonError("Must provide either markdown text or a workouts array", 400);
   }
 
   if (itemsToImport.length === 0) {
     return jsonError("No valid workouts found in input", 400);
+  }
+  if (itemsToImport.length > 365) {
+    return jsonError("Cannot import more than 365 workouts at once", 422);
   }
 
   // Pre-parse and calculate stats for preview
@@ -75,107 +78,30 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Commit import to database
-  const results = await prisma.$transaction(async (tx) => {
-    let createdCount = 0;
-    let updatedCount = 0;
+  const overwrite = payload.overwrite !== false;
+  const results = await prisma.$transaction(
+    async (tx) => {
+      let createdCount = 0;
+      let updatedCount = 0;
 
-    for (const item of itemsToImport) {
-      const { start, end } = dayBoundsInTz(item.date, user.timezone);
-      const workoutUtcDate = zonedWallToUtc(item.date, "12:00:00.000", user.timezone);
-      const parsedWorkout = parseWorkoutNote(item.rawNote, userUnit);
-      const resolvedTitle =
-        parsedWorkout.title && parsedWorkout.title !== "Workout"
-          ? parsedWorkout.title
-          : item.title || "Workout";
-
-      let existing = await tx.workout.findFirst({
-        where: {
-          userId: user.id,
-          date: { gte: start, lt: end },
-        },
-      });
-
-      if (!existing) {
-        existing = await tx.workout.create({
-          data: {
-            userId: user.id,
-            date: workoutUtcDate,
-            title: resolvedTitle,
-            rawNote: item.rawNote,
-            notes: parsedWorkout.notes,
-            source: "import",
-          },
+      for (const item of itemsToImport) {
+        const res = await upsertWorkoutForDay(tx, user.id, {
+          date: item.date,
+          title: item.title,
+          rawNote: item.rawNote,
+          source: "import",
+          timezone: user.timezone,
+          defaultUnit: userUnit,
+          overwrite,
         });
-        createdCount++;
-      } else {
-        if (payload.overwrite === false) {
-          continue; // skip existing
-        }
-        await tx.workoutExercise.deleteMany({
-          where: { workoutId: existing.id },
-        });
-        existing = await tx.workout.update({
-          where: { id: existing.id },
-          data: {
-            title: resolvedTitle,
-            rawNote: item.rawNote,
-            notes: parsedWorkout.notes,
-            source: "import",
-            updatedAt: new Date(),
-          },
-        });
-        updatedCount++;
+        if (res.status === "created") createdCount++;
+        else if (res.status === "updated") updatedCount++;
       }
 
-      // Insert exercises and sets
-      for (let i = 0; i < parsedWorkout.exercises.length; i++) {
-        const parsedEx = parsedWorkout.exercises[i];
-
-        const exercise = await tx.exercise.upsert({
-          where: {
-            userId_normalized: {
-              userId: user.id,
-              normalized: parsedEx.normalized,
-            },
-          },
-          update: { name: parsedEx.name },
-          create: {
-            userId: user.id,
-            name: parsedEx.name,
-            normalized: parsedEx.normalized,
-          },
-        });
-
-        const we = await tx.workoutExercise.create({
-          data: {
-            workoutId: existing.id,
-            exerciseId: exercise.id,
-            order: i,
-            notes: parsedEx.notes,
-          },
-        });
-
-        if (parsedEx.sets.length > 0) {
-          await tx.workoutSet.createMany({
-            data: parsedEx.sets.map((s) => ({
-              workoutExerciseId: we.id,
-              setNumber: s.setNumber,
-              weight: toKg(s.weight, s.unit),
-              unit: s.unit,
-              reps: s.reps,
-              isWarmup: s.isWarmup,
-              isBodyweight: s.isBodyweight,
-              rpe: s.rpe,
-              notes: s.notes,
-            })),
-          });
-        }
-      }
-    }
-
-    return { createdCount, updatedCount };
-  });
+      return { createdCount, updatedCount };
+    },
+    { timeout: 30_000 },
+  );
 
   return NextResponse.json({
     ok: true,

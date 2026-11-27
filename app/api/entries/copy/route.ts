@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       quantityUnit: e.quantityUnit,
       // A copy is written by whoever asked for the copy, not by the front door
       // that logged the original.
-      source: e.source,
+      source: "ui",
       consumedAt: timeOfDay(e),
     })),
   });

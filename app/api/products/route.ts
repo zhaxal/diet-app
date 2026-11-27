@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { productSchema } from "@/lib/validation";
 import { jsonError, zodError, unauthorized } from "@/lib/http";
-import { normaliseServing } from "@/lib/units";
+import { ProductServiceError, upsertProduct } from "@/lib/services/products";
 
 // GET /api/products?q= — the user's saved product catalog (per 100 g/ml).
 export async function GET(req: NextRequest) {
@@ -38,25 +38,13 @@ export async function POST(req: NextRequest) {
   const parsed = productSchema.safeParse(body);
   if (!parsed.success) return zodError(parsed.error);
 
-  const { brand, barcode, servingSize, servingUnit, servingGrams, ...rest } = parsed.data;
-  const data = {
-    ...rest,
-    brand: brand ?? null,
-    barcode: barcode ?? null,
-    // A serving is an amount in a unit. `servingGrams` still works and is read
-    // as the product's own base unit, which is what it always meant.
-    ...normaliseServing({ servingSize, servingUnit, servingGrams }, rest.basis),
-  };
-
-  const existing = barcode
-    ? await prisma.product.findFirst({ where: { userId: user.id, barcode } })
-    : await prisma.product.findFirst({
-        where: { userId: user.id, name: data.name, brand: data.brand },
-      });
-
-  const product = existing
-    ? await prisma.product.update({ where: { id: existing.id }, data })
-    : await prisma.product.create({ data: { ...data, userId: user.id } });
-
-  return NextResponse.json({ product }, { status: existing ? 200 : 201 });
+  try {
+    const { product, created } = await upsertProduct(user.id, parsed.data, "manual");
+    return NextResponse.json({ product }, { status: created ? 201 : 200 });
+  } catch (err) {
+    if (err instanceof ProductServiceError) {
+      return jsonError(err.message, err.status);
+    }
+    throw err;
+  }
 }

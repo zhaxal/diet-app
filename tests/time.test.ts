@@ -2,9 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   dayBoundsInTz,
+  isValidCalendarDate,
   isValidTimeZone,
   localDateInTz,
   localTimeInTz,
+  shiftCalendarDate,
   zonedWallToUtc,
 } from "../lib/time";
 
@@ -92,4 +94,23 @@ test("only real IANA zone names are accepted", () => {
   assert.equal(isValidTimeZone("Asia/Tokyo"), true);
   assert.equal(isValidTimeZone("Mars/Olympus_Mons"), false);
   assert.equal(isValidTimeZone(""), false);
+});
+
+test("isValidCalendarDate rejects impossible dates like Feb 30", () => {
+  assert.equal(isValidCalendarDate("2024-02-29"), true);
+  assert.equal(isValidCalendarDate("2026-02-29"), false);
+  assert.equal(isValidCalendarDate("2026-02-30"), false);
+  assert.equal(isValidCalendarDate("2026-13-01"), false);
+  assert.equal(isValidCalendarDate("2026-1-1"), false);
+});
+
+test("shiftCalendarDate shifts across month and year boundaries safely", () => {
+  assert.equal(shiftCalendarDate("2026-03-01", -1), "2026-02-28");
+  assert.equal(shiftCalendarDate("2024-03-01", -1), "2024-02-29");
+  assert.equal(shiftCalendarDate("2026-12-31", 1), "2027-01-01");
+});
+
+test("zonedWallToUtc preserves sub-second precision across millisecond instants", () => {
+  const utc = zonedWallToUtc("2026-07-01", "12:34:56.789", "Asia/Tokyo");
+  assert.equal(utc.toISOString(), "2026-07-01T03:34:56.789Z");
 });

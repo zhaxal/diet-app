@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { Moon, Sun, type LucideIcon } from "lucide-react";
 
 type Theme = "light" | "dark";
@@ -9,15 +9,32 @@ type Theme = "light" | "dark";
 // same two glyphs at a slightly different weight to the nav's.
 const ICONS: Record<Theme, LucideIcon> = { light: Sun, dark: Moon };
 
-export default function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("light");
+const themeListeners = new Set<() => void>();
 
-  useEffect(() => {
-    setTheme(document.documentElement.classList.contains("dark") ? "dark" : "light");
-  }, []);
+function subscribeTheme(cb: () => void) {
+  themeListeners.add(cb);
+  return () => {
+    themeListeners.delete(cb);
+  };
+}
+
+function getThemeSnapshot(): Theme {
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}
+
+function getServerThemeSnapshot(): Theme {
+  return "light";
+}
+
+export default function ThemeToggle() {
+  const theme = useSyncExternalStore(
+    subscribeTheme,
+    getThemeSnapshot,
+    getServerThemeSnapshot,
+  );
 
   function apply(next: Theme) {
-    setTheme(next);
     document.documentElement.classList.toggle("dark", next === "dark");
     // The iOS status bar strip is painted from theme-color, so it has to move
     // with the theme or it sits as a black band above a light page.
@@ -29,6 +46,7 @@ export default function ThemeToggle() {
     } catch {
       // ignore
     }
+    for (const listener of themeListeners) listener();
   }
 
   return (
@@ -44,6 +62,7 @@ export default function ThemeToggle() {
         return (
           <button
             key={t}
+            type="button"
             onClick={() => apply(t)}
             aria-pressed={active}
             className="motion-segment flex items-center gap-1.5 border-r px-2.5 py-1 text-2xs font-semibold uppercase tracking-wider transition-colors last:border-r-0"

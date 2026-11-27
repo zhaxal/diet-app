@@ -1,13 +1,13 @@
 import { z } from "zod";
-import { isValidTimeZone } from "./time";
+import { isValidCalendarDate, isValidTimeZone } from "./time";
 import { QUANTITY_UNITS, SERVING_UNITS, WEIGHT_UNITS } from "./units";
 
 export const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
 export type MealType = (typeof MEAL_TYPES)[number];
 
 export const credentialsSchema = z.object({
-  email: z.string().email("A valid email is required"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  email: z.string().email("A valid email is required").max(254),
+  password: z.string().min(8, "Password must be at least 8 characters").max(200),
 });
 
 export const changePasswordSchema = z
@@ -82,7 +82,8 @@ export const updateEntrySchema = z
 // YYYY-MM-DD date filter used by the list and summary endpoints.
 export const dateQuerySchema = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format");
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
+  .refine(isValidCalendarDate, "Date must be a valid calendar date");
 
 export type CreateEntryInput = z.infer<typeof createEntrySchema>;
 export type UpdateEntryInput = z.infer<typeof updateEntrySchema>;
@@ -149,7 +150,10 @@ export const templateItemSchema = z.object({
 
 export const templateSchema = z.object({
   name: z.string().min(1).max(200),
-  items: z.array(templateItemSchema).min(1, "A template needs at least one item"),
+  items: z
+    .array(templateItemSchema)
+    .min(1, "A template needs at least one item")
+    .max(100, "A template may have at most 100 items"),
 });
 
 export const copyDaySchema = z.object({
@@ -168,27 +172,39 @@ export type TemplateInput = z.infer<typeof templateSchema>;
 export type TemplateItem = z.infer<typeof templateItemSchema>;
 
 // ── Products ──────────────────────────────────────────────────────────────
-// Reference nutrition data, stored per 100 g/ml. `coerce` is deliberate: the
-// MCP path receives numbers read off a photographed label, where a model may
-// send "250" or even "250 kcal" rather than 250.
-const per100 = () => z.coerce.number().min(0).max(1000000).optional().default(0);
+// Reference nutrition data, stored per 100 g/ml. Numeric strings from label OCR
+// (e.g. "250") are accepted, while empty strings, null, and booleans are not.
+function parseStrictNumber(v: unknown): unknown {
+  if (typeof v === "string") {
+    const trimmed = v.trim();
+    if (trimmed === "") return Number.NaN;
+    return Number(trimmed);
+  }
+  if (typeof v === "boolean") return Number.NaN;
+  return v;
+}
+
+const strictNum = (schema: z.ZodNumber) => z.preprocess(parseStrictNumber, schema);
+
+const per100 = () =>
+  strictNum(z.number().finite().min(0).max(1000000)).optional().default(0);
 
 export const productSchema = z.object({
   name: z.string().min(1, "Product name is required").max(200),
   brand: z.string().max(200).nullable().optional(),
   barcode: z.string().max(64).nullable().optional(),
   basis: z.enum(["100g", "100ml"]).optional().default("100g"),
-  calories: z.coerce.number().min(0).max(100000),
+  calories: strictNum(z.number().finite().min(0).max(100000)),
   protein: per100(),
   carbs: per100(),
   fat: per100(),
   fiber: per100(),
   sugar: per100(),
   sodium: per100(), // mg
-  servingSize: z.coerce.number().positive().max(100000).nullable().optional(),
+  servingSize: strictNum(z.number().finite().positive().max(100000)).nullable().optional(),
   servingUnit: z.enum(SERVING_UNITS).nullable().optional(),
   /** @deprecated Accepted for older callers; normalised to servingSize + base unit. */
-  servingGrams: z.coerce.number().positive().max(100000).nullable().optional(),
+  servingGrams: strictNum(z.number().finite().positive().max(100000)).nullable().optional(),
 });
 
 export const updateProductSchema = productSchema.partial().refine(
@@ -199,8 +215,29 @@ export const updateProductSchema = productSchema.partial().refine(
 export type ProductInput = z.infer<typeof productSchema>;
 
 export const workoutInputSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
+  date: dateQuerySchema,
   title: z.string().max(200).optional().default("Workout"),
-  rawNote: z.string(),
-  source: z.enum(["ui", "mcp"]).optional().default("ui"),
+  rawNote: z.string().max(50_000),
+  source: z.enum(["ui", "mcp"]).optional(),
 });
+
+export const workoutImportSchema = z
+  .object({
+    markdown: z.string().max(500_000).optional(),
+    workouts: z
+      .array(
+        z.object({
+          date: dateQuerySchema,
+          title: z.string().max(200).optional(),
+          note: z.string().max(50_000),
+        }),
+      )
+      .max(365)
+      .optional(),
+    dryRun: z.boolean().optional(),
+    overwrite: z.boolean().optional(),
+  })
+  .refine(
+    (d) => Boolean(d.markdown?.trim()) || Boolean(d.workouts && d.workouts.length > 0),
+    { message: "Provide markdown or workouts to import" },
+  );

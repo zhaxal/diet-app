@@ -19,6 +19,9 @@ const KEY = "diet.copied.v1";
 /** Deep enough to be useful, shallow enough that the tray stays scannable. */
 const LIMIT = 12;
 
+// Session fallback when localStorage is unavailable (private mode / full quota).
+let memoryTray: Tray | null = null;
+
 export interface CopiedItem extends Macros {
   /** Stable across re-renders and unique within the tray. */
   key: string;
@@ -43,21 +46,22 @@ interface Tray {
 function read(): Tray | null {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
+    if (!raw) return memoryTray;
     const tray = JSON.parse(raw) as Tray;
     if (!tray?.userId || !Array.isArray(tray.items)) return null;
+    memoryTray = tray;
     return tray;
   } catch {
-    return null;
+    return memoryTray;
   }
 }
 
 function write(tray: Tray): void {
+  memoryTray = tray;
   try {
     localStorage.setItem(KEY, JSON.stringify(tray));
   } catch {
-    // Private mode or a full quota. The tray is a convenience; failing to
-    // persist it must not break the copy that produced it.
+    // Private mode or a full quota. Keep the in-memory copy for this session.
   }
 }
 
@@ -101,15 +105,12 @@ export function addManyToTray(
   incoming: Omit<CopiedItem, "key" | "at">[],
 ): CopiedItem[] {
   let items = readTray(userId);
-  for (const item of incoming) {
-    const next: CopiedItem = {
-      ...item,
-      key: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-      at: Date.now(),
-    };
-    items = [next, ...items.filter((i) => !sameThing(i, next))];
-  }
-  items = items.slice(0, LIMIT);
+  const batch: CopiedItem[] = incoming.map((item) => ({
+    ...item,
+    key: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    at: Date.now(),
+  }));
+  items = [...batch, ...items.filter((i) => !batch.some((b) => sameThing(i, b)))].slice(0, LIMIT);
   write({ userId, items });
   return items;
 }
@@ -121,6 +122,7 @@ export function removeFromTray(userId: string, key: string): CopiedItem[] {
 }
 
 export function clearTray(): void {
+  memoryTray = null;
   try {
     localStorage.removeItem(KEY);
   } catch {

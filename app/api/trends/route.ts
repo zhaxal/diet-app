@@ -2,24 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { jsonError, unauthorized } from "@/lib/http";
-import { dayBoundsInTz, localDateInTz, todayInTz } from "@/lib/time";
-
-/**
- * A window has to be describable two ways, because two callers ask for it
- * differently. Trends asks "the last 90 days" and does not know what day it is;
- * the week strip asks for seven named days that may sit anywhere in the past.
- * `from`/`to` wins when both are given.
- */
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+import {
+  dayBoundsInTz,
+  isValidCalendarDate,
+  localDateInTz,
+  shiftCalendarDate,
+  todayInTz,
+} from "@/lib/time";
+import { BODY_WEIGHT_DECIMALS, fromKg, isWeightUnit, type WeightUnit } from "@/lib/units";
 
 /** Ten years. Not a product limit — a guard against a malformed `from`. */
 const MAX_SPAN_DAYS = 3660;
-
-function shift(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00.000Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
 
 function daysBetween(from: string, to: string): number {
   const a = Date.parse(`${from}T00:00:00.000Z`);
@@ -42,8 +35,12 @@ export async function GET(req: NextRequest) {
   let to: string;
 
   if (fromParam || toParam) {
-    if (!fromParam || !DATE_RE.test(fromParam) || (toParam && !DATE_RE.test(toParam))) {
-      return jsonError("from and to must be YYYY-MM-DD dates", 422);
+    if (
+      !fromParam ||
+      !isValidCalendarDate(fromParam) ||
+      (toParam && !isValidCalendarDate(toParam))
+    ) {
+      return jsonError("from and to must be valid YYYY-MM-DD calendar dates", 422);
     }
     from = fromParam;
     to = toParam ?? today;
@@ -69,19 +66,22 @@ export async function GET(req: NextRequest) {
     ].filter((d): d is string => d !== null);
     from = candidates.length ? candidates.sort()[0] : today;
     to = today;
+    if (from > to) from = to;
   } else {
     const n = Number(daysParam);
     const days = Number.isInteger(n) && n >= 1 && n <= MAX_SPAN_DAYS ? n : 30;
     to = today;
-    from = shift(to, -(days - 1));
+    from = shiftCalendarDate(to, -(days - 1));
   }
 
   // A `from` far enough back to be a mistake is clamped rather than refused:
   // the caller still gets a real window, and the response says which one.
-  if (daysBetween(from, to) > MAX_SPAN_DAYS) from = shift(to, -(MAX_SPAN_DAYS - 1));
+  if (daysBetween(from, to) > MAX_SPAN_DAYS) {
+    from = shiftCalendarDate(to, -(MAX_SPAN_DAYS - 1));
+  }
 
   const dates: string[] = [];
-  for (let d = from; d <= to; d = shift(d, 1)) dates.push(d);
+  for (let d = from; d <= to; d = shiftCalendarDate(d, 1)) dates.push(d);
 
   // Query window: local start of the first day → local end of the last, as UTC
   // instants.
@@ -151,10 +151,16 @@ export async function GET(req: NextRequest) {
 
   const nutrition = dates.map((date) => ({ date, ...byDate[date] }));
 
-  // Last weight per local day in the range.
+  const displayUnit: WeightUnit = isWeightUnit(user.weightUnit) ? user.weightUnit : "kg";
+
+  // Last weight per local day in the range, converted to the account's display unit.
   const weightByDate: Record<string, number> = {};
   for (const w of weightLogs) {
-    weightByDate[localDateInTz(w.loggedAt, tz)] = w.weight;
+    weightByDate[localDateInTz(w.loggedAt, tz)] = fromKg(
+      w.weight,
+      displayUnit,
+      BODY_WEIGHT_DECIMALS,
+    );
   }
   const weight = Object.entries(weightByDate)
     .map(([date, value]) => ({ date, value }))

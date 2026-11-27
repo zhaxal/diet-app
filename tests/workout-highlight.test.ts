@@ -146,3 +146,10 @@ test("reads lb notes in lb", () => {
   assert.equal(typeOf(set, "lbs"), "unit");
   assert.equal(typeOf(set, "5"), "reps");
 });
+
+test("does not split words containing x like max or box as set separators", () => {
+  const lines = highlightWorkoutNote("Box 24 Jump\n- max 5", "kg");
+  assert.equal(textOf(lines[0]), "Box 24 Jump");
+  assert.equal(typeOf(lines[0], "Box 24 Jump"), "exercise");
+  assert.equal(typeOf(lines[1], "x"), undefined);
+});

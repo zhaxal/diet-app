@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,10 +18,18 @@ import { DatabaseSync } from "node:sqlite";
 // it is used: as a separate process, against real SQLite files on disk.
 
 const REAL_MIGRATIONS = join(process.cwd(), "prisma", "migrations");
+const tempDirs: string[] = [];
+
+after(() => {
+  for (const d of tempDirs) {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
 
 /** A fully migrated database in its own directory, as a deployed volume would hold. */
 function volume() {
   const dir = mkdtempSync(join(tmpdir(), "rationd-backup-"));
+  tempDirs.push(dir);
   const db = join(dir, "diet.db");
   copyFileSync(process.env.TEST_DB_TEMPLATE as string, db);
   return { dir, db, backups: join(dir, "backups") };
@@ -29,6 +38,7 @@ function volume() {
 /** The real migrations plus one the database has never seen. */
 function migrationsWithOnePending() {
   const dir = mkdtempSync(join(tmpdir(), "rationd-migrations-"));
+  tempDirs.push(dir);
   for (const name of readdirSync(REAL_MIGRATIONS, { withFileTypes: true })) {
     if (name.isDirectory()) mkdirSync(join(dir, name.name));
   }
@@ -92,6 +102,7 @@ test("only the five newest snapshots are kept", () => {
 
 test("a fresh install with no database yet is left alone", () => {
   const dir = mkdtempSync(join(tmpdir(), "rationd-backup-"));
+  tempDirs.push(dir);
   const res = run({ DATABASE_URL: `file:${join(dir, "diet.db")}`, MIGRATIONS_DIR: REAL_MIGRATIONS });
   assert.equal(res.status, 0, res.output);
   assert.deepEqual(readdirSync(dir), []);
@@ -117,4 +128,29 @@ test("start-up stops if a needed snapshot cannot be written", () => {
     SKIP_DB_BACKUP: "1",
   });
   assert.equal(skipped.status, 0, skipped.output);
+});
+
+test("numeric collision suffixes sort after earlier suffixes and leave no .tmp files", () => {
+  const v = volume();
+  mkdirSync(v.backups);
+  const existing = [
+    "diet-20260101-000000.db",
+    "diet-20260101-000000-2.db",
+    "diet-20260101-000000-3.db",
+    "diet-20260101-000000-9.db",
+    "diet-20260101-000000-10.db",
+    "diet-20260101-000000-11.db",
+  ];
+  for (const name of existing) writeFileSync(join(v.backups, name), "old snapshot");
+
+  const res = run({ DATABASE_URL: `file:${v.db}`, MIGRATIONS_DIR: migrationsWithOnePending() });
+  assert.equal(res.status, 0, res.output);
+
+  const kept = snapshots(v.backups);
+  assert.equal(kept.some((n) => n.includes(".tmp.")), false);
+  // -9, -10, -11, -3 kept along with the new snapshot; base and -2 pruned (numeric, not lexicographic!)
+  assert.equal(kept.includes("diet-20260101-000000.db"), false);
+  assert.equal(kept.includes("diet-20260101-000000-2.db"), false);
+  assert.equal(kept.includes("diet-20260101-000000-10.db"), true);
+  assert.equal(kept.includes("diet-20260101-000000-11.db"), true);
 });

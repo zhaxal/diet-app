@@ -23,22 +23,40 @@ export default function WorkoutSummaryCard({
   refreshTrigger = 0,
 }: WorkoutSummaryCardProps) {
   const [data, setData] = useState<SummaryData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadSeq, setReloadSeq] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     api
       .getWorkoutSummary(30)
       .then((res) => {
-        if (!cancelled && res.summary) {
-          setData(res.summary);
+        if (!cancelled) {
+          setError(null);
+          if (res.summary) setData(res.summary);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load training summary");
+        }
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [refreshTrigger]);
+  }, [refreshTrigger, weightUnit, reloadSeq]);
+
+  if (error && !data) {
+    return (
+      <div className="panel p-3 mb-3 flex items-center justify-between text-xs text-ink-dim" role="alert">
+        <span>{error}</span>
+        <button type="button" onClick={() => setReloadSeq((n) => n + 1)} className="btn btn-ghost text-2xs">
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (!data || data.totalWorkouts === 0) {
     return null;

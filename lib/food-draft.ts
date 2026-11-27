@@ -21,19 +21,30 @@ const draftSchema = z.object({
   meal: z.enum(["breakfast", "lunch", "dinner", "snack"]).nullable(),
 });
 export type FoodDraft = z.infer<typeof draftSchema>;
-const storeSchema = z.object({ userId: z.string(), days: z.record(draftSchema) });
-type DraftStore = z.infer<typeof storeSchema>;
+type DraftStore = { userId: string; days: Record<string, FoodDraft> };
 const KEY = "diet.food-drafts.v1";
+const MAX_DAYS = 14;
 // Also retain drafts for the current session when browser storage is unavailable.
 let memory: DraftStore | null = null;
 
 function readStore(): DraftStore | null {
-  if (memory) return memory;
   try {
-    const parsed = storeSchema.safeParse(JSON.parse(localStorage.getItem(KEY) ?? "null"));
-    memory = parsed.success ? parsed.data : null;
-  } catch { /* malformed or unavailable storage is not a broken form */ }
-  return memory;
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw) as { userId?: unknown; days?: unknown } | null;
+    if (!obj || typeof obj.userId !== "string" || !obj.days || typeof obj.days !== "object") {
+      return null;
+    }
+    const validDays: Record<string, FoodDraft> = {};
+    for (const [k, v] of Object.entries(obj.days as Record<string, unknown>)) {
+      const parsed = draftSchema.safeParse(v);
+      if (parsed.success) validDays[k] = parsed.data;
+    }
+    memory = { userId: obj.userId, days: validDays };
+    return memory;
+  } catch {
+    return memory;
+  }
 }
 
 export function readFoodDraft(userId: string, date: string): FoodDraft | null {
@@ -46,6 +57,11 @@ export function writeFoodDraft(userId: string, date: string, draft: FoodDraft | 
   const days = previous?.userId === userId ? { ...previous.days } : {};
   if (draft) days[date] = draft;
   else delete days[date];
+  const keys = Object.keys(days).sort();
+  while (keys.length > MAX_DAYS) {
+    const oldest = keys.shift();
+    if (oldest) delete days[oldest];
+  }
   memory = { userId, days };
   try { localStorage.setItem(KEY, JSON.stringify(memory)); } catch { /* keep session draft */ }
 }

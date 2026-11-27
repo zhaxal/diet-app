@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { type Goals, type Meal, type TrendDay, type TrendRange, type Trends } from "@/lib/api-client";
+import { MEALS, type Goals, type TrendDay, type TrendRange, type Trends } from "@/lib/api-client";
 import { BarChart, LineChart } from "./MiniChart";
 import { Meter, MeterFill } from "./Meter";
 
@@ -18,8 +18,6 @@ const METRICS = ["calories", "protein", "weight"] as const;
 type Metric = (typeof METRICS)[number];
 
 const RANGES: readonly TrendRange[] = [7, 30, 90, "all"];
-
-const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
 
 type NutrientKey = "protein" | "carbs" | "fat" | "fiber" | "sugar" | "sodium";
 
@@ -60,6 +58,7 @@ function Segmented<T extends string | number>({
         return (
           <button
             key={String(o)}
+            type="button"
             onClick={() => onChange(o)}
             aria-pressed={active}
             className={`motion-segment ${grow ? "flex-1" : ""} border-r px-2.5 py-1 text-2xs font-semibold uppercase tracking-wider transition-colors last:border-r-0`}
@@ -371,6 +370,7 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
               No calorie goal set, so there is nothing to measure these days against.
             </p>
             <button
+              type="button"
               onClick={onSetGoals}
               className="mt-2 text-2xs font-semibold uppercase tracking-wider text-accent hover:underline"
             >
@@ -453,8 +453,15 @@ export default function TrendsCard({ trends, goals, range, onRangeChange, onSetG
  */
 function Adherence({ days, goal }: { days: TrendDay[]; goal: number }) {
   const scroller = useRef<HTMLDivElement | null>(null);
-  const [inspectDay, setInspectDay] = useState<TrendDay | null>(null);
+  const cellRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const [inspectDate, setInspectDate] = useState<string | null>(null);
+  const [focusedIndex, setFocusedIndex] = useState<number>(days.length - 1);
   const folded = days.length > 31;
+
+  const activeInspectDay = inspectDate
+    ? days.find((d) => d.date === inspectDate) ?? null
+    : null;
+  const activeFocusIdx = Math.min(Math.max(0, focusedIndex), Math.max(0, days.length - 1));
 
   // The most recent week is the one worth seeing first.
   useEffect(() => {
@@ -473,32 +480,48 @@ function Adherence({ days, goal }: { days: TrendDay[]; goal: number }) {
   const over = days.filter((d) => d.count > 0 && d.calories > goal).length;
   const label = `${inRange} days in range, ${over} over, ${days.length - inRange - over} never logged`;
 
-  const inspector = inspectDay && (
+  function handleCalendarKeyDown(e: React.KeyboardEvent, idx: number) {
+    let nextIdx: number | null = null;
+    if (e.key === "ArrowRight") nextIdx = Math.min(days.length - 1, idx + 7);
+    else if (e.key === "ArrowLeft") nextIdx = Math.max(0, idx - 7);
+    else if (e.key === "ArrowDown") nextIdx = Math.min(days.length - 1, idx + 1);
+    else if (e.key === "ArrowUp") nextIdx = Math.max(0, idx - 1);
+    else if (e.key === "Home") nextIdx = 0;
+    else if (e.key === "End") nextIdx = days.length - 1;
+    if (nextIdx !== null && nextIdx !== idx) {
+      e.preventDefault();
+      setFocusedIndex(nextIdx);
+      cellRefs.current[nextIdx]?.focus();
+    }
+  }
+
+  const inspector = activeInspectDay && (
     <div
+      aria-live="polite"
       className="mt-2 flex items-center justify-between rounded border px-2 py-1 text-2xs"
       style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}
     >
-      <span className="num font-semibold text-ink">{inspectDay.date}</span>
+      <span className="num font-semibold text-ink">{activeInspectDay.date}</span>
       <span className="num text-ink-dim">
-        {inspectDay.count === 0 ? (
+        {activeInspectDay.count === 0 ? (
           <span className="text-ink-faint">Nothing logged</span>
         ) : (
           <>
-            {Math.round(inspectDay.calories)} / {goal} kcal{" "}
+            {Math.round(activeInspectDay.calories)} / {goal} kcal{" "}
             <span
               className="font-semibold uppercase tracking-wider"
               style={{
-                color: inspectDay.calories > goal ? "var(--over)" : "var(--accent)",
+                color: activeInspectDay.calories > goal ? "var(--over)" : "var(--accent)",
               }}
             >
-              · {inspectDay.calories > goal ? "over" : "in range"}
+              · {activeInspectDay.calories > goal ? "over" : "in range"}
             </span>
           </>
         )}
       </span>
       <button
         type="button"
-        onClick={() => setInspectDay(null)}
+        onClick={() => setInspectDate(null)}
         className="text-ink-faint hover:text-ink -mr-0.5 px-1 font-mono text-xs leading-none"
         aria-label="Dismiss inspection"
       >
@@ -512,12 +535,12 @@ function Adherence({ days, goal }: { days: TrendDay[]; goal: number }) {
       <div className="mt-2">
         <div className="flex gap-px" role="region" aria-label={label}>
           {days.map((d) => {
-            const isSelected = inspectDay?.date === d.date;
+            const isSelected = activeInspectDay?.date === d.date;
             return (
               <button
                 key={d.date}
                 type="button"
-                onClick={() => setInspectDay((cur) => (cur?.date === d.date ? null : d))}
+                onClick={() => setInspectDate((cur) => (cur === d.date ? null : d.date))}
                 title={title(d)}
                 aria-label={title(d)}
                 aria-pressed={isSelected}
@@ -567,13 +590,19 @@ function Adherence({ days, goal }: { days: TrendDay[]; goal: number }) {
             {Array.from({ length: lead }, (_, i) => (
               <div key={`pad${i}`} className="h-2 w-2" />
             ))}
-            {days.map((d) => {
-              const isSelected = inspectDay?.date === d.date;
+            {days.map((d, idx) => {
+              const isSelected = activeInspectDay?.date === d.date;
               return (
                 <button
                   key={d.date}
+                  ref={(el) => {
+                    cellRefs.current[idx] = el;
+                  }}
                   type="button"
-                  onClick={() => setInspectDay((cur) => (cur?.date === d.date ? null : d))}
+                  tabIndex={idx === activeFocusIdx ? 0 : -1}
+                  onFocus={() => setFocusedIndex(idx)}
+                  onKeyDown={(e) => handleCalendarKeyDown(e, idx)}
+                  onClick={() => setInspectDate((cur) => (cur === d.date ? null : d.date))}
                   title={title(d)}
                   aria-label={title(d)}
                   aria-pressed={isSelected}

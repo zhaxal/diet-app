@@ -13,12 +13,14 @@ export function createLatestRequest(getSelection: () => string) {
       if (selection !== getSelection()) return;
       const request = ++revision;
       const current = () => request === revision && selection === getSelection();
+      let result: T;
       try {
-        const result = await read();
-        if (current()) commit(result);
+        result = await read();
       } catch (error) {
         if (current()) fail(error);
+        return;
       }
+      if (current()) commit(result);
     },
   };
 }

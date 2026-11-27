@@ -28,8 +28,7 @@ interface Props {
   confirmingRegenerate: boolean;
   setConfirmingRegenerate: (c: boolean) => void;
   exporting: string | null;
-  downloadExport: (fmt: "json" | "csv") => Promise<void>;
-  date: string;
+  downloadExport: (fmt: "json" | "csv" | "vault") => Promise<void>;
   onOpenWorkoutImport: () => void;
   onOpenShortcuts: () => void;
   logout: () => Promise<void>;
@@ -51,7 +50,6 @@ export default function SettingsTab({
   setConfirmingRegenerate,
   exporting,
   downloadExport,
-  date,
   onOpenWorkoutImport,
   onOpenShortcuts,
   logout,
@@ -121,13 +119,14 @@ export default function SettingsTab({
             {displayedMcpUrl}
           </code>
           <button
+            type="button"
             onClick={() => setUrlRevealed((shown) => !shown)}
             disabled={!mcpUrl}
             className="btn btn-ghost shrink-0"
           >
             {urlRevealed ? "Hide" : "Reveal"}
           </button>
-          <button onClick={copyUrl} disabled={!mcpUrl} className="btn btn-primary shrink-0">
+          <button type="button" onClick={copyUrl} disabled={!mcpUrl} className="btn btn-primary shrink-0">
             {urlCopied ? "✓" : "Copy"}
           </button>
         </div>
@@ -203,6 +202,7 @@ export default function SettingsTab({
           </span>
           <div className="grid grid-cols-3 gap-1.5">
             <button
+              type="button"
               onClick={() => downloadExport("json")}
               disabled={exporting !== null}
               className="btn btn-ghost text-center text-2xs"
@@ -210,19 +210,21 @@ export default function SettingsTab({
               {exporting === "json" ? "Preparing…" : "JSON Backup"}
             </button>
             <button
+              type="button"
               onClick={() => downloadExport("csv")}
               disabled={exporting !== null}
               className="btn btn-ghost text-center text-2xs"
             >
               {exporting === "csv" ? "Preparing…" : "CSV Entries"}
             </button>
-            <a
-              href="/api/workouts/export?format=markdown"
-              download={`workouts-vault-${date}.md`}
-              className="btn btn-ghost text-center text-2xs flex items-center justify-center"
+            <button
+              type="button"
+              onClick={() => downloadExport("vault")}
+              disabled={exporting !== null}
+              className="btn btn-ghost text-center text-2xs"
             >
-              Vault (.md)
-            </a>
+              {exporting === "vault" ? "Preparing…" : "Vault (.md)"}
+            </button>
           </div>
         </div>
 
@@ -286,7 +288,7 @@ export default function SettingsTab({
 
       <div className="mt-3 flex items-center justify-between">
         <Link href="/api-docs" className="text-2xs text-ink-dim underline hover:text-ink">API docs ↗</Link>
-        <button onClick={logout} className="btn btn-ghost">Log out</button>
+        <button type="button" onClick={logout} className="btn btn-ghost">Log out</button>
       </div>
     </>
   );

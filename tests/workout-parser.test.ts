@@ -299,4 +299,71 @@ test("calculateSessionStats calculates volume, sets, and reps correctly excludin
   assert.equal(stats.exerciseCount, 1);
 });
 
+test("parser handles kgs, false-positive prose, w/ non-warmup, body weight, and sanity cap", () => {
+  const note = `# Rehab & Conditioning
+
+Box 24 Jump
+- body weight x 12
+- 20kg x 10 w/ vest // not warmup
+
+Max 5 Effort
+- 100kgs x 3
+- approx 10 mins
+- 9999kg x 1
+
+Seated Cable Row
+- -15kg x 10
+1. pause at chest
+`;
+  const parsed = parseWorkoutNote(note, "kg");
+  const box = parsed.exercises.find((e) => e.name === "Box 24 Jump");
+  assert.ok(box);
+  assert.equal(box.sets.length, 2);
+  assert.equal(box.sets[0].isBodyweight, true);
+  assert.equal(box.sets[1].isWarmup, false);
+
+  const maxEffort = parsed.exercises.find((e) => e.name === "Max 5 Effort");
+  assert.ok(maxEffort);
+  assert.equal(maxEffort.sets.length, 1);
+  assert.equal(maxEffort.sets[0].weight, 100);
+  assert.equal(maxEffort.sets[0].reps, 3);
+
+  const row = parsed.exercises.find((e) => e.name === "Seated Cable Row");
+  assert.ok(row);
+  assert.equal(row.sets.length, 1);
+  assert.match(row.notes ?? "", /pause at chest/);
+
+  // Negative assisted weight clamps to 0 for volume, and lb conversion works.
+  const statsLb = calculateSessionStats(parsed.exercises, "lb");
+  assert.equal(statsLb.totalVolume > 0, true);
+  const assistedStats = calculateSessionStats(
+    [{ sets: [{ weight: -20, unit: "kg", reps: 10, isWarmup: false }] }],
+    "kg",
+  );
+  assert.equal(assistedStats.totalVolume, 0);
+});
+
+test("parseMultiWorkoutMarkdown ignores export preamble, dividers, and invalid dates", () => {
+  const md = `# Workout Vault Export
+Generated on 2026-09-20. Total workouts: 1.
+
+---
+
+## 2026-02-30 · Invalid Day
+Bench Press
+- 80kg x 5
+
+---
+
+## 2026-09-12 · Valid Session
+Overhead Press (OHP)
+- 50kg x 8, 8
+`;
+  const sessions = parseMultiWorkoutMarkdown(md, "kg");
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].date, "2026-09-12");
+  assert.equal(sessions[0].title, "Valid Session");
+  assert.equal(sessions[0].parsed.exercises[0].sets.length, 2);
+});
+
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { unauthorized } from "@/lib/http";
+import { localDateInTz } from "@/lib/time";
 import { fromKg, isWeightUnit, type WeightUnit } from "@/lib/units";
 
 // GET /api/workouts/dates
@@ -40,14 +41,14 @@ export async function GET(req: NextRequest) {
       for (const s of e.sets) {
         if (!s.isWarmup) {
           setsCount++;
-          volumeKg += s.weight * s.reps;
+          volumeKg += Math.max(0, s.weight) * s.reps;
         }
       }
     }
 
     return {
       id: w.id,
-      date: w.date.toISOString().slice(0, 10),
+      date: localDateInTz(w.date, user.timezone),
       title: w.title || "Workout",
       setsCount,
       volume: fromKg(volumeKg, displayUnit),

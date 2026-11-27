@@ -51,11 +51,14 @@ export default function WeightCard({ date, logs, weightUnit, onLogsChange }: Pro
     setSaving(true);
     try {
       const timestamp = date === todayStr() ? undefined : `${date}T12:00:00.000Z`;
-      if (dayLog && isEditing) {
-        await api.deleteWeight(dayLog.id).catch(() => {});
-      }
+      const replacedId = dayLog && isEditing ? dayLog.id : null;
+      // Create the replacement before removing the old row so a failed save
+      // never permanently deletes the existing reading.
       const { log } = await api.logWeight(Number(weight), timestamp);
-      const remaining = dayLog && isEditing ? logs.filter((l) => l.id !== dayLog.id) : logs;
+      if (replacedId) {
+        await api.deleteWeight(replacedId).catch(() => {});
+      }
+      const remaining = replacedId ? logs.filter((l) => l.id !== replacedId) : logs;
       const nextLogs = [...remaining, log].sort(
         (a, b) => new Date(a.loggedAt).getTime() - new Date(b.loggedAt).getTime(),
       );
@@ -78,7 +81,8 @@ export default function WeightCard({ date, logs, weightUnit, onLogsChange }: Pro
         label: "Undo",
         onAct: async () => {
           await api.logWeight(doomed.weightKg, doomed.loggedAt, "kg");
-          await api.listWeight().then(({ logs: fresh }) => onLogsChange(fresh)).catch(() => {});
+          const { logs: fresh } = await api.listWeight();
+          onLogsChange(fresh);
         },
       });
     } catch (err) {
@@ -170,7 +174,7 @@ export default function WeightCard({ date, logs, weightUnit, onLogsChange }: Pro
               type="number"
               step="any"
               min={0}
-              max={1000}
+              max={weightUnit === "lb" ? 2204 : 1000}
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
               placeholder={latest ? String(latest.weight) : "0.0"}
@@ -238,6 +242,7 @@ export default function WeightCard({ date, logs, weightUnit, onLogsChange }: Pro
                   {l.weight} {weightUnit}
                 </span>
                 <button
+                  type="button"
                   onClick={() => deleteLog(l)}
                   aria-label={`Delete the ${l.weight} ${weightUnit} reading from ${dayOf(l.loggedAt)}`}
                   className="glyph-btn text-2xs text-ink-faint transition-colors hover:text-over"

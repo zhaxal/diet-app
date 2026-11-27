@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type AnimationEvent, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   api,
@@ -13,9 +13,14 @@ import {
   type Trends,
   type TrendRange,
 } from "@/lib/api-client";
-import { todayStr, shiftDate } from "@/lib/time-client";
+import { todayStr, shiftDate, stripEnding, weekEnding } from "@/lib/time-client";
 import { createLatestRequest } from "@/lib/latest-request";
 import { clearFoodDrafts, clearFoodDraftsUnless } from "@/lib/food-draft";
+import {
+  clearAllWorkoutDrafts,
+  clearWorkoutDraftsUnless,
+  clearWorkoutSessionCache,
+} from "@/lib/workout-cache";
 import {
   clearSnapshot,
   clearSnapshotUnless,
@@ -52,88 +57,6 @@ function mealForNow(): Meal {
   if (h < 15) return "lunch";
   if (h < 21) return "dinner";
   return "snack";
-}
-
-// The seven days ending on `end`, for the header strip.
-function weekEnding(end: string): string[] {
-  return Array.from({ length: 7 }, (_, i) => shiftDate(end, i - 6));
-}
-
-/**
- * The strip must always contain the day being shown, or the primary navigator
- * stops describing the screen. It ends on today for the usual case, and slides
- * back to end on the selected day once that day falls outside the window.
- */
-function stripEnding(selected: string, today: string): string {
-  return selected > shiftDate(today, -6) ? today : selected;
-}
-
-// Tab changes replace the whole working surface, so they earn a short entrance
-// with the outgoing surface cross-fading out underneath. A date change only
-// replaces the reading within that surface and is handled by DayTransition.
-//
-// The outgoing tab's last-committed content is captured before paint and
-// rendered in an absolutely-positioned layer that fades out while the incoming
-// tab fades in. Opacity only — a transformed ancestor would create a new
-// containing block and drag position:fixed descendants (the bottom nav) along.
-function TabCrossFade({ activeKey, children }: { activeKey: string; children: ReactNode }) {
-  const nextId = useRef(1);
-  const prev = useRef({ activeKey, content: children });
-  const [displayedKey, setDisplayedKey] = useState(activeKey);
-  const [leaving, setLeaving] = useState<{ id: number; content: ReactNode } | null>(null);
-
-  useLayoutEffect(() => {
-    const prior = prev.current;
-    if (prior.activeKey !== activeKey) {
-      if (
-        typeof window !== "undefined" &&
-        window.matchMedia("(prefers-reduced-motion: no-preference)").matches
-      ) {
-        setLeaving({ id: nextId.current++, content: prior.content });
-      } else {
-        setLeaving(null);
-      }
-      setDisplayedKey(activeKey);
-    }
-    prev.current = { activeKey, content: children };
-  }, [children, activeKey]);
-
-  const isEntering = displayedKey !== activeKey || leaving != null;
-
-  // Safety: if animationend never fires, clean up the leaving layer.
-  useEffect(() => {
-    if (!leaving) return;
-    const id = leaving.id;
-    const timeout = window.setTimeout(() => {
-      setLeaving((cur) => (cur?.id === id ? null : cur));
-    }, 280);
-    return () => window.clearTimeout(timeout);
-  }, [leaving]);
-
-  function handleAnimationEnd(e: AnimationEvent<HTMLDivElement>) {
-    if (e.target !== e.currentTarget || !leaving) return;
-    setLeaving((cur) => (cur?.id === leaving.id ? null : cur));
-  }
-
-  return (
-    <div className="motion-tab-fade motion-view">
-      {leaving != null && (
-        <div
-          aria-hidden="true"
-          className="motion-tab-fade__layer motion-tab-fade__layer--leaving"
-        >
-          {leaving.content}
-        </div>
-      )}
-      <div
-        key={activeKey}
-        className={`motion-tab-fade__layer motion-tab-fade__layer--${isEntering ? "entering" : "current"}`}
-        onAnimationEnd={isEntering ? handleAnimationEnd : undefined}
-      >
-        {children}
-      </div>
-    </div>
-  );
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -186,7 +109,7 @@ function Dashboard() {
   // useSearchParams() without leaving the client.
   const writeParams = useCallback(
     (next: { tab?: Tab; d?: string }, mode: "push" | "replace" = "push") => {
-      const p = new URLSearchParams(params.toString());
+      const p = new URLSearchParams(window.location.search);
       if (next.tab) p.set("tab", next.tab);
       if (next.d) p.set("d", next.d);
       const url = `/?${p.toString()}`;
@@ -196,7 +119,7 @@ function Dashboard() {
         window.history.replaceState(null, "", url);
       }
     },
-    [params],
+    [],
   );
   const goTab = useCallback((t: Tab) => writeParams({ tab: t }), [writeParams]);
 
@@ -252,7 +175,7 @@ function Dashboard() {
     ));
   }, [date]);
   const [showAdd, setShowAdd] = useState(false);
-  const [exporting, setExporting] = useState<"json" | "csv" | null>(null);
+  const [exporting, setExporting] = useState<"json" | "csv" | "vault" | null>(null);
   const [lastLoaded, setLastLoaded] = useState<number | null>(null);
   const lastLoadedRef = useRef<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -264,13 +187,35 @@ function Dashboard() {
   // genuinely empty, which the entries list would otherwise claim it was.
   const [dayError, setDayError] = useState<string | null>(null);
   const todayRef = useRef(todayStr());
+  const [userId, setUserId] = useState("");
   const userIdRef = useRef<string | null>(null);
+  const stripGenRef = useRef(0);
+  const urlCopiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [trendsReloadSeq, setTrendsReloadSeq] = useState(0);
+  const trendsLoadedRef = useRef(false);
+  useEffect(() => {
+    trendsLoadedRef.current = trends !== null;
+  }, [trends]);
   // The bootstrap effect runs once and must not re-run when the day changes, so
   // it reads the current day through a ref rather than closing over it.
   const dateRef = useRef(date);
-  dateRef.current = date;
-  const [dayReads] = useState(() => createLatestRequest(() => dateRef.current));
-  useEffect(() => () => dayReads.invalidate(), [dayReads]);
+  useLayoutEffect(() => {
+    dateRef.current = date;
+  }, [date]);
+  const dayReadsRef = useRef<ReturnType<typeof createLatestRequest> | null>(null);
+  const getDayReads = useCallback(() => {
+    if (!dayReadsRef.current) {
+      dayReadsRef.current = createLatestRequest(() => dateRef.current);
+    }
+    return dayReadsRef.current;
+  }, []);
+  useEffect(
+    () => () => {
+      dayReadsRef.current?.invalidate();
+      if (urlCopiedTimerRef.current) clearTimeout(urlCopiedTimerRef.current);
+    },
+    [],
+  );
 
   const refreshQuickAdd = useCallback(async () => {
     try {
@@ -354,7 +299,7 @@ function Dashboard() {
       setLoadedDate(d);
       setDayError(null);
     }
-    await dayReads.run(d,
+    await getDayReads().run(d,
       () => Promise.all([api.listEntries(d), api.summary(d)]),
       ([{ entries: rows }, sum]) => {
         dayCacheRef.current.set(d, { entries: rows, summary: sum });
@@ -394,7 +339,7 @@ function Dashboard() {
         setLoadedDate(d);
       },
     );
-  }, [dayReads, applySummary, setDaySnapshot]);
+  }, [getDayReads, applySummary, setDaySnapshot]);
 
   const mergeDayTotals = useCallback(
     (rows: { date: string; calories: number; count: number }[]) => {
@@ -410,7 +355,10 @@ function Dashboard() {
   /** The seven days the strip is currently showing, whenever they change. */
   const loadStrip = useCallback(
     async (end: string) => {
+      const gen = ++stripGenRef.current;
+      const activeUser = userIdRef.current;
       const { nutrition } = await api.dayTotals(shiftDate(end, -6), end);
+      if (stripGenRef.current !== gen || userIdRef.current !== activeUser) return;
       mergeDayTotals(nutrition);
 
       // In the background, prefetch entries for the visible week strip days
@@ -419,7 +367,9 @@ function Dashboard() {
       for (const d of days) {
         if (!dayCacheRef.current.has(d)) {
           api.listEntries(d).then(({ entries: rows }) => {
+            if (stripGenRef.current !== gen || userIdRef.current !== activeUser) return;
             api.summary(d).then((sum) => {
+              if (stripGenRef.current !== gen || userIdRef.current !== activeUser) return;
               dayCacheRef.current.set(d, { entries: rows, summary: sum });
             }).catch(() => {});
           }).catch(() => {});
@@ -429,42 +379,30 @@ function Dashboard() {
     [mergeDayTotals],
   );
 
-  const loadTrends = useCallback(async (range: TrendRange) => {
-    try {
-      const t = await api.getTrends(range);
-      setTrends(t);
-      // Free readings for the strip: the same days, already fetched.
-      mergeDayTotals(t.nutrition);
-      setTrendsError(null);
-    } catch (e) {
-      // Swallowing this rendered a heading above nothing, forever. Keep any
-      // trends already on screen and say that the refresh failed.
-      setTrendsError(e instanceof Error ? e.message : "Could not load trends");
-      throw e;
-    }
-  }, [mergeDayTotals]);
+  const retryTrends = useCallback(() => {
+    setTrendsReloadSeq((n) => n + 1);
+  }, []);
 
   const toggleTrends = useCallback(() => {
-    setTrendsOpen((prev) => {
-      const next = !prev;
-      if (next && !trends) {
-        loadTrends(trendRange).catch(() => {});
-      }
-      return next;
-    });
-  }, [trends, trendRange, loadTrends]);
+    setTrendsOpen((prev) => !prev);
+  }, []);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const [{ user }, { goals: g }, { logs }, { favorites: favs, recent: rec }, { apiKey: key }] =
           await Promise.all([api.me(), api.getGoals(), api.listWeight(), api.listFavorites(), api.getApiKey()]);
+        if (cancelled) return;
         userIdRef.current = user.id;
+        setUserId(user.id);
         // A phone gets handed around. Anything stored for a different account
         // goes before this session can render a byte of it.
         clearSnapshotUnless(user.id);
         clearTrayUnless(user.id);
         clearFoodDraftsUnless(user.id);
+        clearWorkoutSessionCache();
+        clearWorkoutDraftsUnless(user.id);
         setCopied(readTray(user.id));
         setEmail(user.email);
         setGoals(g);
@@ -477,16 +415,22 @@ function Dashboard() {
 
         const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         if (browserTz && browserTz !== g.timezone) {
-          api.saveGoals({ timezone: browserTz }).then(({ goals: u }) => setGoals(u)).catch(() => {});
+          api.saveGoals({ timezone: browserTz }).then(({ goals: u }) => {
+            if (!cancelled) setGoals(u);
+          }).catch(() => {});
         }
       } catch (e) {
+        if (cancelled) return;
         // Only an auth failure means "log in again". A transient network error
         // previously produced a login screen, implying data loss that had not
         // happened — and the login would have failed too.
         const status = (e as { status?: number } | null)?.status;
         if (status === 401 || status === 403) {
           clearSnapshot();
+          clearTray();
           clearFoodDrafts();
+          clearWorkoutSessionCache();
+          clearAllWorkoutDrafts();
           router.replace("/login");
           return;
         }
@@ -497,7 +441,10 @@ function Dashboard() {
         const snap = readSnapshot();
         if (snap) {
           userIdRef.current = snap.userId;
+          setUserId(snap.userId);
           clearFoodDraftsUnless(snap.userId);
+          clearWorkoutSessionCache();
+          clearWorkoutDraftsUnless(snap.userId);
           setEmail(snap.email);
           setGoals(snap.goals);
           setFavorites(snap.favorites);
@@ -522,6 +469,9 @@ function Dashboard() {
         }
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [router, applySummary]);
 
   useEffect(() => {
@@ -537,10 +487,24 @@ function Dashboard() {
   }, [ready, tab, stripEnd, loadStrip]);
 
   useEffect(() => {
-    if (ready && (trendsOpen || tabParam === "trends")) {
-      loadTrends(trendRange).catch(() => {});
-    }
-  }, [ready, trendsOpen, tabParam, trendRange, loadTrends]);
+    if (!ready || (!trendsOpen && tabParam !== "trends" && trendsReloadSeq === 0)) return;
+    let cancelled = false;
+    api
+      .getTrends(trendRange)
+      .then((t) => {
+        if (cancelled) return;
+        setTrends(t);
+        mergeDayTotals(t.nutrition);
+        setTrendsError(null);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setTrendsError(e instanceof Error ? e.message : "Could not load trends");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, trendsOpen, tabParam, trendRange, trendsReloadSeq, mergeDayTotals]);
 
   // An installed PWA is not remounted when it comes back from the background, so
   // without this the screen keeps showing whatever it loaded hours ago — including
@@ -553,6 +517,7 @@ function Dashboard() {
         const now = todayStr();
         const wasOnToday = date === todayRef.current;
         todayRef.current = now;
+        const activeDate = wasOnToday && date !== now ? now : date;
 
         if (wasOnToday && date !== now) {
           // Automatic, so replace rather than push — a midnight roll should not
@@ -571,9 +536,18 @@ function Dashboard() {
         setRecent(rec);
         setGoals(g);
         setWeightLogs(logs);
-        loadStrip(stripEnding(date, todayStr())).catch(() => {});
-        if (trendsOpen || trends) {
-          loadTrends(trendRange).catch(() => {});
+        loadStrip(stripEnding(activeDate, now)).catch(() => {});
+        if (trendsOpen || trendsLoadedRef.current) {
+          api
+            .getTrends(trendRange)
+            .then((t) => {
+              setTrends(t);
+              mergeDayTotals(t.nutrition);
+              setTrendsError(null);
+            })
+            .catch((e) => {
+              setTrendsError(e instanceof Error ? e.message : "Could not load trends");
+            });
         }
       } else if (tab === "workout") {
         const { goals: g } = await api.getGoals();
@@ -593,7 +567,7 @@ function Dashboard() {
     } finally {
       setRefreshing(false);
     }
-  }, [tab, date, loadDay, loadStrip, loadTrends, trendRange, trendsOpen, trends, writeParams]);
+  }, [tab, date, loadDay, loadStrip, mergeDayTotals, trendRange, trendsOpen, writeParams]);
 
   useEffect(() => {
     if (!ready) return;
@@ -646,10 +620,9 @@ function Dashboard() {
   }
 
   function copyMeal(m: Meal, items: FoodEntry[]) {
-    const userId = userIdRef.current;
-    if (!userId || items.length === 0) return;
-    // Reversed, so the first row of the meal ends up first in the tray.
-    setCopied(addManyToTray(userId, [...items].reverse().map(asCopy)));
+    const uid = userIdRef.current;
+    if (!uid || items.length === 0) return;
+    setCopied(addManyToTray(uid, items.map(asCopy)));
     setShowAdd(true);
     toast(`Copied ${items.length} ${m} ${items.length === 1 ? "entry" : "entries"}`, "info");
   }
@@ -694,6 +667,7 @@ function Dashboard() {
         },
       );
     } catch (e) {
+      void loadDay(date);
       toast(e instanceof Error ? e.message : "Could not clear meal", "error");
     }
   }
@@ -765,10 +739,14 @@ function Dashboard() {
   // for several reasons that look identical from the outside: an expired
   // session, an installed PWA that will not start a download from a standalone
   // window, or a server error. Fetching it means a failure has a message.
-  async function downloadExport(format: "json" | "csv") {
+  async function downloadExport(format: "json" | "csv" | "vault") {
     setExporting(format);
     try {
-      const res = await fetch(`/api/export?format=${format}`, { credentials: "same-origin" });
+      const endpoint =
+        format === "vault"
+          ? "/api/workouts/export?format=markdown"
+          : `/api/export?format=${format}`;
+      const res = await fetch(endpoint, { credentials: "same-origin" });
       if (!res.ok) {
         throw new Error(
           res.status === 401 ? "Your session expired — sign in again" : `Export failed (${res.status})`,
@@ -780,7 +758,10 @@ function Dashboard() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `diet-export-${todayStr()}.${format}`;
+      a.download =
+        format === "vault"
+          ? `workouts-vault-${todayStr()}.md`
+          : `diet-export-${todayStr()}.${format}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -803,7 +784,11 @@ function Dashboard() {
       await navigator.clipboard.writeText(mcpUrl);
       setUrlCopied(true);
       toast("Connector URL copied");
-      setTimeout(() => setUrlCopied(false), 2000);
+      if (urlCopiedTimerRef.current) clearTimeout(urlCopiedTimerRef.current);
+      urlCopiedTimerRef.current = setTimeout(() => {
+        urlCopiedTimerRef.current = null;
+        setUrlCopied(false);
+      }, 2000);
     } catch {
       setUrlRevealed(true);
       toast("Could not copy — select the URL above and copy it manually", "error");
@@ -825,17 +810,19 @@ function Dashboard() {
         return;
       }
 
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        setDate(shiftDate(date, -1));
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        if (date < todayStr()) {
-          setDate(shiftDate(date, 1));
+      if ((e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "t" || e.key === "T") && (tab === "food" || tab === "workout")) {
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          setDate(shiftDate(date, -1));
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          if (date < todayStr()) {
+            setDate(shiftDate(date, 1));
+          }
+        } else {
+          e.preventDefault();
+          setDate(todayStr());
         }
-      } else if (e.key === "t" || e.key === "T") {
-        e.preventDefault();
-        setDate(todayStr());
       } else if (e.key === "n" || e.key === "N" || e.key === "/") {
         e.preventDefault();
         if (tab !== "food") {
@@ -875,9 +862,14 @@ function Dashboard() {
   async function logout() {
     // Before the request, so a failed logout still leaves nothing readable on
     // the device.
+    dayReadsRef.current?.invalidate();
+    userIdRef.current = null;
+    setUserId("");
     clearSnapshot();
     clearTray();
     clearFoodDrafts();
+    clearWorkoutSessionCache();
+    clearAllWorkoutDrafts();
     dayCacheRef.current.clear();
     try {
       await api.logout();
@@ -897,6 +889,7 @@ function Dashboard() {
           </p>
           <p className="mt-1 text-xs text-ink-faint">{loadError}</p>
           <button
+            type="button"
             onClick={() => window.location.reload()}
             className="btn btn-primary mt-3 w-full"
           >
@@ -917,7 +910,8 @@ function Dashboard() {
     </div>
   ) : (
     <div className="mx-auto max-w-2xl px-3 pb-32 pt-3">
-      <TabCrossFade activeKey={tab}>
+      <div className="motion-view">
+      <CrossFade transitionKey={tab} classPrefix="motion-tab-fade" timeoutMs={280}>
       {tab === "food" && (
         <FoodTab
           date={date}
@@ -947,7 +941,7 @@ function Dashboard() {
           setMeal={setMeal}
           showAdd={showAdd}
           setShowAdd={setShowAdd}
-          userId={userIdRef.current || ""}
+          userId={userId}
           favorites={favorites}
           recent={recent}
           copied={copied}
@@ -959,7 +953,7 @@ function Dashboard() {
           setTrendRange={setTrendRange}
           trendsOpen={trendsOpen}
           toggleTrends={toggleTrends}
-          loadTrends={loadTrends}
+          retryTrends={retryTrends}
           onOpenShortcuts={() => setShowShortcuts(true)}
         />
       )}
@@ -967,6 +961,7 @@ function Dashboard() {
       {tab === "workout" && (
         <>
           <WorkoutNavigator
+            userId={userId}
             currentDate={date}
             onSelectDate={setDate}
             todayDate={todayStr()}
@@ -976,6 +971,7 @@ function Dashboard() {
           <DayTransition transitionKey={`workout:${date}`}>
             <WorkoutCard
               key={date}
+              userId={userId}
               date={date}
               weightUnit={goals.weightUnit || "kg"}
               onToast={(m) => toast(m)}
@@ -1009,13 +1005,13 @@ function Dashboard() {
           setConfirmingRegenerate={setConfirmingRegenerate}
           exporting={exporting}
           downloadExport={downloadExport}
-          date={date}
           onOpenWorkoutImport={() => setShowWorkoutImportModal(true)}
           onOpenShortcuts={() => setShowShortcuts(true)}
           logout={logout}
         />
       )}
-      </TabCrossFade>
+      </CrossFade>
+      </div>
 
       {/* Always rendered (not gated on showWorkoutImportModal) so closing it
           animates out — conditionally mounting would remove Dialog from the

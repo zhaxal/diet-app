@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { unauthorized } from "@/lib/http";
+import { dayBoundsInTz, todayInTz } from "@/lib/time";
 import { isWeightUnit, type WeightUnit } from "@/lib/units";
-import { getExerciseSummary } from "@/lib/workout-stats";
+import { getExerciseSummariesBatch } from "@/lib/workout-stats";
 import { DEFAULT_EXERCISES, lookupMuscleGroup } from "@/lib/default-exercises";
 
 // GET /api/exercises?q=bench&muscle=Chest
@@ -15,31 +16,43 @@ export async function GET(req: NextRequest) {
   const muscle = req.nextUrl.searchParams.get("muscle")?.trim() || "";
   const displayUnit: WeightUnit = isWeightUnit(user.weightUnit) ? user.weightUnit : "kg";
 
-  // 1. Get user's logged exercises
-  const userExercises = await prisma.exercise.findMany({
+  // Fetch user's exercises, filter by muscle group before slicing so matching
+  // exercises outside the 100 most recent are still returned.
+  const allUserExercises = await prisma.exercise.findMany({
     where: {
       userId: user.id,
       ...(query ? { name: { contains: query } } : {}),
     },
     orderBy: { updatedAt: "desc" },
-    take: 100,
   });
 
-  const userExercisesWithStats = await Promise.all(
-    userExercises.map(async (ex) => {
-      const summary = await getExerciseSummary(user.id, ex.id, new Date(), displayUnit);
-      return {
-        id: ex.id,
-        name: ex.name,
-        normalized: ex.normalized,
-        muscleGroup: ex.muscleGroup || lookupMuscleGroup(ex.name) || "Other",
-        isCustom: true,
-        summary,
-      };
-    }),
+  const resolvedUserExercises = allUserExercises
+    .map((ex) => ({
+      ...ex,
+      resolvedMuscleGroup: ex.muscleGroup || lookupMuscleGroup(ex.name) || "Other",
+    }))
+    .filter((ex) => !muscle || muscle === "All" || ex.resolvedMuscleGroup === muscle)
+    .slice(0, 100);
+
+  const todayEnd = dayBoundsInTz(todayInTz(user.timezone), user.timezone).end;
+  const summaries = await getExerciseSummariesBatch(
+    user.id,
+    resolvedUserExercises,
+    todayEnd,
+    displayUnit,
+    user.timezone,
   );
 
-  const seenNormalized = new Set(userExercisesWithStats.map((e) => e.normalized));
+  const filteredUserExercises = resolvedUserExercises.map((ex) => ({
+    id: ex.id,
+    name: ex.name,
+    normalized: ex.normalized,
+    muscleGroup: ex.resolvedMuscleGroup,
+    isCustom: true,
+    summary: summaries[ex.id] ?? null,
+  }));
+
+  const seenNormalized = new Set(allUserExercises.map((e) => e.normalized));
 
   // 2. Filter default catalog
   const filteredDefaults = DEFAULT_EXERCISES.filter((def) => {
@@ -60,14 +73,6 @@ export async function GET(req: NextRequest) {
     isCustom: false,
     summary: null,
   }));
-
-  // 3. Filter user exercises by muscle group if requested
-  const filteredUserExercises = userExercisesWithStats.filter((ex) => {
-    if (muscle && muscle !== "All" && ex.muscleGroup !== muscle) {
-      return false;
-    }
-    return true;
-  });
 
   // User logged exercises first, followed by default catalog exercises
   const combined = [...filteredUserExercises, ...filteredDefaults];

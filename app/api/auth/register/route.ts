@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { hashPassword, signToken, AUTH_COOKIE } from "@/lib/auth";
+import { hashPassword, setAuthCookie, signToken } from "@/lib/auth";
 import { generateApiKey } from "@/lib/api-key";
 import { registerSchema } from "@/lib/validation";
 import { jsonError, tooManyAttempts, zodError } from "@/lib/http";
 import { clientFailures, clientIp } from "@/lib/rate-limit";
 import { inviteCodeMatches, registrationState } from "@/lib/registration";
+
+class RegistrationGateError extends Error {
+  status: number;
+  hitRateLimit: boolean;
+  constructor(message: string, status: number, hitRateLimit = false) {
+    super(message);
+    this.status = status;
+    this.hitRateLimit = hitRateLimit;
+  }
+}
 
 // GET /api/auth/register — whether this server is taking new accounts, and
 // whether an invite code is needed. Public: the sign-up form reads it before
@@ -29,41 +40,53 @@ export async function POST(req: NextRequest) {
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) return zodError(parsed.error);
 
-  const state = await registrationState();
-  if (!state.open) {
+  const initialState = await registrationState();
+  if (!initialState.open) {
     return jsonError("Registration is closed on this server", 403);
   }
-  if (state.inviteRequired && !inviteCodeMatches(parsed.data.inviteCode)) {
+  if (initialState.inviteRequired && !inviteCodeMatches(parsed.data.inviteCode)) {
     // Counted, so the code cannot be found by trying them all.
     clientFailures.hit(ipKey);
     return jsonError("That invite code is not valid", 403);
   }
 
   const email = parsed.data.email.toLowerCase();
+  const passwordHash = await hashPassword(parsed.data.password);
 
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    return jsonError("An account with this email already exists", 409);
+  try {
+    const user = await prisma.$transaction(async (tx) => {
+      const accountCount = await tx.user.count();
+      if (accountCount > 0) {
+        const hasInvite = Boolean(process.env.INVITE_CODE?.trim());
+        if (!hasInvite) {
+          throw new RegistrationGateError("Registration is closed on this server", 403);
+        }
+        if (!inviteCodeMatches(parsed.data.inviteCode)) {
+          throw new RegistrationGateError("That invite code is not valid", 403, true);
+        }
+      }
+      return tx.user.create({
+        data: {
+          email,
+          passwordHash,
+          apiKey: generateApiKey(),
+        },
+        select: { id: true, email: true, createdAt: true },
+      });
+    });
+
+    const token = signToken({ id: user.id, email: user.email });
+    const res = NextResponse.json({ token, user }, { status: 201 });
+    setAuthCookie(res, token);
+    return res;
+  } catch (err) {
+    if (err instanceof RegistrationGateError) {
+      if (err.hitRateLimit) clientFailures.hit(ipKey);
+      return jsonError(err.message, err.status);
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return jsonError("An account with this email already exists", 409);
+    }
+    throw err;
   }
-
-  const user = await prisma.user.create({
-    data: {
-      email,
-      passwordHash: await hashPassword(parsed.data.password),
-      apiKey: generateApiKey(),
-    },
-    select: { id: true, email: true, createdAt: true },
-  });
-
-  const token = signToken({ id: user.id, email: user.email });
-
-  const res = NextResponse.json({ token, user }, { status: 201 });
-  res.cookies.set(AUTH_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 60 * 60 * 24 * 30,
-  });
-  return res;
 }

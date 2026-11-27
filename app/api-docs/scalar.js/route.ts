@@ -14,12 +14,15 @@ export async function GET() {
       "browser",
       "standalone.js",
     ),
-  );
+  ).catch((err) => {
+    bundle = null;
+    throw err;
+  });
 
   return new Response(new Uint8Array(await bundle), {
     headers: {
       "Content-Type": "text/javascript; charset=utf-8",
-      "Cache-Control": "public, max-age=31536000, immutable",
+      "Cache-Control": "public, max-age=3600",
       "X-Content-Type-Options": "nosniff",
     },
   });

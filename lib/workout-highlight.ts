@@ -35,7 +35,7 @@ const SET_SCANNER = new RegExp(
     "(?<rpe>(?:@|\\brpe\\s*:?\\s*)\\d+(?:\\.\\d+)?)",
     "(?<bw>\\bbody\\s*weight\\b|\\b(?:bw|bodyweight)\\b)",
     "(?<num>[+-]?\\d+(?:\\.\\d+)?)(?<unit>\\s*(?:kgs?|lbs?))?",
-    "(?<sep>[xX*×])",
+    "(?<sep>(?<![A-Za-z])[xX](?![A-Za-z])|[*×])",
     "(?<repword>\\breps?\\b)",
   ].join("|"),
   "gi",
@@ -69,7 +69,7 @@ class TokenLine {
  * 10"), unless the figure names its own unit.
  */
 function tokenizeSetSegment(segment: string, line: TokenLine): void {
-  const separatorIndex = segment.search(/[xX*×]/);
+  const separatorIndex = segment.search(/(?<![A-Za-z])[xX](?![A-Za-z])|[*×]/);
   let cursor = 0;
 
   for (const match of segment.matchAll(SET_SCANNER)) {

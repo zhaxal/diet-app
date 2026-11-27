@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { unauthorized } from "@/lib/http";
+import { localDateInTz } from "@/lib/time";
+import { lookupMuscleGroup } from "@/lib/default-exercises";
 import { BODY_WEIGHT_DECIMALS, fromKg, isWeightUnit, type WeightUnit } from "@/lib/units";
 
 // GET /api/export?format=json|csv — download all of the user's data.
@@ -51,8 +53,11 @@ export async function GET(req: NextRequest) {
     const csvRow = (values: unknown[]) =>
       values
         .map((v) => {
-          const s = String(v ?? "");
-          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+          let s = String(v ?? "");
+          if (/^[\t\r ]*[=+\-@]/.test(s)) {
+            s = `'${s}`;
+          }
+          return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
         })
         .join(",");
 
@@ -101,12 +106,12 @@ export async function GET(req: NextRequest) {
     products,
     workouts: workouts.map((w) => ({
       id: w.id,
-      date: w.date.toISOString().slice(0, 10),
+      date: localDateInTz(w.date, user.timezone),
       title: w.title,
       rawNote: w.rawNote,
       exercises: w.exercises.map((we) => ({
         name: we.exercise.name,
-        muscleGroup: we.exercise.muscleGroup,
+        muscleGroup: we.exercise.muscleGroup ?? lookupMuscleGroup(we.exercise.name) ?? null,
         sets: we.sets.map((s) => ({
           setNumber: s.setNumber,
           weight: fromKg(s.weight, displayUnit),
@@ -122,7 +127,7 @@ export async function GET(req: NextRequest) {
       id: ex.id,
       name: ex.name,
       normalized: ex.normalized,
-      muscleGroup: ex.muscleGroup,
+      muscleGroup: ex.muscleGroup ?? lookupMuscleGroup(ex.name) ?? null,
     })),
     templates: templates.map((t) => {
       // One malformed row used to throw, taking the whole export down with a

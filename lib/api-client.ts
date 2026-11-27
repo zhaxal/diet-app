@@ -1,9 +1,9 @@
-import { consumedAtFor } from "./time-client";
-import { toBase, unitLabel, type Basis, type QuantityUnit, type ServingUnit, type WeightUnit } from "./units";
+import { type QuantityUnit, type ServingUnit, type WeightUnit } from "./units";
 // Thin fetch wrapper for the browser UI. Relies on the httpOnly auth cookie
 // (sent automatically for same-origin requests), so no token handling here.
 
 export type Meal = "breakfast" | "lunch" | "dinner" | "snack";
+export const MEALS: readonly Meal[] = ["breakfast", "lunch", "dinner", "snack"];
 
 export interface FoodEntry {
   id: string;
@@ -165,7 +165,13 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });
-  } catch {
+  } catch (caught) {
+    if (caught instanceof DOMException && caught.name === "AbortError") {
+      throw caught;
+    }
+    if (caught instanceof Error && caught.name === "AbortError") {
+      throw caught;
+    }
     // `fetch` rejects with a bare "Failed to fetch", which every write path was
     // showing the user verbatim. Say what actually happened, and mark it so the
     // caller can tell "nothing was saved" from "the server said no".
@@ -177,7 +183,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       write ? `${reach} — nothing was saved` : reach,
     ) as NetworkError;
     err.status = 0;
-    err.offline = true;
+    err.offline = offline;
     throw err;
   }
   if (!res.ok) {
@@ -190,11 +196,22 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     }
     // Carry the status so callers can distinguish "log in again" (401/403)
     // from "the network is flaky", which must not look like being signed out.
-    const err = new Error(message) as Error & { status?: number };
+    const err = new Error(message) as NetworkError;
     err.status = res.status;
     throw err;
   }
-  return res.json() as Promise<T>;
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  const text = await res.text();
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const err = new Error(`Unexpected response from server (${res.status})`) as NetworkError;
+    err.status = res.status;
+    throw err;
+  }
 }
 
 export const api = {
@@ -305,48 +322,6 @@ export const api = {
       source: "saved" | "openfoodfacts" | "none";
       product: (ProductInput & { id?: string }) | null;
     }>(`/api/products/barcode/${encodeURIComponent(code)}`),
-
-  logProduct: (
-    p: Product,
-    quantity: number,
-    unit: QuantityUnit,
-    mealType: Meal,
-    date: string,
-  ) => {
-    // Resolved into the product's own base unit, so 2 oz of a per-100g label
-    // and 1 serving of it go through the same arithmetic.
-    const base = toBase(
-      quantity,
-      unit,
-      p.basis as Basis,
-      p.servingSize != null ? { size: p.servingSize, unit: p.servingUnit as ServingUnit } : null,
-    );
-    if (base === null) {
-      return Promise.reject(
-        new Error(`Cannot log ${quantity}${unitLabel(unit)} of a product measured per ${p.basis}`),
-      );
-    }
-    const f = base / 100;
-    const r1 = (n: number) => Math.round(n * f * 10) / 10;
-    return request<{ entry: FoodEntry }>("/api/entries", {
-      method: "POST",
-      body: JSON.stringify({
-        name: p.brand ? `${p.name} (${p.brand})` : p.name,
-        calories: Math.round(p.calories * f),
-        protein: r1(p.protein),
-        carbs: r1(p.carbs),
-        fat: r1(p.fat),
-        fiber: r1(p.fiber),
-        sugar: r1(p.sugar),
-        sodium: Math.round(p.sodium * f),
-        mealType,
-        productId: p.id,
-        quantity,
-        quantityUnit: unit,
-        consumedAt: consumedAtFor(date),
-      }),
-    });
-  },
 
   getWorkout: (date: string) =>
     request<{ workout: ClientWorkout | null; exerciseStats: Record<string, ExerciseStats> }>(

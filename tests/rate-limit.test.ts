@@ -93,3 +93,23 @@ test("the client address is the one the nearest proxy reported", () => {
   );
   assert.equal(clientIp(request("GET", "/")), "unknown");
 });
+
+test("maxKeys eviction drops only the oldest key and preserves active ones", () => {
+  const clock = { now: 0 };
+  const limiter = createRateLimiter({
+    limit: 2,
+    windowMs: 15 * MINUTE,
+    maxKeys: 3,
+    now: () => clock.now,
+  });
+  limiter.hit("k1");
+  limiter.hit("k2");
+  limiter.hit("k2");
+  limiter.hit("k3");
+  assert.equal(limiter.check("k2").allowed, false);
+  // Adding k4 evicts k1 (oldest), preserving k2 and k3.
+  limiter.hit("k4");
+  assert.equal(limiter.size(), 3);
+  assert.equal(limiter.check("k2").allowed, false);
+  assert.equal(limiter.check("k1").allowed, true);
+});

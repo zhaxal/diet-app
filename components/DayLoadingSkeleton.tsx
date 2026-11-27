@@ -140,7 +140,7 @@ export function WorkoutDaySkeleton({ date }: { date: string }) {
  */
 export function DashboardSkeleton({ date }: { date: string }) {
   return (
-    <div role="status" aria-label="Loading your account" aria-busy="true">
+    <div aria-label="Loading your account">
       <span className="sr-only">Loading your account</span>
 
       <nav className="panel flex overflow-x-auto" aria-hidden="true">

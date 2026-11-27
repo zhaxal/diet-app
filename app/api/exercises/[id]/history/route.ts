@@ -15,7 +15,7 @@ export async function GET(
   const { id } = await params;
   const displayUnit: WeightUnit = isWeightUnit(user.weightUnit) ? user.weightUnit : "kg";
 
-  const history = await getExerciseFullHistory(user.id, id, displayUnit);
+  const history = await getExerciseFullHistory(user.id, id, displayUnit, user.timezone);
   if (!history) {
     return jsonError("Exercise not found", 404);
   }

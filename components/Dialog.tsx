@@ -5,19 +5,13 @@ import {
   useId,
   useRef,
   useState,
-  type AnimationEvent,
+  useSyncExternalStore,
   type ReactNode,
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-
-type DialogPhase = "closed" | "open" | "closing";
-
-function motionIsAllowed() {
-  return typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
-}
+import { useAnimatedDisclosure } from "@/lib/useAnimatedDisclosure";
 
 type DialogSize = "sm" | "md" | "lg" | "xl";
 type DialogVariant = "responsive" | "center" | "fullscreen";
@@ -27,6 +21,7 @@ interface DialogProps {
   onClose: () => void;
   title: string;
   description?: string;
+  ariaDescribedBy?: string;
   children: ReactNode;
   footer?: ReactNode;
   size?: DialogSize;
@@ -63,11 +58,46 @@ function getPortalRoot() {
   return root;
 }
 
+let portalRootCache: HTMLElement | null = null;
+const portalListeners = new Set<() => void>();
+
+function subscribePortal(cb: () => void) {
+  portalListeners.add(cb);
+  if (!portalRootCache && typeof document !== "undefined") {
+    queueMicrotask(() => {
+      if (!portalRootCache) {
+        portalRootCache = getPortalRoot();
+        for (const listener of portalListeners) listener();
+      }
+    });
+  }
+  return () => {
+    portalListeners.delete(cb);
+  };
+}
+
+function getPortalSnapshot() {
+  return portalRootCache;
+}
+
+function getPortalServerSnapshot() {
+  return null;
+}
+
+let activeDialogCount = 0;
+let savedBodyOverflow = "";
+let savedBackgroundState: Array<{
+  node: HTMLElement;
+  inert: boolean;
+  ariaHidden: string | null;
+}> = [];
+
 export function Dialog({
   open,
   onClose,
   title,
   description,
+  ariaDescribedBy,
   children,
   footer,
   size = "md",
@@ -78,71 +108,50 @@ export function Dialog({
   initialFocusRef,
   bodyClassName = "p-4",
 }: DialogProps) {
-  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
-  const [phase, setPhase] = useState<DialogPhase>(open ? "open" : "closed");
+  const portalRoot = useSyncExternalStore(
+    subscribePortal,
+    getPortalSnapshot,
+    getPortalServerSnapshot,
+  );
+  const { rendered, closing, onAnimationEnd } = useAnimatedDisclosure(open, 220);
   const titleId = useId();
   const descriptionId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
 
-  useEffect(() => setPortalRoot(getPortalRoot()), []);
-
-  // `open` flipping false does not unmount immediately: staying mounted
-  // through `closing` is what lets the panel and scrim animate out instead
-  // of cutting. Reduced motion skips straight to closed, same as a caller
-  // that was never open.
   useEffect(() => {
-    if (open) {
-      setPhase("open");
-      return;
-    }
-    setPhase((p) => (p === "closed" ? "closed" : motionIsAllowed() ? "closing" : "closed"));
-  }, [open]);
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
-  // Fallback if the browser drops the animationend event (an interrupted
-  // paint, devtools, etc.) — never leave the dialog stuck mid-close.
-  useEffect(() => {
-    if (phase !== "closing") return;
-    const timeout = window.setTimeout(() => setPhase("closed"), 220);
-    return () => window.clearTimeout(timeout);
-  }, [phase]);
-
-  function handlePanelAnimationEnd(event: AnimationEvent<HTMLDivElement>) {
-    if (event.target !== event.currentTarget) return;
-    if (phase === "closing") setPhase("closed");
-  }
-
-  // Keyed on `active`, not `open`: the lock/focus-trap effect must stay
-  // mounted through the closing animation (nothing in the background should
-  // become clickable while the panel is still visibly there) and must not
-  // re-run when `open` flips to false, which would refocus nothing and tear
-  // the trap down before the exit animation plays.
-  const active = phase !== "closed";
+  const active = rendered;
 
   useEffect(() => {
     if (!active || !portalRoot) return;
 
     const previousFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
-    const background = Array.from(document.body.children)
-      .filter((node): node is HTMLElement => node instanceof HTMLElement && node !== portalRoot)
-      .map((node) => ({
-        node,
-        inert: node.inert,
-        ariaHidden: node.getAttribute("aria-hidden"),
-      }));
 
-    document.body.style.overflow = "hidden";
-    for (const item of background) {
-      item.node.inert = true;
-      item.node.setAttribute("aria-hidden", "true");
+    if (activeDialogCount === 0) {
+      savedBodyOverflow = document.body.style.overflow;
+      savedBackgroundState = Array.from(document.body.children)
+        .filter((node): node is HTMLElement => node instanceof HTMLElement && node !== portalRoot)
+        .map((node) => ({
+          node,
+          inert: node.inert,
+          ariaHidden: node.getAttribute("aria-hidden"),
+        }));
+
+      document.body.style.overflow = "hidden";
+      for (const item of savedBackgroundState) {
+        item.node.inert = true;
+        item.node.setAttribute("aria-hidden", "true");
+      }
     }
+    activeDialogCount += 1;
 
     const frame = requestAnimationFrame(() => {
-      const target = initialFocusRef?.current ?? closeRef.current;
+      const target = initialFocusRef?.current ?? closeRef.current ?? dialogRef.current;
       target?.focus();
     });
 
@@ -167,10 +176,16 @@ export function Dialog({
 
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      const current = document.activeElement;
+      if (!dialogRef.current.contains(current) || current === dialogRef.current) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+      if (event.shiftKey && current === first) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && current === last) {
         event.preventDefault();
         first.focus();
       }
@@ -180,17 +195,21 @@ export function Dialog({
     return () => {
       cancelAnimationFrame(frame);
       document.removeEventListener("keydown", onKeyDown, true);
-      document.body.style.overflow = previousOverflow;
-      for (const item of background) {
-        item.node.inert = item.inert;
-        if (item.ariaHidden === null) item.node.removeAttribute("aria-hidden");
-        else item.node.setAttribute("aria-hidden", item.ariaHidden);
+      activeDialogCount = Math.max(0, activeDialogCount - 1);
+      if (activeDialogCount === 0) {
+        document.body.style.overflow = savedBodyOverflow;
+        for (const item of savedBackgroundState) {
+          item.node.inert = item.inert;
+          if (item.ariaHidden === null) item.node.removeAttribute("aria-hidden");
+          else item.node.setAttribute("aria-hidden", item.ariaHidden);
+        }
+        savedBackgroundState = [];
       }
       previousFocus?.focus();
     };
   }, [active, initialFocusRef, portalRoot]);
 
-  if (phase === "closed" || !portalRoot) return null;
+  if (!rendered || !portalRoot) return null;
 
   const overlayClass =
     variant === "fullscreen"
@@ -205,11 +224,9 @@ export function Dialog({
         ? `max-h-[88dvh] w-full rounded border ${SIZE[size]}`
         : `max-h-[92dvh] w-full rounded-t border sm:max-h-[86dvh] sm:rounded ${SIZE[size]}`;
 
-  const isClosing = phase === "closing";
-
   return createPortal(
     <div
-      className={`motion-dialog-scrim ${isClosing ? "motion-dialog-scrim--closing" : ""} fixed inset-0 z-[60] flex ${overlayClass}`}
+      className={`motion-dialog-scrim ${closing ? "motion-dialog-scrim--closing" : ""} fixed inset-0 z-[60] flex ${overlayClass}`}
       onPointerDown={(event) => {
         if (closeOnBackdrop && event.target === event.currentTarget) onClose();
       }}
@@ -219,10 +236,10 @@ export function Dialog({
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={description ? descriptionId : undefined}
+        aria-describedby={description ? descriptionId : ariaDescribedBy}
         tabIndex={-1}
-        onAnimationEnd={handlePanelAnimationEnd}
-        className={`motion-dialog-panel ${variant === "fullscreen" ? "motion-dialog-panel--fullscreen" : ""} ${isClosing ? "motion-dialog-panel--closing" : ""} flex min-h-0 flex-col overflow-hidden ${panelClass}`}
+        onAnimationEnd={onAnimationEnd}
+        className={`motion-dialog-panel ${variant === "fullscreen" ? "motion-dialog-panel--fullscreen" : ""} ${closing ? "motion-dialog-panel--closing" : ""} flex min-h-0 flex-col overflow-hidden ${panelClass}`}
         style={{
           background: "var(--panel)",
           borderColor: "var(--line)",
@@ -294,12 +311,15 @@ export function AlertDialog({
   onConfirm: () => void | Promise<void>;
 }) {
   const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const descId = useId();
   const [pending, setPending] = useState(false);
 
   async function confirm() {
     setPending(true);
     try {
       await onConfirm();
+    } catch {
+      // Callers handle/toast their own errors; prevent unhandled rejections.
     } finally {
       setPending(false);
     }
@@ -314,6 +334,7 @@ export function AlertDialog({
       open={open}
       onClose={requestClose}
       title={title}
+      ariaDescribedBy={descId}
       role="alertdialog"
       variant="center"
       size="sm"
@@ -342,7 +363,7 @@ export function AlertDialog({
         </div>
       }
     >
-      <p className="text-sm leading-5 text-ink-dim">{description}</p>
+      <p id={descId} className="text-sm leading-5 text-ink-dim">{description}</p>
     </Dialog>
   );
 }

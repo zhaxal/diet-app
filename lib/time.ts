@@ -32,8 +32,32 @@ function tzOffsetMs(date: Date, timeZone: string): number {
     hour,
     Number(map.minute),
     Number(map.second),
+    date.getUTCMilliseconds(),
   );
   return asUTC - date.getTime();
+}
+
+const CALENDAR_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** True if `dateStr` is a real YYYY-MM-DD calendar date (rejects e.g. 2026-02-30). */
+export function isValidCalendarDate(dateStr: string): boolean {
+  const m = CALENDAR_DATE_RE.exec(dateStr);
+  if (!m) return false;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === mo - 1 &&
+    dt.getUTCDate() === d
+  );
+}
+
+/** Shift a YYYY-MM-DD calendar date by `days` using UTC arithmetic (DST-safe). */
+export function shiftCalendarDate(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
 /**

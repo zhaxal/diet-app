@@ -58,10 +58,22 @@ export default function BarcodeScanner({
   onDetected: (barcode: string) => void;
   onClose: () => void;
 }) {
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const onDetectedRef = useRef(onDetected);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    onDetectedRef.current = onDetected;
+  }, [onDetected]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -78,6 +90,15 @@ export default function BarcodeScanner({
   useEffect(() => {
     let cancelled = false;
     let raf = 0;
+
+    async function waitForVideoElement(): Promise<HTMLVideoElement | null> {
+      for (let i = 0; i < 20; i++) {
+        if (cancelled) return null;
+        if (videoRef.current) return videoRef.current;
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      }
+      return videoRef.current;
+    }
 
     (async () => {
       if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
@@ -100,9 +121,13 @@ export default function BarcodeScanner({
           return;
         }
 
+        const video = await waitForVideoElement();
+        if (cancelled || !video) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
         streamRef.current = stream;
-        const video = videoRef.current;
-        if (!video) return;
         video.srcObject = stream;
         await video.play();
 
@@ -122,12 +147,12 @@ export default function BarcodeScanner({
                 .find((c) => c.rawValue && c.rawValue.trim().length >= 6)
                 ?.rawValue?.trim();
 
-              if (code) {
+              if (code && !cancelled) {
                 if (typeof navigator !== "undefined" && navigator.vibrate) {
                   navigator.vibrate(100);
                 }
                 stop();
-                onDetected(code);
+                onDetectedRef.current(code);
                 return;
               }
             } catch {
@@ -157,7 +182,7 @@ export default function BarcodeScanner({
       cancelAnimationFrame(raf);
       stop();
     };
-  }, [onDetected, stop]);
+  }, [stop]);
 
   // Photo capture / file selection handler
   async function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -167,16 +192,17 @@ export default function BarcodeScanner({
 
     setFeedbackNotice(null);
     setAnalyzingPhoto(true);
+    let url: string | null = null;
 
     try {
       const detector = await getBarcodeDetector();
-      const url = URL.createObjectURL(file);
+      url = URL.createObjectURL(file);
       const img = new Image();
 
       await new Promise<void>((resolve, reject) => {
         img.onload = () => resolve();
         img.onerror = () => reject(new Error("Could not load selected photo"));
-        img.src = url;
+        img.src = url!;
       });
 
       let source: CanvasImageSource = img;
@@ -194,7 +220,7 @@ export default function BarcodeScanner({
       }
 
       const found = await detector.detect(source);
-      URL.revokeObjectURL(url);
+      if (!mountedRef.current) return;
 
       const code = found
         .find((c) => c.rawValue && c.rawValue.trim().length >= 6)
@@ -205,16 +231,19 @@ export default function BarcodeScanner({
           navigator.vibrate(100);
         }
         stop();
-        onDetected(code);
+        onDetectedRef.current(code);
       } else {
         setFeedbackNotice(
           "No barcode detected in that photo. Make sure the barcode is well-lit, centered, and sharp.",
         );
       }
     } catch (err) {
-      setFeedbackNotice(err instanceof Error ? err.message : "Failed to analyze photo");
+      if (mountedRef.current) {
+        setFeedbackNotice(err instanceof Error ? err.message : "Failed to analyze photo");
+      }
     } finally {
-      setAnalyzingPhoto(false);
+      if (url) URL.revokeObjectURL(url);
+      if (mountedRef.current) setAnalyzingPhoto(false);
     }
   }
 
@@ -227,7 +256,7 @@ export default function BarcodeScanner({
       return;
     }
     stop();
-    onDetected(cleaned);
+    onDetectedRef.current(cleaned);
   }
 
   return (
@@ -236,7 +265,6 @@ export default function BarcodeScanner({
       onClose={onClose}
       title="Scan a barcode"
       variant="fullscreen"
-      initialFocusRef={closeButtonRef}
       bodyClassName="flex items-center justify-center p-3"
     >
       <div className="w-full max-w-sm space-y-3">
@@ -313,7 +341,7 @@ export default function BarcodeScanner({
             </form>
 
             {feedbackNotice && (
-              <p className="text-2xs text-accent text-center pt-1 font-medium">
+              <p role="status" className="text-2xs text-accent text-center pt-1 font-medium">
                 {feedbackNotice}
               </p>
             )}

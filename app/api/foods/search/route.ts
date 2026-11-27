@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const user = await getUserFromRequest(req);
   if (!user) return unauthorized();
 
-  const q = req.nextUrl.searchParams.get("q")?.trim();
+  const q = req.nextUrl.searchParams.get("q")?.trim().slice(0, 200);
   if (!q) return NextResponse.json({ results: [] });
 
   const url =
@@ -43,25 +43,37 @@ export async function GET(req: NextRequest) {
 
     const num = (v: unknown) => {
       const n = typeof v === "string" ? parseFloat(v) : (v as number);
-      return Number.isFinite(n) ? n : 0;
+      return Number.isFinite(n) && n >= 0 ? n : 0;
     };
 
     const results = (data.products ?? [])
       .map((p) => {
         const n = p.nutriments ?? {};
         const name = [p.product_name, p.brands ? `(${p.brands})` : ""].filter(Boolean).join(" ").trim();
-        return {
+        const hasNutrition =
+          n["energy-kcal_100g"] != null ||
+          n["energy-kj_100g"] != null ||
+          num(n["proteins_100g"]) > 0 ||
+          num(n["carbohydrates_100g"]) > 0 ||
+          num(n["fat_100g"]) > 0;
+        const kcalRaw =
+          n["energy-kcal_100g"] != null
+            ? num(n["energy-kcal_100g"])
+            : n["energy-kj_100g"] != null
+              ? num(n["energy-kj_100g"]) / 4.184
+              : 0;
+        if (!name || (!hasNutrition && kcalRaw <= 0)) return [];
+        return [{
           name,
-          calories: Math.round(num(n["energy-kcal_100g"])),
+          calories: Math.round(kcalRaw),
           protein: Math.round(num(n["proteins_100g"]) * 10) / 10,
           carbs: Math.round(num(n["carbohydrates_100g"]) * 10) / 10,
           fat: Math.round(num(n["fat_100g"]) * 10) / 10,
           fiber: Math.round(num(n["fiber_100g"]) * 10) / 10,
           sugar: Math.round(num(n["sugars_100g"]) * 10) / 10,
           sodium: Math.round(num(n["sodium_100g"]) * 1000), // g → mg
-        };
+        }];
       })
-      .filter((r) => r.name && r.calories > 0)
       .slice(0, 15);
 
     return NextResponse.json({ results });

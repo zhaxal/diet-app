@@ -1,25 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Share } from "lucide-react";
-
-// Not in lib.dom.d.ts yet.
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-}
-
-function isStandalone() {
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    // iOS Safari's pre-standard flag — still the only signal it gives.
-    (window.navigator as unknown as { standalone?: boolean }).standalone === true
-  );
-}
-
-function isIOS() {
-  return /iphone|ipad|ipod/i.test(navigator.userAgent);
-}
+import {
+  clearDeferredInstallPrompt,
+  getDeferredInstallPrompt,
+  getIsInstalled,
+  getIsIOS,
+  subscribePwaInstall,
+} from "@/lib/pwa-install";
 
 /**
  * Tells the user this app installs like a native one — offline shell, home
@@ -28,31 +17,14 @@ function isIOS() {
  * so it gets the manual Share-sheet steps instead.
  */
 export default function InstallPwaCard() {
-  const [installed, setInstalled] = useState(false);
-  const [ios, setIos] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const installed = useSyncExternalStore(subscribePwaInstall, getIsInstalled, () => false);
+  const ios = useSyncExternalStore(subscribePwaInstall, getIsIOS, () => false);
+  const deferredPrompt = useSyncExternalStore(
+    subscribePwaInstall,
+    getDeferredInstallPrompt,
+    () => null,
+  );
   const [installing, setInstalling] = useState(false);
-
-  useEffect(() => {
-    setInstalled(isStandalone());
-    setIos(isIOS());
-
-    function onBeforeInstallPrompt(e: Event) {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    }
-    function onInstalled() {
-      setInstalled(true);
-      setDeferredPrompt(null);
-    }
-
-    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-      window.removeEventListener("appinstalled", onInstalled);
-    };
-  }, []);
 
   if (installed) {
     return (
@@ -71,7 +43,7 @@ export default function InstallPwaCard() {
       await deferredPrompt.userChoice;
     } finally {
       // Single-use, win or lose.
-      setDeferredPrompt(null);
+      clearDeferredInstallPrompt();
       setInstalling(false);
     }
   }

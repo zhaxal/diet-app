@@ -22,7 +22,15 @@ import {
 } from "@/lib/default-exercises";
 import { WORKOUT_TEMPLATES } from "@/lib/workout-templates";
 import { prettyDate } from "@/lib/time-client";
-import type { WeightUnit } from "@/lib/units";
+import { toKg, type WeightUnit } from "@/lib/units";
+import {
+  clearWorkoutDraft,
+  deleteCachedWorkout,
+  getCachedWorkout,
+  readWorkoutDraft,
+  setCachedWorkout,
+  writeWorkoutDraft,
+} from "@/lib/workout-cache";
 import RestTimer from "./RestTimer";
 import WorkoutNoteEditor from "./WorkoutNoteEditor";
 import ExerciseHistoryModal from "./ExerciseHistoryModal";
@@ -30,67 +38,145 @@ import { AlertDialog, Dialog } from "./Dialog";
 import { WorkoutDaySkeleton } from "./DayLoadingSkeleton";
 
 interface WorkoutCardProps {
+  userId: string;
   date: string;
   weightUnit: string;
   onToast: (msg: string) => void;
   onWorkoutSaved?: () => void;
 }
 
-export interface CachedWorkoutSession {
-  workout: ClientWorkout | null;
+interface PendingWorkoutSave {
+  userId: string;
+  date: string;
   title: string;
   rawNote: string;
-  exerciseStats: Record<string, ExerciseStats>;
-  saveStatus: "saved" | "saving" | "unsaved";
 }
 
-export const workoutSessionCache = new Map<string, CachedWorkoutSession>();
+function initialWorkoutView(userId: string, date: string) {
+  const cached = getCachedWorkout(userId, date);
+  const draft = readWorkoutDraft(userId, date);
+  if (cached?.workout) {
+    const serverUpdatedMs = cached.workout.updatedAt
+      ? Date.parse(cached.workout.updatedAt)
+      : 0;
+    if (
+      draft &&
+      draft.updatedAt > serverUpdatedMs &&
+      (draft.rawNote !== cached.workout.rawNote || draft.title !== cached.workout.title)
+    ) {
+      return {
+        workout: cached.workout,
+        title: draft.title,
+        rawNote: draft.rawNote,
+        exerciseStats: cached.exerciseStats,
+        saveStatus: "unsaved" as const,
+        loading: false,
+      };
+    }
+    return {
+      workout: cached.workout,
+      title: cached.workout.title,
+      rawNote: cached.workout.rawNote,
+      exerciseStats: cached.exerciseStats,
+      saveStatus: "saved" as const,
+      loading: false,
+    };
+  }
+  if (draft) {
+    return {
+      workout: null,
+      title: draft.title,
+      rawNote: draft.rawNote,
+      exerciseStats: cached?.exerciseStats ?? {},
+      saveStatus: "unsaved" as const,
+      loading: !cached,
+    };
+  }
+  return {
+    workout: null,
+    title: "Workout",
+    rawNote: "",
+    exerciseStats: cached?.exerciseStats ?? {},
+    saveStatus: "saved" as const,
+    loading: !cached,
+  };
+}
 
 export default function WorkoutCard({
+  userId,
   date,
   weightUnit,
   onToast,
   onWorkoutSaved,
 }: WorkoutCardProps) {
-  const cached = workoutSessionCache.get(date);
-  const [workout, setWorkout] = useState<ClientWorkout | null>(cached ? cached.workout : null);
-  const [title, setTitle] = useState<string>(cached ? cached.title : "Workout");
-  const [rawNote, setRawNote] = useState<string>(cached ? cached.rawNote : "");
-  const [exerciseStats, setExerciseStats] = useState<Record<string, ExerciseStats>>(cached ? cached.exerciseStats : {});
-  const [loading, setLoading] = useState<boolean>(!cached);
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(cached ? cached.saveStatus : "saved");
+  const unit: WeightUnit = weightUnit === "lb" ? "lb" : "kg";
+  const cacheKey = `${userId}:${date}`;
+  const [prevCacheKey, setPrevCacheKey] = useState(cacheKey);
+  const [initial] = useState(() => initialWorkoutView(userId, date));
+
+  const [workout, setWorkout] = useState<ClientWorkout | null>(initial.workout);
+  const [title, setTitle] = useState<string>(initial.title);
+  const [rawNote, setRawNote] = useState<string>(initial.rawNote);
+  const [exerciseStats, setExerciseStats] = useState<Record<string, ExerciseStats>>(
+    initial.exerciseStats,
+  );
+  const [loading, setLoading] = useState<boolean>(initial.loading);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadSeq, setReloadSeq] = useState<number>(0);
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
+    initial.saveStatus,
+  );
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
 
   // Grace period before displaying skeleton: if data arrives within 100ms,
   // do not flash an abrupt skeleton mid-transition.
-  const [showSkeleton, setShowSkeleton] = useState(false);
+  const [skeletonElapsedForKey, setSkeletonElapsedForKey] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (loading) {
-      const timer = setTimeout(() => setShowSkeleton(true), 100);
-      return () => clearTimeout(timer);
-    } else {
-      setShowSkeleton(false);
-    }
-  }, [loading]);
-  const [suggestedExercises, setSuggestedExercises] = useState<
-    Array<{ id: string; name: string; normalized: string; muscleGroup?: string }>
-  >([]);
+  const [searchResult, setSearchResult] = useState<{
+    key: string;
+    exercises: Array<{ id: string; name: string; normalized: string; muscleGroup?: string }>;
+    error: boolean;
+  }>({ key: "", exercises: [], error: false });
   const [showAddMenu, setShowAddMenu] = useState<boolean>(false);
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<MuscleGroupFilter>("All");
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState<string>("");
-  const [searchingExercises, setSearchingExercises] = useState<boolean>(false);
   const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
   const [showDetails, setShowDetails] = useState<boolean>(false);
   const [copyingLastSession, setCopyingLastSession] = useState(false);
   const [lastSessionInfo, setLastSessionInfo] = useState<{ date: string; title: string } | null>(null);
 
-  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  if (cacheKey !== prevCacheKey) {
+    setPrevCacheKey(cacheKey);
+    const next = initialWorkoutView(userId, date);
+    setWorkout(next.workout);
+    setTitle(next.title);
+    setRawNote(next.rawNote);
+    setExerciseStats(next.exerciseStats);
+    setLoading(next.loading);
+    setLoadError(null);
+    setSaveStatus(next.saveStatus);
+    setConfirmDelete(false);
+    setShowDetails(false);
+    setActiveExerciseId(null);
+  }
+
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setTimeout(() => setSkeletonElapsedForKey(cacheKey), 100);
+    return () => clearTimeout(timer);
+  }, [loading, cacheKey]);
+
+  const showSkeleton = loading && skeletonElapsedForKey === cacheKey;
+
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<PendingWorkoutSave | null>(null);
+  const hasEditedRef = useRef<boolean>(false);
+  const onWorkoutSavedRef = useRef(onWorkoutSaved);
+  useEffect(() => {
+    onWorkoutSavedRef.current = onWorkoutSaved;
+  }, [onWorkoutSaved]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const exerciseSearchRef = useRef<HTMLInputElement | null>(null);
-
-  // Local storage keys
-  const draftKey = `workout_draft_${date}`;
 
   // Load previous session metadata for quick "Copy from last session"
   useEffect(() => {
@@ -105,6 +191,8 @@ export default function WorkoutCard({
           } else {
             setLastSessionInfo(null);
           }
+        } else if (!cancelled) {
+          setLastSessionInfo(null);
         }
       })
       .catch(() => {});
@@ -112,88 +200,125 @@ export default function WorkoutCard({
     return () => {
       cancelled = true;
     };
-  }, [date]);
+  }, [date, userId]);
 
-  // Load workout from server or local draft
-  const loadWorkout = useCallback(() => {
-    if (!workoutSessionCache.has(date)) {
-      setLoading(true);
-    }
-    setConfirmDelete(false);
+  // Load workout from server or local draft, flushing any pending edit on day change
+  useEffect(() => {
+    let cancelled = false;
+    hasEditedRef.current = false;
+
     api
       .getWorkout(date)
       .then((res) => {
-        if (res.workout) {
-          setWorkout(res.workout);
-          setTitle(res.workout.title);
-          setRawNote(res.workout.rawNote);
-          setExerciseStats(res.exerciseStats || {});
-          setSaveStatus("saved");
-          workoutSessionCache.set(date, {
-            workout: res.workout,
-            title: res.workout.title,
-            rawNote: res.workout.rawNote,
-            exerciseStats: res.exerciseStats || {},
-            saveStatus: "saved",
-          });
-        } else {
-          // Check local storage draft
-          let nextTitle = "Workout";
-          let nextNote = "";
-          let nextStatus: "saved" | "saving" | "unsaved" = "saved";
-          const localDraft = localStorage.getItem(draftKey);
-          if (localDraft) {
-            try {
-              const d = JSON.parse(localDraft);
-              nextTitle = d.title || "Workout";
-              nextNote = d.rawNote || "";
-              nextStatus = "unsaved";
-            } catch {}
+        if (cancelled) return;
+        const stats = res.exerciseStats || {};
+        setExerciseStats(stats);
+        setLoadError(null);
+        setCachedWorkout(userId, date, {
+          workout: res.workout,
+          exerciseStats: stats,
+        });
+
+        if (!hasEditedRef.current) {
+          const draft = readWorkoutDraft(userId, date);
+          if (res.workout) {
+            const serverUpdatedMs = res.workout.updatedAt
+              ? Date.parse(res.workout.updatedAt)
+              : 0;
+            if (
+              draft &&
+              draft.updatedAt > serverUpdatedMs &&
+              (draft.rawNote !== res.workout.rawNote || draft.title !== res.workout.title)
+            ) {
+              setWorkout(res.workout);
+              setTitle(draft.title);
+              setRawNote(draft.rawNote);
+              setSaveStatus("unsaved");
+            } else {
+              if (draft) clearWorkoutDraft(userId, date);
+              setWorkout(res.workout);
+              setTitle(res.workout.title);
+              setRawNote(res.workout.rawNote);
+              setSaveStatus("saved");
+            }
+          } else if (draft) {
+            setWorkout(null);
+            setTitle(draft.title);
+            setRawNote(draft.rawNote);
+            setSaveStatus("unsaved");
+          } else {
+            setWorkout(null);
+            setTitle("Workout");
+            setRawNote("");
+            setSaveStatus("saved");
           }
-          setWorkout(null);
-          setTitle(nextTitle);
-          setRawNote(nextNote);
-          setSaveStatus(nextStatus);
-          setExerciseStats(res.exerciseStats || {});
-          workoutSessionCache.set(date, {
-            workout: null,
-            title: nextTitle,
-            rawNote: nextNote,
-            exerciseStats: res.exerciseStats || {},
-            saveStatus: nextStatus,
-          });
         }
         setLoading(false);
       })
       .catch((err) => {
+        if (cancelled) return;
         console.error("Failed to load workout", err);
+        setLoadError(err instanceof Error ? err.message : "Could not load workout");
         setLoading(false);
       });
-  }, [date, draftKey]);
 
-  useEffect(() => {
-    loadWorkout();
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      cancelled = true;
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const pending = pendingSaveRef.current;
+      if (
+        pending &&
+        pending.userId === userId &&
+        pending.date === date &&
+        pending.rawNote.trim().length > 0
+      ) {
+        pendingSaveRef.current = null;
+        void api
+          .saveWorkout({
+            date: pending.date,
+            title: pending.title,
+            rawNote: pending.rawNote,
+            source: "ui",
+          })
+          .then((res) => {
+            setCachedWorkout(pending.userId, pending.date, {
+              workout: res.workout,
+              exerciseStats: res.exerciseStats || {},
+            });
+            clearWorkoutDraft(pending.userId, pending.date);
+            onWorkoutSavedRef.current?.();
+          })
+          .catch(() => {});
+      }
     };
-  }, [loadWorkout]);
+  }, [userId, date, reloadSeq]);
+
+  const searchKey = `${exerciseSearchQuery}\0${selectedMuscleGroup}`;
 
   // Search/filter exercises when menu is opened or query/muscle changes
   useEffect(() => {
     if (!showAddMenu) return;
     let cancelled = false;
-    setSearchingExercises(true);
+    const key = `${exerciseSearchQuery}\0${selectedMuscleGroup}`;
     const timer = setTimeout(() => {
       api
         .searchExercises(exerciseSearchQuery, selectedMuscleGroup)
         .then((res) => {
-          if (!cancelled && res.exercises) {
-            setSuggestedExercises(res.exercises);
+          if (!cancelled) {
+            setSearchResult({
+              key,
+              exercises: res.exercises ?? [],
+              error: false,
+            });
           }
         })
-        .catch(() => {})
-        .finally(() => {
-          if (!cancelled) setSearchingExercises(false);
+        .catch(() => {
+          if (!cancelled) {
+            setSearchResult({ key, exercises: [], error: true });
+          }
         });
     }, 120);
 
@@ -203,64 +328,91 @@ export default function WorkoutCard({
     };
   }, [showAddMenu, exerciseSearchQuery, selectedMuscleGroup]);
 
+  const searchingExercises = showAddMenu && searchResult.key !== searchKey;
+  const suggestedExercises = searchResult.key === searchKey ? searchResult.exercises : [];
+  const searchFailed = searchResult.key === searchKey && searchResult.error;
+
   // Save workout to backend
   const persistWorkout = useCallback(
-    async (noteToSave: string, titleToSave: string) => {
+    async (noteToSave: string, titleToSave: string, targetUserId: string, targetDate: string) => {
       if (!noteToSave.trim()) return;
+      pendingSaveRef.current = null;
       setSaveStatus("saving");
       try {
         const res = await api.saveWorkout({
-          date,
+          date: targetDate,
           title: titleToSave,
           rawNote: noteToSave,
           source: "ui",
         });
-        setWorkout(res.workout);
-        setExerciseStats(res.exerciseStats || {});
-        setSaveStatus("saved");
-        workoutSessionCache.set(date, {
+        const stats = res.exerciseStats || {};
+        setCachedWorkout(targetUserId, targetDate, {
           workout: res.workout,
-          title: titleToSave,
-          rawNote: noteToSave,
-          exerciseStats: res.exerciseStats || {},
-          saveStatus: "saved",
+          exerciseStats: stats,
         });
-        localStorage.removeItem(draftKey);
+        clearWorkoutDraft(targetUserId, targetDate);
+        if (targetUserId === userId && targetDate === date) {
+          setWorkout(res.workout);
+          setExerciseStats(stats);
+          setSaveStatus("saved");
+        }
         onWorkoutSaved?.();
       } catch (err) {
         console.error("Failed to save workout", err);
-        setSaveStatus("unsaved");
+        if (targetUserId === userId && targetDate === date) {
+          setSaveStatus("unsaved");
+        }
         onToast("Could not save workout to server — preserved in draft");
       }
     },
-    [date, draftKey, onToast, onWorkoutSaved],
+    [userId, date, onToast, onWorkoutSaved],
   );
 
   // Debounced auto-save on change
-  const handleNoteChange = (newText: string) => {
+  const handleNoteChange = (newText: string, titleOverride?: string) => {
+    const effectiveTitle = titleOverride ?? title;
+    hasEditedRef.current = true;
     setRawNote(newText);
     setSaveStatus("unsaved");
 
-    try {
-      localStorage.setItem(draftKey, JSON.stringify({ title, rawNote: newText }));
-    } catch {}
+    writeWorkoutDraft(userId, date, {
+      title: effectiveTitle,
+      rawNote: newText,
+    });
+    pendingSaveRef.current = {
+      userId,
+      date,
+      title: effectiveTitle,
+      rawNote: newText,
+    };
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      persistWorkout(newText, title);
+      saveTimerRef.current = null;
+      void persistWorkout(newText, effectiveTitle, userId, date);
     }, 1200);
   };
 
   const handleTitleChange = (newTitle: string) => {
+    hasEditedRef.current = true;
     setTitle(newTitle);
     setSaveStatus("unsaved");
-    try {
-      localStorage.setItem(draftKey, JSON.stringify({ title: newTitle, rawNote }));
-    } catch {}
+
+    writeWorkoutDraft(userId, date, {
+      title: newTitle,
+      rawNote,
+    });
+    pendingSaveRef.current = {
+      userId,
+      date,
+      title: newTitle,
+      rawNote,
+    };
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      persistWorkout(rawNote, newTitle);
+      saveTimerRef.current = null;
+      void persistWorkout(rawNote, newTitle, userId, date);
     }, 1200);
   };
 
@@ -273,20 +425,26 @@ export default function WorkoutCard({
         await api.deleteWorkout({ date });
       }
     } catch (err) {
-      console.warn("Server delete returned error or already gone", err);
+      const status = (err as { status?: number })?.status;
+      if (status !== 404) {
+        setConfirmDelete(false);
+        onToast("Could not delete workout — try again");
+        return;
+      }
     }
 
-    try {
-      localStorage.removeItem(draftKey);
-    } catch {}
-
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    clearWorkoutDraft(userId, date);
+    pendingSaveRef.current = null;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
 
     setWorkout(null);
     setTitle("Workout");
     setRawNote("");
     setSaveStatus("saved");
-    workoutSessionCache.delete(date);
+    deleteCachedWorkout(userId, date);
     setConfirmDelete(false);
     onToast("Workout deleted");
     onWorkoutSaved?.();
@@ -344,7 +502,7 @@ export default function WorkoutCard({
 
   // One-tap format
   const handleFormatNote = () => {
-    const parsed = parseWorkoutNote(rawNote, weightUnit as "kg" | "lb");
+    const parsed = parseWorkoutNote(rawNote, unit);
     const formatted = formatWorkoutNote(parsed);
     handleNoteChange(formatted);
     onToast("Note formatted");
@@ -365,9 +523,9 @@ export default function WorkoutCard({
   const handleApplyTemplate = (templateId: string) => {
     const tmpl = WORKOUT_TEMPLATES.find((t) => t.id === templateId);
     if (!tmpl) return;
-    const content = tmpl.rawNote(weightUnit);
+    const content = tmpl.rawNote(unit);
     setTitle(tmpl.name);
-    handleNoteChange(content);
+    handleNoteChange(content, tmpl.name);
     onToast(`Loaded ${tmpl.name} template`);
   };
 
@@ -378,8 +536,9 @@ export default function WorkoutCard({
     try {
       const res = await api.getWorkout(lastSessionInfo.date);
       if (res.workout?.rawNote) {
-        setTitle(res.workout.title || "Workout");
-        handleNoteChange(res.workout.rawNote);
+        const nextTitle = res.workout.title || "Workout";
+        setTitle(nextTitle);
+        handleNoteChange(res.workout.rawNote, nextTitle);
         onToast(`Copied ${res.workout.title || "workout"} from ${lastSessionInfo.date}`);
       }
     } catch {
@@ -390,8 +549,8 @@ export default function WorkoutCard({
   };
 
   // Parse current exercises for live badge preview and session volume stats
-  const parsedPreview = parseWorkoutNote(rawNote, weightUnit as "kg" | "lb");
-  const sessionStats = calculateSessionStats(parsedPreview.exercises);
+  const parsedPreview = parseWorkoutNote(rawNote, unit);
+  const sessionStats = calculateSessionStats(parsedPreview.exercises, unit);
 
   // Collect muscle groups targeted in this session
   const sessionMuscles = Array.from(
@@ -474,13 +633,31 @@ export default function WorkoutCard({
             </button>
           )}
 
+          {loadError && (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-2 rounded border px-2.5 py-2 text-2xs"
+              style={{ borderColor: "var(--over)", background: "var(--panel-2)", color: "var(--over)" }}
+            >
+              <span>Could not load workout: {loadError}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  setLoadError(null);
+                  setReloadSeq((n) => n + 1);
+                }}
+                className="font-semibold uppercase tracking-wider text-ink hover:underline shrink-0"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           <div className="pt-1 text-center">
             <button
               type="button"
-              onClick={() => {
-                setRawNote("Bench Press\n- ");
-                handleNoteChange("Bench Press\n- ");
-              }}
+              onClick={() => handleNoteChange("Bench Press\n- ")}
               className="btn btn-ghost text-xs text-ink-dim hover:text-ink"
             >
               Start blank workout note
@@ -572,22 +749,26 @@ export default function WorkoutCard({
             >
               {parsedPreview.exercises.map((ex, idx) => {
                 const stat = exerciseStats[ex.normalized];
+                const resolvedId =
+                  stat?.exerciseId ??
+                  suggestedExercises.find((s) => s.normalized === ex.normalized)?.id ??
+                  null;
                 return (
                   <button
                     key={idx}
                     type="button"
+                    disabled={!resolvedId}
                     onClick={() => {
-                      if (stat?.exerciseId) {
-                        setActiveExerciseId(stat.exerciseId);
-                      } else {
-                        const found = suggestedExercises.find(
-                          (s) => s.normalized === ex.normalized,
-                        );
-                        if (found) setActiveExerciseId(found.id);
-                      }
+                      if (resolvedId) setActiveExerciseId(resolvedId);
                     }}
-                    aria-label={`View history for ${ex.name}`}
-                    className="flex items-center gap-1 rounded px-2 py-0.5 text-2xs border shrink-0 text-left transition-colors hover:border-accent"
+                    aria-label={
+                      resolvedId
+                        ? `View history for ${ex.name}`
+                        : `${ex.name} (history available after saving)`
+                    }
+                    className={`flex items-center gap-1 rounded px-2 py-0.5 text-2xs border shrink-0 text-left transition-colors ${
+                      resolvedId ? "hover:border-accent" : "opacity-80 cursor-default"
+                    }`}
                     style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}
                   >
                     <span
@@ -595,7 +776,9 @@ export default function WorkoutCard({
                     >
                       {ex.name}
                     </span>
-                    <ChevronRight size={10} className="text-ink-faint" aria-hidden="true" />
+                    {resolvedId && (
+                      <ChevronRight size={10} className="text-ink-faint" aria-hidden="true" />
+                    )}
                   </button>
                 );
               })}
@@ -626,7 +809,7 @@ export default function WorkoutCard({
             value={rawNote}
             onChange={handleNoteChange}
             onKeyDown={handleKeyDown}
-            weightUnit={weightUnit as WeightUnit}
+            weightUnit={unit}
             textareaRef={textareaRef}
             placeholder="Bench Press&#10;- 80kg x 8&#10;- 80kg x 8 // prev: 75kg x8&#10;- 85kg x 6&#10;&#10;Incline DB Press&#10;- 30kg x 10&#10;- 30kg x 8"
           />
@@ -704,6 +887,7 @@ export default function WorkoutCard({
                             <button
                               key={m}
                               type="button"
+                              aria-pressed={active}
                               onClick={() => setSelectedMuscleGroup(m)}
                               className={`px-2 py-0.5 rounded text-2xs uppercase tracking-wider shrink-0 transition-colors ${
                                 active
@@ -740,7 +924,11 @@ export default function WorkoutCard({
                           ))
                         ) : (
                           <div className="p-4 text-center text-2xs text-ink-faint">
-                            {searchingExercises ? "Searching catalog…" : "No matching exercises found."}
+                            {searchingExercises
+                              ? "Searching catalog…"
+                              : searchFailed
+                                ? "Could not load exercises."
+                                : "No matching exercises found."}
                           </div>
                         )}
                       </div>
@@ -833,6 +1021,9 @@ export default function WorkoutCard({
               <div className="divide-y divide-line rounded border border-line">
                 {parsedPreview.exercises.map((ex, idx) => {
                   const stat = exerciseStats[ex.normalized];
+                  const hitPr =
+                    Boolean(stat && stat.bestWeightKg > 0) &&
+                    ex.sets.some((s) => !s.isWarmup && toKg(s.weight, s.unit) >= stat!.bestWeightKg);
                   return (
                     <div
                       key={idx}
@@ -847,7 +1038,7 @@ export default function WorkoutCard({
                         {stat?.lastPerformance && (
                           <span className="font-mono text-ink-faint">{stat.lastPerformance}</span>
                         )}
-                        {stat && stat.bestWeightKg > 0 && (
+                        {hitPr && (
                           <span className="font-semibold text-accent">PR</span>
                         )}
                       </div>

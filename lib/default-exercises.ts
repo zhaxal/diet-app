@@ -49,7 +49,7 @@ export const DEFAULT_EXERCISES: DefaultExercise[] = [
   { name: "Goblet Squat", normalized: "goblet squat", muscleGroup: "Legs", equipment: "Dumbbell" },
 
   // ── Shoulders ──────────────────────────────────────────────────────
-  { name: "Overhead Press (OHP)", normalized: "overhead press ohp", muscleGroup: "Shoulders", equipment: "Barbell" },
+  { name: "Overhead Press (OHP)", normalized: "overhead press (ohp)", muscleGroup: "Shoulders", equipment: "Barbell" },
   { name: "Dumbbell Shoulder Press", normalized: "dumbbell shoulder press", muscleGroup: "Shoulders", equipment: "Dumbbell" },
   { name: "Lateral Raise", normalized: "lateral raise", muscleGroup: "Shoulders", equipment: "Dumbbell" },
   { name: "Cable Lateral Raise", normalized: "cable lateral raise", muscleGroup: "Shoulders", equipment: "Cable" },
@@ -84,11 +84,39 @@ export const DEFAULT_EXERCISES: DefaultExercise[] = [
 export const MUSCLE_GROUPS = ["All", "Chest", "Back", "Legs", "Shoulders", "Arms", "Core"] as const;
 export type MuscleGroupFilter = typeof MUSCLE_GROUPS[number];
 
+const EXERCISE_ALIASES: Record<string, DefaultExercise["muscleGroup"]> = {
+  facepull: "Back",
+  facepulls: "Back",
+  bicepcurl: "Arms",
+  dumbbellbicepcurl: "Arms",
+  overheadpress: "Shoulders",
+  barbellsquat: "Legs",
+  pullup: "Back",
+  pullups: "Back",
+};
+
 /** Find muscle group for any exercise name */
 export function lookupMuscleGroup(exerciseName: string): string | undefined {
   const norm = exerciseName.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const found = DEFAULT_EXERCISES.find(
-    (e) => e.normalized.replace(/[^a-z0-9]/g, "") === norm || norm.includes(e.normalized.replace(/[^a-z0-9]/g, "")),
+  if (!norm) return undefined;
+
+  const exact = DEFAULT_EXERCISES.find(
+    (e) => e.normalized.replace(/[^a-z0-9]/g, "") === norm,
   );
-  return found?.muscleGroup;
+  if (exact) return exact.muscleGroup;
+
+  if (EXERCISE_ALIASES[norm]) return EXERCISE_ALIASES[norm];
+
+  // Longest substring match wins so e.g. "Close-Grip Bench Press" resolves to
+  // Arms rather than matching "Bench Press" (Chest) first.
+  let bestMatch: DefaultExercise | undefined;
+  let bestLen = 0;
+  for (const e of DEFAULT_EXERCISES) {
+    const key = e.normalized.replace(/[^a-z0-9]/g, "");
+    if (norm.includes(key) && key.length > bestLen) {
+      bestMatch = e;
+      bestLen = key.length;
+    }
+  }
+  return bestMatch?.muscleGroup;
 }

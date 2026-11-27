@@ -19,26 +19,6 @@ export interface Macros {
 
 export type MacroKey = keyof Macros;
 
-export const MACRO_KEYS: MacroKey[] = [
-  "calories",
-  "protein",
-  "carbs",
-  "fat",
-  "fiber",
-  "sugar",
-  "sodium",
-];
-
-export const ZERO_MACROS: Macros = {
-  calories: 0,
-  protein: 0,
-  carbs: 0,
-  fat: 0,
-  fiber: 0,
-  sugar: 0,
-  sodium: 0,
-};
-
 /**
  * Scaled to a new amount. Calories and sodium are whole numbers — calories
  * because the column is an integer, sodium because a tenth of a milligram is

@@ -8,13 +8,7 @@ import {
   type AnimationEvent,
   type ReactNode,
 } from "react";
-
-function motionIsAllowed() {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: no-preference)").matches
-  );
-}
+import { motionIsAllowed } from "@/lib/motion";
 
 interface Snapshot {
   id: number;
@@ -47,8 +41,13 @@ export default function DayTransition({
 }) {
   const nextId = useRef(1);
   const prev = useRef({ transitionKey, content: children });
+  const snapshotRef = useRef<Snapshot | null>(null);
   const [displayedKey, setDisplayedKey] = useState(transitionKey);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+
+  useLayoutEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
 
   useLayoutEffect(() => {
     const prior = prev.current;
@@ -59,8 +58,9 @@ export default function DayTransition({
         const nextDate = transitionKey.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? "";
 
         // If an animation is already running and the calendar date has not changed,
-        // do not interrupt the in-flight slide animation.
-        if (priorDate && nextDate && priorDate === nextDate && snapshot != null) {
+        // update displayedKey so `isEntering` does not stick once the slide finishes.
+        if (priorDate && nextDate && priorDate === nextDate && snapshotRef.current != null) {
+          setDisplayedKey(transitionKey);
           prev.current = { transitionKey, content: children };
           return;
         }
@@ -73,13 +73,16 @@ export default function DayTransition({
           direction = nextDate > priorDate ? "left" : "right";
         }
 
-        setSnapshot({
+        const nextSnapshot: Snapshot = {
           id: nextId.current++,
           fromKey: prior.transitionKey,
           content: prior.content,
           direction,
-        });
+        };
+        snapshotRef.current = nextSnapshot;
+        setSnapshot(nextSnapshot);
       } else {
+        snapshotRef.current = null;
         setSnapshot(null);
       }
       setDisplayedKey(transitionKey);

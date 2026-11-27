@@ -41,7 +41,9 @@ export function scoreRecent(food: RecentFood, meal: string, now = Date.now()): n
   const affinity = count > 0 ? atThisMeal / count : 0;
   const mealBoost = 1 + MEAL_WEIGHT * affinity;
 
-  const days = Math.max(0, (now - new Date(food.lastAt ?? now).getTime()) / 86_400_000);
+  const rawTs = food.lastAt ? new Date(food.lastAt).getTime() : now;
+  const ts = Number.isFinite(rawTs) ? rawTs : now;
+  const days = Math.max(0, (now - ts) / 86_400_000);
   const decay = Math.pow(0.5, days / HALF_LIFE_DAYS);
   const recency = RECENCY_FLOOR + (1 - RECENCY_FLOOR) * decay;
 
@@ -52,8 +54,10 @@ export function scoreRecent(food: RecentFood, meal: string, now = Date.now()): n
 export function rankRecent(recent: RecentFood[], meal: string, now = Date.now()): RecentFood[] {
   return [...recent].sort((a, b) => {
     const d = scoreRecent(b, meal, now) - scoreRecent(a, meal, now);
-    if (d !== 0) return d;
-    const t = new Date(b.lastAt ?? 0).getTime() - new Date(a.lastAt ?? 0).getTime();
+    if (Number.isFinite(d) && d !== 0) return d;
+    const tb = b.lastAt ? new Date(b.lastAt).getTime() : 0;
+    const ta = a.lastAt ? new Date(a.lastAt).getTime() : 0;
+    const t = (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
     return t !== 0 ? t : a.name.localeCompare(b.name);
   });
 }

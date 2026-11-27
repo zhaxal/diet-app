@@ -8,18 +8,12 @@ import {
   type AnimationEvent,
   type ReactNode,
 } from "react";
+import { motionIsAllowed } from "@/lib/motion";
 
 interface Transition {
   id: number;
   transitionKey: string;
   outgoing: ReactNode;
-}
-
-function motionIsAllowed() {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: no-preference)").matches
-  );
 }
 
 /**
@@ -39,9 +33,13 @@ function motionIsAllowed() {
 export default function CrossFade({
   transitionKey,
   children,
+  classPrefix = "motion-cross-fade",
+  timeoutMs = 190,
 }: {
   transitionKey: string;
   children: ReactNode;
+  classPrefix?: string;
+  timeoutMs?: number;
 }) {
   const nextId = useRef(1);
   const previous = useRef({ transitionKey, content: children });
@@ -77,9 +75,9 @@ export default function CrossFade({
     if (!transition) return;
     const timeout = window.setTimeout(() => {
       setTransition((current) => (current?.id === transition.id ? null : current));
-    }, 190);
+    }, timeoutMs);
     return () => window.clearTimeout(timeout);
-  }, [transition]);
+  }, [transition, timeoutMs]);
 
   function handleAnimationEnd(event: AnimationEvent<HTMLDivElement>) {
     if (event.target !== event.currentTarget || !transition) return;
@@ -87,18 +85,18 @@ export default function CrossFade({
   }
 
   return (
-    <div className="motion-cross-fade">
+    <div className={classPrefix}>
       {transition?.transitionKey === transitionKey && (
         <div
           aria-hidden="true"
-          className="motion-cross-fade__layer motion-cross-fade__layer--leaving"
+          className={`${classPrefix}__layer ${classPrefix}__layer--leaving`}
         >
           {transition.outgoing}
         </div>
       )}
       <div
         key={transitionKey}
-        className={`motion-cross-fade__layer motion-cross-fade__layer--${isEntering ? "entering" : "current"}`}
+        className={`${classPrefix}__layer ${classPrefix}__layer--${isEntering ? "entering" : "current"}`}
         onAnimationEnd={isEntering ? handleAnimationEnd : undefined}
       >
         {children}

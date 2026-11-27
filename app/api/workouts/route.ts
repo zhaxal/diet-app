@@ -3,10 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { workoutInputSchema, dateQuerySchema } from "@/lib/validation";
 import { jsonError, zodError, unauthorized } from "@/lib/http";
-import { dayBoundsInTz, zonedWallToUtc } from "@/lib/time";
-import { parseWorkoutNote } from "@/lib/workout-parser";
-import { toKg, isWeightUnit, type WeightUnit } from "@/lib/units";
-import { getExerciseSummary } from "@/lib/workout-stats";
+import { dayBoundsInTz } from "@/lib/time";
+import { isWeightUnit, type WeightUnit } from "@/lib/units";
+import { getExerciseSummariesBatch } from "@/lib/workout-stats";
+import { upsertWorkoutForDay } from "@/lib/services/workouts";
 
 // GET /api/workouts?date=YYYY-MM-DD
 export async function GET(req: NextRequest) {
@@ -43,21 +43,19 @@ export async function GET(req: NextRequest) {
   });
 
   const displayUnit: WeightUnit = isWeightUnit(user.weightUnit) ? user.weightUnit : "kg";
-
-  // Gather stats for all recognized exercises in this workout (or recent exercises)
   const exerciseStats: Record<string, unknown> = {};
 
-  if (workout) {
+  if (workout && workout.exercises.length > 0) {
+    const summaries = await getExerciseSummariesBatch(
+      user.id,
+      workout.exercises.map((we) => we.exercise),
+      workout.date,
+      displayUnit,
+      user.timezone,
+    );
     for (const we of workout.exercises) {
-      const summary = await getExerciseSummary(
-        user.id,
-        we.exerciseId,
-        workout.date,
-        displayUnit,
-      );
-      if (summary) {
-        exerciseStats[we.exercise.normalized] = summary;
-      }
+      const s = summaries[we.exerciseId];
+      if (s) exerciseStats[we.exercise.normalized] = s;
     }
   }
 
@@ -85,132 +83,29 @@ export async function POST(req: NextRequest) {
   const { date: dateStr, title, rawNote, source } = parsed.data;
   const userUnit: WeightUnit = isWeightUnit(user.weightUnit) ? user.weightUnit : "kg";
 
-  // Anchor date at local noon in user's timezone
-  const workoutUtcDate = zonedWallToUtc(dateStr, "12:00:00.000", user.timezone);
-  const { start, end } = dayBoundsInTz(dateStr, user.timezone);
+  const { workout: savedWorkout } = await prisma.$transaction((tx) =>
+    upsertWorkoutForDay(tx, user.id, {
+      date: dateStr,
+      title,
+      rawNote,
+      source,
+      timezone: user.timezone,
+      defaultUnit: userUnit,
+    }),
+  );
 
-  // Parse markdown into exercises and sets
-  const parsedWorkout = parseWorkoutNote(rawNote, userUnit);
-  const resolvedTitle = parsedWorkout.title && parsedWorkout.title !== "Workout"
-    ? parsedWorkout.title
-    : title || "Workout";
-
-  const savedWorkout = await prisma.$transaction(async (tx) => {
-    // 1. Find existing workout for this date or create a new one
-    let existing = await tx.workout.findFirst({
-      where: {
-        userId: user.id,
-        date: { gte: start, lt: end },
-      },
-    });
-
-    if (!existing) {
-      existing = await tx.workout.create({
-        data: {
-          userId: user.id,
-          date: workoutUtcDate,
-          title: resolvedTitle,
-          rawNote,
-          notes: parsedWorkout.notes,
-          source: source || "ui",
-        },
-      });
-    } else {
-      // Clear old workout exercises to rewrite cleanly
-      await tx.workoutExercise.deleteMany({
-        where: { workoutId: existing.id },
-      });
-
-      existing = await tx.workout.update({
-        where: { id: existing.id },
-        data: {
-          title: resolvedTitle,
-          rawNote,
-          notes: parsedWorkout.notes,
-          source: source || existing.source,
-          updatedAt: new Date(),
-        },
-      });
-    }
-
-    // 2. Insert exercises and sets
-    for (let i = 0; i < parsedWorkout.exercises.length; i++) {
-      const parsedEx = parsedWorkout.exercises[i];
-
-      // Upsert the Exercise catalog record
-      const exercise = await tx.exercise.upsert({
-        where: {
-          userId_normalized: {
-            userId: user.id,
-            normalized: parsedEx.normalized,
-          },
-        },
-        update: {
-          name: parsedEx.name,
-        },
-        create: {
-          userId: user.id,
-          name: parsedEx.name,
-          normalized: parsedEx.normalized,
-        },
-      });
-
-      // Create WorkoutExercise link
-      const we = await tx.workoutExercise.create({
-        data: {
-          workoutId: existing.id,
-          exerciseId: exercise.id,
-          order: i,
-          notes: parsedEx.notes,
-        },
-      });
-
-      // Create sets
-      if (parsedEx.sets.length > 0) {
-        await tx.workoutSet.createMany({
-          data: parsedEx.sets.map((s) => ({
-            workoutExerciseId: we.id,
-            setNumber: s.setNumber,
-            // Convert to canonical kg
-            weight: toKg(s.weight, s.unit),
-            unit: s.unit,
-            reps: s.reps,
-            isWarmup: s.isWarmup,
-            isBodyweight: s.isBodyweight,
-            rpe: s.rpe,
-            notes: s.notes,
-          })),
-        });
-      }
-    }
-
-    return tx.workout.findUnique({
-      where: { id: existing.id },
-      include: {
-        exercises: {
-          orderBy: { order: "asc" },
-          include: {
-            exercise: true,
-            sets: { orderBy: { setNumber: "asc" } },
-          },
-        },
-      },
-    });
-  });
-
-  // Calculate stats for recognized exercises
   const exerciseStats: Record<string, unknown> = {};
-  if (savedWorkout) {
+  if (savedWorkout && savedWorkout.exercises.length > 0) {
+    const summaries = await getExerciseSummariesBatch(
+      user.id,
+      savedWorkout.exercises.map((we) => we.exercise),
+      savedWorkout.date,
+      userUnit,
+      user.timezone,
+    );
     for (const we of savedWorkout.exercises) {
-      const summary = await getExerciseSummary(
-        user.id,
-        we.exerciseId,
-        savedWorkout.date,
-        userUnit,
-      );
-      if (summary) {
-        exerciseStats[we.exercise.normalized] = summary;
-      }
+      const s = summaries[we.exerciseId];
+      if (s) exerciseStats[we.exercise.normalized] = s;
     }
   }
 
@@ -231,28 +126,24 @@ export async function DELETE(req: NextRequest) {
     return jsonError("id or date parameter is required", 400);
   }
 
-  let existing = null;
   if (id) {
-    existing = await prisma.workout.findFirst({
+    const { count } = await prisma.workout.deleteMany({
       where: { id, userId: user.id },
     });
-  } else if (dateParam) {
-    const parsed = dateQuerySchema.safeParse(dateParam);
-    if (!parsed.success) return zodError(parsed.error);
-    const { start, end } = dayBoundsInTz(parsed.data, user.timezone);
-    existing = await prisma.workout.findFirst({
-      where: {
-        userId: user.id,
-        date: { gte: start, lt: end },
-      },
-    });
+    if (count === 0) return jsonError("Workout not found", 404);
+    return NextResponse.json({ ok: true });
   }
 
-  if (!existing) return jsonError("Workout not found", 404);
-
-  await prisma.workout.delete({
-    where: { id: existing.id },
+  const parsed = dateQuerySchema.safeParse(dateParam);
+  if (!parsed.success) return zodError(parsed.error);
+  const { start, end } = dayBoundsInTz(parsed.data, user.timezone);
+  const { count } = await prisma.workout.deleteMany({
+    where: {
+      userId: user.id,
+      date: { gte: start, lt: end },
+    },
   });
+  if (count === 0) return jsonError("Workout not found", 404);
 
   return NextResponse.json({ ok: true });
 }

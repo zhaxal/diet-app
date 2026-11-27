@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
-import { prettyDate, shiftDate } from "@/lib/time-client";
-import { workoutSessionCache } from "./WorkoutCard";
+import { prettyDate, stripEnding, weekEnding } from "@/lib/time-client";
+import { getCachedWorkout, setCachedWorkout } from "@/lib/workout-cache";
 
 interface WorkoutSessionItem {
   id: string;
@@ -14,23 +14,15 @@ interface WorkoutSessionItem {
 }
 
 interface WorkoutNavigatorProps {
+  userId: string;
   currentDate: string;
   onSelectDate: (date: string) => void;
   todayDate: string;
   refreshTrigger?: number;
 }
 
-// 7 days ending on end
-function weekEnding(end: string): string[] {
-  return Array.from({ length: 7 }, (_, i) => shiftDate(end, i - 6));
-}
-
-// Ensure strip contains selected date
-function stripEnding(selected: string, today: string): string {
-  return selected > shiftDate(today, -6) ? today : selected;
-}
-
 export default function WorkoutNavigator({
+  userId,
   currentDate,
   onSelectDate,
   todayDate,
@@ -39,30 +31,35 @@ export default function WorkoutNavigator({
   const [sessions, setSessions] = useState<WorkoutSessionItem[]>([]);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
+  const isToday = currentDate === todayDate;
+  const stripEnd = stripEnding(currentDate, todayDate);
+  const weekDays = weekEnding(stripEnd);
+  const visibleDaysKey = weekDays.join(",");
+
   useEffect(() => {
     let cancelled = false;
+    const visibleDates = new Set(visibleDaysKey.split(","));
     api
       .getWorkoutDates()
       .then((res) => {
-        if (!cancelled && res.sessions) {
-          setSessions(res.sessions);
-          for (const s of res.sessions) {
-            if (!workoutSessionCache.has(s.date)) {
-              api
-                .getWorkout(s.date)
-                .then((wRes) => {
-                  if (wRes.workout) {
-                    workoutSessionCache.set(s.date, {
-                      workout: wRes.workout,
-                      title: wRes.workout.title,
-                      rawNote: wRes.workout.rawNote,
-                      exerciseStats: wRes.exerciseStats || {},
-                      saveStatus: "saved",
-                    });
-                  }
-                })
-                .catch(() => {});
-            }
+        if (cancelled || !res.sessions) return;
+        setSessions(res.sessions);
+        // Only prefetch uncached workouts visible in the current 7-day strip.
+        for (const s of res.sessions) {
+          if (!visibleDates.has(s.date)) continue;
+          if (!getCachedWorkout(userId, s.date)) {
+            api
+              .getWorkout(s.date)
+              .then((wRes) => {
+                if (cancelled) return;
+                if (wRes.workout) {
+                  setCachedWorkout(userId, s.date, {
+                    workout: wRes.workout,
+                    exerciseStats: wRes.exerciseStats || {},
+                  });
+                }
+              })
+              .catch(() => {});
           }
         }
       })
@@ -71,11 +68,7 @@ export default function WorkoutNavigator({
     return () => {
       cancelled = true;
     };
-  }, [refreshTrigger]);
-
-  const isToday = currentDate === todayDate;
-  const stripEnd = stripEnding(currentDate, todayDate);
-  const weekDays = weekEnding(stripEnd);
+  }, [userId, refreshTrigger, visibleDaysKey]);
 
   return (
     <nav aria-label="Workout session navigation" className="mb-2">

@@ -38,24 +38,18 @@ export function weekEnding(end: string): string[] {
   return out;
 }
 
-/**
- * How long ago, at the coarseness a food strip needs: "today", "2d", "3w".
- * Nothing here is precise enough to warrant hours.
- */
-export function agoLabel(value: string | number | Date): string {
-  const days = Math.floor((Date.now() - new Date(value).getTime()) / 86400000);
-  if (days <= 0) return "today";
-  if (days === 1) return "1d";
-  if (days < 14) return `${days}d`;
-  return `${Math.floor(days / 7)}w`;
+export function shiftDate(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
-export function shiftDate(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
+/**
+ * The last day of the seven-day strip containing `date`, clamped to `today`
+ * so the header never shows future empty columns.
+ */
+export function stripEnding(date: string, today: string): string {
+  const forward = shiftDate(date, 3);
+  return forward > today ? today : forward;
 }
 
 export function prettyDate(date: string): string {

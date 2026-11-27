@@ -90,7 +90,19 @@ self.addEventListener("fetch", (event) => {
         const res = await fetch(req);
         // Turbopack development chunks use stable URLs and must never be
         // cache-first. Production output declares itself immutable instead.
-        if (canCacheAsset(url, res)) (await caches.open(ASSETS)).put(req, res.clone());
+        if (canCacheAsset(url, res)) {
+          const copy = res.clone();
+          event.waitUntil(
+            (async () => {
+              try {
+                const cache = await caches.open(ASSETS);
+                await cache.put(req, copy);
+              } catch {
+                // Ignore quota / Cache Storage write errors
+              }
+            })(),
+          );
+        }
         return res;
       })(),
     );
@@ -100,16 +112,29 @@ self.addEventListener("fetch", (event) => {
   if (req.mode === "navigate") {
     event.respondWith(
       (async () => {
+        const cacheKey = url.pathname;
         try {
           const res = await fetch(req);
           // Keep the shell current whenever the network is there, so an offline
           // launch gets the last build the user actually ran, not the install-
-          // time one.
-          if (res.ok) (await caches.open(SHELL)).put(req, res.clone());
+          // time one. Strip query strings (e.g. ?d=...) and skip redirects.
+          if (res.ok && !res.redirected) {
+            const copy = res.clone();
+            event.waitUntil(
+              (async () => {
+                try {
+                  const cache = await caches.open(SHELL);
+                  await cache.put(cacheKey, copy);
+                } catch {
+                  // Ignore quota / Cache Storage write errors
+                }
+              })(),
+            );
+          }
           return res;
         } catch {
           return (
-            (await caches.match(req)) ||
+            (await caches.match(cacheKey)) ||
             (await caches.match("/")) ||
             new Response(
               "<!doctype html><meta charset=utf-8><title>Offline</title><body style='font:14px system-ui;padding:2rem'>Offline, and this page was never cached.",

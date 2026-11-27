@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
-  AUTH_COOKIE,
   getUserFromRequest,
   hashPassword,
+  setAuthCookie,
   signToken,
   verifyPassword,
 } from "@/lib/auth";
@@ -66,12 +66,6 @@ export async function POST(req: NextRequest) {
 
   const token = signToken(updated);
   const res = NextResponse.json({ ok: true, token });
-  res.cookies.set(AUTH_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  setAuthCookie(res, token);
   return res;
 }

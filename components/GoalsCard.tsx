@@ -79,9 +79,15 @@ export default function GoalsCard({ goals, latestWeight, onGoalsChange }: Props)
               dailySodium: reverted.dailySodium != null ? String(reverted.dailySodium) : "",
               weightUnit: reverted.weightUnit,
             });
+            setProfile({
+              sex: reverted.sex,
+              birthYear: reverted.birthYear,
+              heightCm: reverted.heightCm,
+            });
             toast("Goals reverted", "info");
-          } catch {
+          } catch (err) {
             toast("Failed to revert goals", "error");
+            throw err;
           }
         },
       });
@@ -114,129 +120,136 @@ export default function GoalsCard({ goals, latestWeight, onGoalsChange }: Props)
 
   return (
     <section className="panel p-3">
-      <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
-          Daily goals
-        </h2>
-        <label className="flex items-center gap-1 text-2xs uppercase tracking-wider text-ink-faint">
-          <span>Unit</span>
-          <Select
-            value={form.weightUnit}
-            onChange={(e) => setForm({ ...form, weightUnit: e.target.value as "kg" | "lb" })}
-            className="py-0.5 text-xs"
-          >
-            <option value="kg">kg</option>
-            <option value="lb">lb</option>
-          </Select>
-        </label>
-      </div>
-
-      {/* Primary Target Macros */}
-      <div className="grid grid-cols-2 gap-1.5 min-[380px]:grid-cols-4">
-        {PRIMARY_FIELDS.map(({ label, key, max }) => (
-          <label key={key} className="block">
-            <span className="text-2xs uppercase tracking-wider text-ink-faint">
-              {label}
-            </span>
-            <input
-              type="number"
-              min={0}
-              max={max}
-              value={form[key]}
-              onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-              placeholder="—"
-              className="field num mt-0.5 w-full text-right"
-            />
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-dim">
+            Daily goals
+          </h2>
+          <label className="flex items-center gap-1 text-2xs uppercase tracking-wider text-ink-faint">
+            <span>Unit</span>
+            <Select
+              value={form.weightUnit}
+              onChange={(e) => setForm({ ...form, weightUnit: e.target.value as "kg" | "lb" })}
+              className="py-0.5 text-xs"
+            >
+              <option value="kg">kg</option>
+              <option value="lb">lb</option>
+            </Select>
           </label>
-        ))}
-      </div>
+        </div>
 
-      {/* Progressive Disclosure for Micronutrients & Trace */}
-      <div className="mt-2.5">
-        <button
-          type="button"
-          onClick={() => setShowMicros((s) => !s)}
-          aria-expanded={showMicros}
-          className="flex items-center gap-1 text-2xs uppercase tracking-wider text-ink-faint hover:text-ink transition-colors"
-        >
-          <span>{showMicros ? "− fewer" : "+ Micronutrients"}</span>
-          {!showMicros && (
-            <span className="text-ink-faint/60 lowercase tracking-normal">
-              (fiber, sugar, sodium)
-            </span>
+        {/* Primary Target Macros */}
+        <div className="grid grid-cols-2 gap-1.5 min-[380px]:grid-cols-4">
+          {PRIMARY_FIELDS.map(({ label, key, max }) => (
+            <label key={key} className="block">
+              <span className="text-2xs uppercase tracking-wider text-ink-faint">
+                {label}
+              </span>
+              <input
+                type="number"
+                min={0}
+                max={max}
+                value={form[key]}
+                onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                placeholder="—"
+                className="field num mt-0.5 w-full text-right"
+              />
+            </label>
+          ))}
+        </div>
+
+        {/* Progressive Disclosure for Micronutrients & Trace */}
+        <div className="mt-2.5">
+          <button
+            type="button"
+            onClick={() => setShowMicros((s) => !s)}
+            aria-expanded={showMicros}
+            className="flex items-center gap-1 text-2xs uppercase tracking-wider text-ink-faint hover:text-ink transition-colors"
+          >
+            <span>{showMicros ? "− fewer" : "+ Micronutrients"}</span>
+            {!showMicros && (
+              <span className="text-ink-faint/60 lowercase tracking-normal">
+                (fiber, sugar, sodium)
+              </span>
+            )}
+          </button>
+
+          {micros.rendered && (
+            <div
+              onAnimationEnd={micros.onAnimationEnd}
+              className={`motion-disclosure-content ${micros.closing ? "motion-disclosure-content--closing" : ""} mt-2 grid grid-cols-3 gap-1.5 border-t pt-2`}
+              style={{ borderColor: "var(--line-soft)" }}
+            >
+              {MICRO_FIELDS.map(({ label, key, max }) => (
+                <label key={key} className="block">
+                  <span className="text-2xs uppercase tracking-wider text-ink-faint">
+                    {label}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={max}
+                    value={form[key]}
+                    onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                    placeholder="—"
+                    className="field num mt-0.5 w-full text-right"
+                  />
+                </label>
+              ))}
+            </div>
           )}
-        </button>
+        </div>
 
-        {micros.rendered && (
-          <div
-            onAnimationEnd={micros.onAnimationEnd}
-            className={`motion-disclosure-content ${micros.closing ? "motion-disclosure-content--closing" : ""} mt-2 grid grid-cols-3 gap-1.5 border-t pt-2`}
-            style={{ borderColor: "var(--line-soft)" }}
+        {/* Nested TDEE / Body Profile Calculator */}
+        <div className="mt-3 border-t pt-2" style={{ borderColor: "var(--line)" }}>
+          <button
+            type="button"
+            onClick={() => setShowCalculator((s) => !s)}
+            aria-expanded={showCalculator}
+            className="flex w-full items-center justify-between py-1 text-2xs font-semibold uppercase tracking-wider text-ink-dim transition-colors hover:text-ink"
           >
-            {MICRO_FIELDS.map(({ label, key, max }) => (
-              <label key={key} className="block">
-                <span className="text-2xs uppercase tracking-wider text-ink-faint">
-                  {label}
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  max={max}
-                  value={form[key]}
-                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                  placeholder="—"
-                  className="field num mt-0.5 w-full text-right"
-                />
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
+            <span>Calculate from TDEE / Profile</span>
+            <span className="num text-xs text-ink-faint">{showCalculator ? "−" : "+"}</span>
+          </button>
 
-      {/* Nested TDEE / Body Profile Calculator */}
-      <div className="mt-3 border-t pt-2" style={{ borderColor: "var(--line)" }}>
-        <button
-          type="button"
-          onClick={() => setShowCalculator((s) => !s)}
-          aria-expanded={showCalculator}
-          className="flex w-full items-center justify-between py-1 text-2xs font-semibold uppercase tracking-wider text-ink-dim transition-colors hover:text-ink"
-        >
-          <span>Calculate from TDEE / Profile</span>
-          <span className="num text-xs text-ink-faint">{showCalculator ? "−" : "+"}</span>
+          {calculator.rendered && (
+            <div
+              onAnimationEnd={calculator.onAnimationEnd}
+              className={`motion-disclosure-content ${calculator.closing ? "motion-disclosure-content--closing" : ""} mt-2 border-t pt-2.5`}
+              style={{ borderColor: "var(--line-soft)" }}
+            >
+              <TdeeCard
+                goals={goals}
+                latestWeight={latestWeight}
+                onApply={(calc) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    dailyCalories: String(calc.calories),
+                    dailyProtein: String(calc.protein),
+                    dailyCarbs: String(calc.carbs),
+                    dailyFat: String(calc.fat),
+                  }));
+                  setProfile({
+                    sex: calc.sex,
+                    birthYear: calc.birthYear,
+                    heightCm: calc.heightCm,
+                  });
+                  toast("Calculated targets filled into form. Review and save below.");
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        <button type="submit" disabled={saving} className="btn btn-primary mt-2.5 w-full">
+          {saving ? "Saving…" : "Save goals"}
         </button>
-
-        {calculator.rendered && (
-          <div
-            onAnimationEnd={calculator.onAnimationEnd}
-            className={`motion-disclosure-content ${calculator.closing ? "motion-disclosure-content--closing" : ""} mt-2 border-t pt-2.5`}
-            style={{ borderColor: "var(--line-soft)" }}
-          >
-            <TdeeCard
-              goals={goals}
-              latestWeight={latestWeight}
-              onApply={(calc) => {
-                setForm((prev) => ({
-                  ...prev,
-                  dailyCalories: String(calc.calories),
-                  dailyProtein: String(calc.protein),
-                  dailyCarbs: String(calc.carbs),
-                  dailyFat: String(calc.fat),
-                }));
-                setProfile({
-                  sex: calc.sex,
-                  birthYear: calc.birthYear,
-                  heightCm: calc.heightCm,
-                });
-                toast("Calculated targets filled into form. Review and save below.");
-              }}
-            />
-          </div>
-        )}
-      </div>
-
-      <button onClick={save} disabled={saving} className="btn btn-primary mt-2.5 w-full">
-        {saving ? "Saving…" : "Save goals"}
-      </button>
+      </form>
     </section>
   );
 }

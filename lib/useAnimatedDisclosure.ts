@@ -1,11 +1,5 @@
 import { useEffect, useState, type AnimationEvent } from "react";
-
-function motionIsAllowed() {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: no-preference)").matches
-  );
-}
+import { motionIsAllowed } from "./motion";
 
 /**
  * Every "+ / −" disclosure in the app (Panel, the TDEE calculator, weight
@@ -16,15 +10,21 @@ function motionIsAllowed() {
  * the exit animation, then actually unmount.
  */
 export function useAnimatedDisclosure(open: boolean, exitDurationMs = 160) {
+  const [prevOpen, setPrevOpen] = useState(open);
   const [phase, setPhase] = useState<"closed" | "open" | "closing">(open ? "open" : "closed");
 
-  useEffect(() => {
-    if (open) {
-      setPhase("open");
-      return;
-    }
-    setPhase((p) => (p === "closed" ? "closed" : motionIsAllowed() ? "closing" : "closed"));
-  }, [open]);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    setPhase(
+      open
+        ? "open"
+        : phase === "closed"
+          ? "closed"
+          : motionIsAllowed()
+            ? "closing"
+            : "closed",
+    );
+  }
 
   // Fallback if the browser drops the animationend event.
   useEffect(() => {

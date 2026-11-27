@@ -39,6 +39,23 @@ export async function POST(req: NextRequest) {
   const parsed = templateSchema.safeParse(body);
   if (!parsed.success) return zodError(parsed.error);
 
+  const productIds = Array.from(
+    new Set(
+      parsed.data.items
+        .map((i) => i.productId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
+  if (productIds.length > 0) {
+    const owned = await prisma.product.findMany({
+      where: { id: { in: productIds }, userId: user.id },
+      select: { id: true },
+    });
+    if (owned.length !== productIds.length) {
+      return jsonError("Referenced product not found", 422);
+    }
+  }
+
   const created = await prisma.mealTemplate.create({
     data: {
       userId: user.id,

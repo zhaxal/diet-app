@@ -50,6 +50,16 @@ export async function POST(req: NextRequest) {
   const { consumedAt, quantity, quantityUnit, quantityGrams, source, ...rest } =
     parsed.data;
 
+  if (rest.productId) {
+    const ownedProduct = await prisma.product.findFirst({
+      where: { id: rest.productId, userId: user.id },
+      select: { id: true },
+    });
+    if (!ownedProduct) {
+      return jsonError("Referenced product not found", 422);
+    }
+  }
+
   const entry = await prisma.foodEntry.create({
     data: {
       userId: user.id,

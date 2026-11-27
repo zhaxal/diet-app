@@ -10,6 +10,10 @@ import {
 import { POST as copyDay } from "../app/api/entries/copy/route";
 import { GET as getSummary } from "../app/api/summary/route";
 import { GET as getTrends } from "../app/api/trends/route";
+import { GET as listProducts, POST as createProduct } from "../app/api/products/route";
+import { PATCH as patchProduct, DELETE as deleteProduct } from "../app/api/products/[id]/route";
+import { GET as listWeight, POST as logWeight } from "../app/api/weight/route";
+import { GET as exportAll } from "../app/api/export/route";
 import { createUser, request, withId } from "./helpers";
 
 const porridge = { name: "Porridge", calories: 300, protein: 20, mealType: "breakfast" };
@@ -222,4 +226,166 @@ test("a day cannot be copied onto itself", async () => {
   );
   assert.equal(res.status, 400);
   assert.equal(await prisma.foodEntry.count({ where: { userId: user.id } }), 1);
+});
+
+test("products reject empty numeric strings and serving/basis mismatches, normalize barcodes, and detect P2002", async () => {
+  const user = await createUser("prod-val@example.com");
+
+  const blankCal = await createProduct(
+    request("POST", "/api/products", {
+      token: user.token,
+      body: { name: "Water", calories: "", basis: "100g" },
+    }),
+  );
+  assert.equal(blankCal.status, 422);
+
+  const badBasis = await createProduct(
+    request("POST", "/api/products", {
+      token: user.token,
+      body: {
+        name: "Olive Oil",
+        calories: 884,
+        basis: "100g",
+        servingSize: 15,
+        servingUnit: "ml",
+      },
+    }),
+  );
+  assert.equal(badBasis.status, 422);
+
+  const p1Res = await createProduct(
+    request("POST", "/api/products", {
+      token: user.token,
+      body: { name: "Oats", calories: 380, basis: "100g", barcode: "   " },
+    }),
+  );
+  assert.equal(p1Res.status, 201);
+  const { product: p1 } = (await p1Res.json()) as { product: { id: string; barcode: string | null } };
+  assert.equal(p1.barcode, null);
+
+  const p2Res = await createProduct(
+    request("POST", "/api/products", {
+      token: user.token,
+      body: { name: "Milk", calories: 42, basis: "100ml", barcode: "123456" },
+    }),
+  );
+  assert.equal(p2Res.status, 201);
+
+  // Patching p1 to collide with p2's barcode triggers 409
+  const dupPatch = await patchProduct(
+    request("PATCH", `/api/products/${p1.id}`, {
+      token: user.token,
+      body: { barcode: "123456" },
+    }),
+    withId(p1.id),
+  );
+  assert.equal(dupPatch.status, 409);
+
+  // Patching incompatible serving unit fails with 422
+  const badPatch = await patchProduct(
+    request("PATCH", `/api/products/${p1.id}`, {
+      token: user.token,
+      body: { servingSize: 30, servingUnit: "ml" },
+    }),
+    withId(p1.id),
+  );
+  assert.equal(badPatch.status, 422);
+
+  // Empty barcode clears to null
+  const clearBarcode = await patchProduct(
+    request("PATCH", `/api/products/${p1.id}`, {
+      token: user.token,
+      body: { barcode: "" },
+    }),
+    withId(p1.id),
+  );
+  assert.equal(clearBarcode.status, 200);
+  assert.equal((await clearBarcode.json()).product.barcode, null);
+
+  const listRes = await listProducts(request("GET", "/api/products?q=Oat", { token: user.token }));
+  assert.equal((await listRes.json()).products.length, 1);
+
+  // Another user gets 404 deleting p1
+  const other = await createUser("prod-other@example.com");
+  const badDel = await deleteProduct(
+    request("DELETE", `/api/products/${p1.id}`, { token: other.token }),
+    withId(p1.id),
+  );
+  assert.equal(badDel.status, 404);
+});
+
+test("entries reject foreign productId and clear quantityUnit when quantity becomes null", async () => {
+  const owner = await createUser("entry-prod-owner@example.com");
+  const caller = await createUser("entry-prod-caller@example.com");
+  const pRes = await createProduct(
+    request("POST", "/api/products", {
+      token: owner.token,
+      body: { name: "Secret Yogurt", calories: 60, basis: "100g" },
+    }),
+  );
+  const { product } = (await pRes.json()) as { product: { id: string } };
+
+  const badCreate = await createEntry(
+    request("POST", "/api/entries", {
+      token: caller.token,
+      body: { ...porridge, productId: product.id },
+    }),
+  );
+  assert.equal(badCreate.status, 422);
+
+  const ownEntry = await addEntry(caller.token, {
+    ...porridge,
+    quantity: 100,
+    quantityUnit: "g",
+  });
+  const cleared = await patchEntry(
+    request("PATCH", `/api/entries/${ownEntry.id}`, {
+      token: caller.token,
+      body: { quantity: null },
+    }),
+    withId(ownEntry.id),
+  );
+  assert.equal(cleared.status, 200);
+  const updated = (await cleared.json()).entry;
+  assert.equal(updated.quantity, null);
+  assert.equal(updated.quantityUnit, null);
+});
+
+test("weight date validation, trends lb conversion + days=all, and CSV formula escaping", async () => {
+  const user = await createUser("trends-lb@example.com");
+  await prisma.user.update({ where: { id: user.id }, data: { weightUnit: "lb" } });
+
+  const badWeight = await listWeight(
+    request("GET", "/api/weight?from=2026-02-30", { token: user.token }),
+  );
+  assert.equal(badWeight.status, 422);
+
+  const logRes = await logWeight(
+    request("POST", "/api/weight", {
+      token: user.token,
+      body: { weight: 220, unit: "lb", loggedAt: "2026-10-01T12:00:00.000Z" },
+    }),
+  );
+  assert.equal(logRes.status, 201);
+
+  const trendsRes = await getTrends(
+    request("GET", "/api/trends?days=all", { token: user.token }),
+  );
+  assert.equal(trendsRes.status, 200);
+  const trendsJson = await trendsRes.json();
+  assert.ok(trendsJson.weight.length === 1);
+  assert.ok(Math.abs(trendsJson.weight[0].value - 220) < 0.2);
+
+  // Formula-injection entry name should be quoted and prefixed with '
+  await addEntry(user.token, {
+    ...porridge,
+    name: "=SUM(A1:A2)",
+    consumedAt: "2026-10-01T12:00:00.000Z",
+  });
+  const csvRes = await exportAll(
+    request("GET", "/api/export?format=csv", { token: user.token }),
+  );
+  assert.equal(csvRes.status, 200);
+  const csv = await csvRes.text();
+  assert.ok(csv.includes("'=SUM(A1:A2)"));
 });

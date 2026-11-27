@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { TrendingUp, Calendar, Award } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { LineChart } from "@/components/MiniChart";
@@ -53,37 +53,43 @@ export default function ExerciseHistoryModal({
   // Retained across a close so the panel still has something to show while
   // it fades out, rather than going blank the instant exerciseId clears.
   const [activeId, setActiveId] = useState(exerciseId);
-  const [data, setData] = useState<HistoryData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  if (exerciseId && exerciseId !== activeId) {
+    setActiveId(exerciseId);
+  }
+
   const [loadKey, setLoadKey] = useState(0);
+  const [fetchState, setFetchState] = useState<{
+    id: string;
+    reqSeq: number;
+    data: HistoryData | null;
+    error: string | null;
+  } | null>(null);
   const [metric, setMetric] = useState<"weight" | "1rm">("weight");
 
-  // Layout effect, not a passive one: this must land in the same commit
-  // exerciseId turns non-null, or the dialog opens on a stale/empty id.
-  useLayoutEffect(() => {
-    if (exerciseId) setActiveId(exerciseId);
-  }, [exerciseId]);
-
-  // Fetch exercise history
   useEffect(() => {
     if (!activeId) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     api
       .getExerciseHistory(activeId)
       .then((res) => {
         if (!cancelled) {
-          setData(res as HistoryData);
-          setLoading(false);
+          setFetchState({
+            id: activeId,
+            reqSeq: loadKey,
+            data: res as HistoryData,
+            error: null,
+          });
         }
       })
       .catch((err) => {
         if (!cancelled) {
           console.error("Failed to load exercise history", err);
-          setError(err instanceof Error ? err.message : "Could not load exercise history");
-          setLoading(false);
+          setFetchState({
+            id: activeId,
+            reqSeq: loadKey,
+            data: null,
+            error: err instanceof Error ? err.message : "Could not load exercise history",
+          });
         }
       });
 
@@ -93,6 +99,10 @@ export default function ExerciseHistoryModal({
   }, [activeId, loadKey]);
 
   if (!activeId) return null;
+
+  const loading = !fetchState || fetchState.id !== activeId || fetchState.reqSeq !== loadKey;
+  const data = !loading ? fetchState.data : null;
+  const error = !loading ? fetchState.error : null;
 
   return (
     <Dialog
@@ -110,9 +120,9 @@ export default function ExerciseHistoryModal({
             </div>
           )}
 
-          {!loading && !data && (
+          {!loading && error && (
             <div className="py-8 text-center text-xs text-ink-faint" role="alert">
-              <p>{error ?? "Could not load history for this exercise."}</p>
+              <p>{error}</p>
               <button
                 type="button"
                 onClick={() => setLoadKey((key) => key + 1)}
@@ -186,6 +196,7 @@ export default function ExerciseHistoryModal({
                       <button
                         type="button"
                         onClick={() => setMetric("weight")}
+                        aria-pressed={metric === "weight"}
                         className={`min-h-[32px] rounded px-2.5 text-2xs transition-colors ${
                           metric === "weight"
                             ? "bg-ink text-panel font-semibold"
@@ -197,6 +208,7 @@ export default function ExerciseHistoryModal({
                       <button
                         type="button"
                         onClick={() => setMetric("1rm")}
+                        aria-pressed={metric === "1rm"}
                         className={`min-h-[32px] rounded px-2.5 text-2xs transition-colors ${
                           metric === "1rm"
                             ? "bg-ink text-panel font-semibold"

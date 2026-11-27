@@ -1,4 +1,5 @@
-import { type WeightUnit } from "./units";
+import { fromKg, toKg, type WeightUnit } from "./units";
+import { isValidCalendarDate } from "./time";
 
 export interface ParsedSet {
   setNumber: number;
@@ -16,7 +17,6 @@ export interface ParsedExercise {
   normalized: string;
   notes?: string;
   sets: ParsedSet[];
-  unparsedLines?: string[];
 }
 
 export interface ParsedWorkout {
@@ -80,7 +80,9 @@ function tryParseSet(
   const clean = line.replace(/^(?:[-*•]|\d+[.)])\s+/, "").trim();
   if (!clean) return null;
 
-  const isWarmup = /\b(?:warmup|warm-up|w)\b/i.test(clean) || /\(w\)/i.test(clean);
+  const isWarmup =
+    /\(w\)/i.test(clean) ||
+    /(?:^|[\s(])(?:warm-?up|wu|w)(?=[\s)]|$)(?!\s*\/)/i.test(clean);
   const rpeMatch = clean.match(/(?:@|rpe\s*:?)\s*(\d+(?:\.\d+)?)/i);
   const rpe = rpeMatch ? parseFloat(rpeMatch[1]) : undefined;
 
@@ -101,9 +103,9 @@ function tryParseSet(
   }
 
   // Check for standard weight x reps
-  // E.g.: "80kg x 8", "+15kg x 6", "BW x 10", "80 x 8", "BW + 15kg x 6"
+  // E.g.: "80kg x 8", "80kgs x 8", "+15kg x 6", "BW x 10", "80 x 8", "BW + 15kg x 6"
   const match = clean.match(
-    /(?:(bw|bodyweight)\s*\+?\s*)?(?:(\+|-)?\s*(\d+(?:\.\d+)?)\s*(kg|lbs?|lb)?)?(?:^|\s*)(bw|bodyweight)?\s*(?:[xX*×@]\s*(\d+))(?:\s*reps?)?/i,
+    /(?:^|\s)(?:(?:(body\s*weight|bw|bodyweight)(?:\s*\+\s*)?)?(?:([+-])\s*)?(\d+(?:\.\d+)?)\s*(kgs?|lbs?)?|(body\s*weight|bw|bodyweight))\s*[xX*×]\s*(\d+)(?:\s*reps?)?(?=\s|$|[.,(@])/i,
   );
 
   if (match) {
@@ -119,14 +121,18 @@ function tryParseSet(
       if (reps > 0 && reps <= 200) {
         const hasBw = Boolean(preBw || postBw || sign === "+" || sign === "-");
         let isBodyweight = hasBw || (!weightValStr && Boolean(currentWeight?.isBodyweight));
-        let unit: WeightUnit = unitStr?.startsWith("lb") ? "lb" : unitStr === "kg" ? "kg" : defaultUnit;
+        let unit: WeightUnit = unitStr?.startsWith("lb")
+          ? "lb"
+          : unitStr?.startsWith("kg")
+            ? "kg"
+            : defaultUnit;
         let weight = 0;
 
         if (weightValStr) {
           weight = parseFloat(weightValStr);
           if (sign === "-") weight = -weight;
-          // Sanity upper bound
-          if (Math.abs(weight) > 600) return null;
+          // Sanity upper bound in canonical kg (~600 kg / ~1320 lb)
+          if (toKg(Math.abs(weight), unit) > 600) return null;
         } else if (currentWeight && !preBw && !postBw) {
           weight = currentWeight.weight;
           unit = currentWeight.unit;
@@ -145,9 +151,14 @@ function tryParseSet(
     }
   }
 
-  // Check for bare numbers list e.g. "8, 8, 7" when currentWeight is active
+  // Check for bare numbers list e.g. "8, 8, 7" or "12 @8" when currentWeight is active
   if (currentWeight) {
-    const bareReps = clean.match(/^(\d+)(?:\s*reps?)?$/);
+    const bareClean = clean
+      .replace(/(?:@|rpe\s*:?)\s*\d+(?:\.\d+)?/gi, "")
+      .replace(/\((?:w|warm-?up|assisted)\)/gi, "")
+      .replace(/(?:^|\s)(?:warm-?up|wu|w)(?=\s|$)(?!\s*\/)/gi, "")
+      .trim();
+    const bareReps = bareClean.match(/^(\d+)(?:\s*reps?)?$/i);
     if (bareReps) {
       const reps = parseInt(bareReps[1], 10);
       if (reps > 0 && reps <= 200) {
@@ -351,10 +362,10 @@ export function parseWorkoutNote(
       }
     }
 
-    // 4. If line starts with a list bullet, but wasn't a set, and we have an exercise:
-    // It's an exercise note or comment (e.g. "- left elbow felt sore")
-    if (currentExercise && (trimmed.startsWith("-") || trimmed.startsWith("*") || trimmed.startsWith("•"))) {
-      const noteContent = trimmed.replace(/^[-*•\s]+/, "");
+    // 4. If line starts with a list bullet or ordered-list marker, wasn't a set,
+    // and we have an exercise: it's an exercise note or comment
+    if (currentExercise && /^(?:[-*•]|\d+[.)])\s+/.test(trimmed)) {
+      const noteContent = trimmed.replace(/^(?:[-*•]|\d+[.)])\s+/, "").trim();
       addComment([noteContent, trailingComment].filter(Boolean).join(" "), currentExercise, generalNotes);
       continue;
     }
@@ -363,9 +374,10 @@ export function parseWorkoutNote(
     const headingMatch = trimmed.match(/^#{1,4}\s+(.+)$/);
     const exerciseNameCandidate = headingMatch ? headingMatch[1].trim() : trimmed;
 
-    // Reject if it's clearly a set line (e.g. "80kg x 8") that had no parent exercise
-    const orphanedSet = tryParseSet(exerciseNameCandidate, defaultUnit);
-    if (orphanedSet) {
+    // Reject if it's clearly a set line (single or comma-separated) that had no parent exercise
+    const orphanedCommaSets = tryParseCommaSets(exerciseNameCandidate, defaultUnit);
+    const orphanedSet = orphanedCommaSets ? null : tryParseSet(exerciseNameCandidate, defaultUnit);
+    if (orphanedCommaSets || orphanedSet) {
       // Create a fallback "Exercise" if none exists
       if (!currentExercise) {
         currentExercise = {
@@ -375,11 +387,14 @@ export function parseWorkoutNote(
         };
         exercises.push(currentExercise);
       }
-      currentExercise.sets.push({
-        ...orphanedSet,
-        setNumber: currentExercise.sets.length + 1,
-        notes: trailingComment,
-      });
+      const itemsToAdd = orphanedCommaSets ?? [orphanedSet!];
+      for (let idx = 0; idx < itemsToAdd.length; idx++) {
+        currentExercise.sets.push({
+          ...itemsToAdd[idx],
+          setNumber: currentExercise.sets.length + 1,
+          notes: idx === itemsToAdd.length - 1 ? trailingComment : undefined,
+        });
+      }
       continue;
     }
 
@@ -484,60 +499,67 @@ export interface MultiWorkoutItem {
 export function parseMultiWorkoutMarkdown(
   text: string,
   defaultUnit: "kg" | "lb" = "kg",
+  defaultDate?: string,
 ): MultiWorkoutItem[] {
   const lines = text.split(/\r?\n/);
   const sections: { date: string; title: string; lines: string[] }[] = [];
 
   let currentSection: { date: string; title: string; lines: string[] } | null = null;
   const isoDateRegex = /\b(20\d{2})[-/.](0[1-9]|1[0-2])[-/.](0[1-9]|[12]\d|3[01])\b/;
+  const standaloneDateRegex =
+    /^(?:date\s*:\s*)?(20\d{2})[-/.](0[1-9]|1[0-2])[-/.](0[1-9]|[12]\d|3[01])$/i;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
 
-    // Check if line is a header containing a date
+    // Check if line is a header containing a valid calendar date
     const isHeading = /^#{1,4}\s+/.test(trimmed);
     const dateMatch = trimmed.match(isoDateRegex);
 
     if (dateMatch && (isHeading || trimmed.startsWith("date:") || trimmed.startsWith("---"))) {
-      const year = dateMatch[1];
-      const month = dateMatch[2];
-      const day = dateMatch[3];
-      const normalizedDate = `${year}-${month}-${day}`;
+      const normalizedDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+      if (isValidCalendarDate(normalizedDate)) {
+        // Extract optional title from the rest of the heading
+        let title = trimmed
+          .replace(/^#{1,4}\s+/, "")
+          .replace(isoDateRegex, "")
+          .replace(/^[-:—·\s]+/, "")
+          .replace(/[-:—·\s]+$/, "")
+          .trim();
 
-      // Extract optional title from the rest of the heading
-      let title = trimmed
-        .replace(/^#{1,4}\s+/, "")
-        .replace(isoDateRegex, "")
-        .replace(/^[-:—·\s]+/, "")
-        .replace(/[-:—·\s]+$/, "")
-        .trim();
+        if (!title || title.toLowerCase() === "workout") {
+          title = "Workout";
+        }
 
-      if (!title || title.toLowerCase() === "workout") {
-        title = "Workout";
-      }
-
-      currentSection = {
-        date: normalizedDate,
-        title,
-        lines: [],
-      };
-      sections.push(currentSection);
-      continue;
-    }
-
-    if (currentSection) {
-      currentSection.lines.push(line);
-    } else {
-      // Content before any dated header: if it contains a date, start a section
-      const standaloneDateMatch = trimmed.match(isoDateRegex);
-      if (standaloneDateMatch) {
         currentSection = {
-          date: `${standaloneDateMatch[1]}-${standaloneDateMatch[2]}-${standaloneDateMatch[3]}`,
-          title: "Workout",
+          date: normalizedDate,
+          title,
           lines: [],
         };
         sections.push(currentSection);
+        continue;
+      }
+    }
+
+    if (currentSection) {
+      // Skip bare divider lines emitted by generateObsidianExport so they don't leak into ## Notes
+      if (/^---+$/.test(trimmed)) continue;
+      currentSection.lines.push(line);
+    } else {
+      // Content before any dated header: only start a section on a standalone date line
+      // (ignores export preamble prose such as "Generated on 2026-11-24").
+      const standaloneDateMatch = trimmed.match(standaloneDateRegex);
+      if (standaloneDateMatch) {
+        const candidate = `${standaloneDateMatch[1]}-${standaloneDateMatch[2]}-${standaloneDateMatch[3]}`;
+        if (isValidCalendarDate(candidate)) {
+          currentSection = {
+            date: candidate,
+            title: "Workout",
+            lines: [],
+          };
+          sections.push(currentSection);
+        }
       }
     }
   }
@@ -547,7 +569,7 @@ export function parseMultiWorkoutMarkdown(
     const single = parseWorkoutNote(text, defaultUnit);
     return [
       {
-        date: new Date().toISOString().slice(0, 10),
+        date: defaultDate ?? new Date().toISOString().slice(0, 10),
         title: single.title || "Workout",
         rawNote: text.trim(),
         parsed: single,
@@ -574,7 +596,7 @@ export function generateObsidianExport(
   workouts: Array<{ date: string; title: string; rawNote: string }>,
 ): string {
   const header = `# Workout Vault Export\nGenerated on ${new Date().toISOString().slice(0, 10)}\n\n`;
-  const formattedWorkouts = workouts
+  const formattedWorkouts = [...workouts]
     .sort((a, b) => b.date.localeCompare(a.date))
     .map((w) => {
       return `## ${w.date} · ${w.title || "Workout"}\n\n${w.rawNote.trim()}\n`;
@@ -594,7 +616,8 @@ export interface SessionMetrics {
  * Calculates in-memory metrics for a workout session.
  */
 export function calculateSessionStats(
-  exercises: Array<{ sets: Array<{ weight: number; reps: number; isWarmup?: boolean }> }>,
+  exercises: Array<{ sets: Array<{ weight: number; unit?: WeightUnit; reps: number; isWarmup?: boolean }> }>,
+  displayUnit?: WeightUnit,
 ): SessionMetrics {
   let totalVolume = 0;
   let totalSets = 0;
@@ -605,7 +628,12 @@ export function calculateSessionStats(
       if (!s.isWarmup) {
         totalSets++;
         totalReps += s.reps;
-        totalVolume += Math.max(0, s.weight) * s.reps;
+        const clamped = Math.max(0, s.weight);
+        const w =
+          displayUnit && s.unit && s.unit !== displayUnit
+            ? fromKg(toKg(clamped, s.unit), displayUnit)
+            : clamped;
+        totalVolume += w * s.reps;
       }
     }
   }

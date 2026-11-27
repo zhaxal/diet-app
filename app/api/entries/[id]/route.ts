@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getUserFromRequest } from "@/lib/auth";
 import { updateEntrySchema } from "@/lib/validation";
@@ -47,15 +48,27 @@ export async function PATCH(
   if (!parsed.success) return zodError(parsed.error);
 
   const { consumedAt, ...rest } = parsed.data;
-  const entry = await prisma.foodEntry.update({
-    where: { id },
-    data: {
-      ...rest,
-      ...(consumedAt ? { consumedAt: new Date(consumedAt) } : {}),
-    },
-  });
+  const quantityPatch =
+    rest.quantity === null && rest.quantityUnit === undefined
+      ? { quantityUnit: null }
+      : {};
 
-  return NextResponse.json({ entry });
+  try {
+    const entry = await prisma.foodEntry.update({
+      where: { id },
+      data: {
+        ...rest,
+        ...quantityPatch,
+        ...(consumedAt ? { consumedAt: new Date(consumedAt) } : {}),
+      },
+    });
+    return NextResponse.json({ entry });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return notFound();
+    }
+    throw err;
+  }
 }
 
 export async function DELETE(
@@ -66,9 +79,9 @@ export async function DELETE(
   if (!user) return unauthorized();
 
   const { id } = await params;
-  const existing = await ownedEntry(user.id, id);
-  if (!existing) return notFound();
-
-  await prisma.foodEntry.delete({ where: { id } });
+  const { count } = await prisma.foodEntry.deleteMany({
+    where: { id, userId: user.id },
+  });
+  if (count === 0) return notFound();
   return NextResponse.json({ ok: true });
 }
